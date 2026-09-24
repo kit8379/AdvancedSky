@@ -1,0 +1,19 @@
+messages:
+
+  # ================================================================================================================
+  # System
+  # ================================================================================================================
+
+  only-player-can-run-command: "<red>Only players can run this command!"
+  unknown-exception: "<red>An unknown error occurred while processing your request. Please try again later or contact the administrator."
+
+  # ================================================================================================================
+  # Island
+  # ================================================================================================================
+
+  island-created: "<green>Your island has been created!"
+  island-deleted: "<green>Your island has been deleted."
+  already-has-island: "<red>You already have an island!"
+  no-island: "<red>You do not have an island!"
+  island-grid-full: "<red>The network cannot host any more islands. Please contact an administrator."
+  sending-to-server: "<gray>Sending you to <aqua>{server}<gray>..."

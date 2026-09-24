@@ -1,0 +1,17 @@
+# IntelliJ
+.idea/
+*.iml
+out/
+
+# Maven
+target/
+dependency-reduced-pom.xml
+
+# Test server
+run/
+
+# Misc
+*.log
+*.jar
+.DS_Store
+Thumbs.db

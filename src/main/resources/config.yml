@@ -1,0 +1,104 @@
+# ===================================================================
+# AdvancedSky Configuration
+#
+# Design:
+# - An island is created on one island server and stays there forever.
+# - All servers are listed statically below and are assumed to be online.
+# - `server` is the only section that differs between servers.
+# ===================================================================
+
+# ===================================================================
+# Server Identity (per-server)
+# ===================================================================
+server:
+  # Must match this server's name in your Velocity / BungeeCord config.
+  name: "sky1"
+
+  # World on this server that holds the islands. Only read on island servers, where it must
+  # already be loaded when the plugin enables (Folia cannot load worlds at runtime).
+  world: "skyblock"
+
+# ===================================================================
+# Servers
+# ===================================================================
+# Names must match Velocity / BungeeCord server names. Every server running this plugin must
+# appear in exactly one of the two lists.
+servers:
+  # Servers that host islands. A new island goes to the one with the fewest islands.
+  island:
+    - "sky1"
+    - "sky2"
+
+  # Servers that run the plugin for its commands only and never host islands.
+  lobby:
+    - "lobby"
+
+# ===================================================================
+# Island
+# ===================================================================
+island:
+  # Y level of the island centre block.
+  # Do not change once islands exist: every island position is derived from it.
+  height: 100
+
+  # Where players arrive on an island, relative to its centre block.
+  spawn:
+    x: 0.5
+    y: 1.0
+    z: 0.5
+    yaw: 0.0
+    pitch: 0.0
+
+  # Starter island copied onto every new island. Build it in a separate world that every island
+  # server has loaded at startup (Folia cannot load worlds at runtime). `anchor` is the template
+  # block that lands on the island centre; `min` and `max` are opposite corners of the box to copy.
+  template:
+    world: "skyblock_template"
+    anchor:
+      x: 0
+      y: 100
+      z: 0
+    min:
+      x: -32
+      y: 64
+      z: -32
+    max:
+      x: 32
+      y: 160
+      z: 32
+
+# ===================================================================
+# Database
+# ===================================================================
+# Single source of truth for island data. Shared by all servers.
+mysql:
+  host: "localhost"
+  port: 3306
+  database: "advancedsky"
+  username: "root"
+  password: "password"
+
+  # Appended verbatim to the JDBC URL, so start it with "?" (or leave it empty).
+  properties: "?useSSL=false&useUnicode=true&characterEncoding=utf8&connectTimeout=10000&socketTimeout=60000"
+
+  # Table prefix for all plugin tables.
+  prefix: "advancedsky_"
+
+# ===================================================================
+# Redis
+# ===================================================================
+# Cross-server messaging (pub/sub) and short-lived teleport hand-offs. Shared by all servers.
+redis:
+  host: "localhost"
+  port: 6379
+  password: ""
+
+  # Servers in the same AdvancedSky network must share this id. Give each independent network
+  # that shares one Redis its own id; it prefixes every key and channel.
+  cluster-id: "default"
+
+# ===================================================================
+# Debug
+# ===================================================================
+# If true, prints more detailed logs.
+debug: false
