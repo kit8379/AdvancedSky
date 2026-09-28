@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -96,6 +97,25 @@ class UpgradeHandlerTest {
         assertFailure(UpgradeLevelChangedException.class, handler.buyUpgrade(actor, island, buyer, "coop-limit"));
 
         verify(economy).withdrawPlayer(payer, 25000.0);
+        verify(economy).depositPlayer(payer, 25000.0);
+    }
+
+    @Test
+    void timedOutWriteThatTheHostAppliedKeepsThePayment() {
+        when(distributor.setUpgradeLevel(actor, island, "coop-limit", 1, 2)).thenReturn(CompletableFuture.failedFuture(new TimeoutException()));
+        when(database.getIslandUpgradeLevel(island, "coop-limit")).thenReturn(1, 2);
+
+        assertEquals(2, handler.buyUpgrade(actor, island, buyer, "coop-limit").join());
+
+        verify(economy, never()).depositPlayer(any(OfflinePlayer.class), anyDouble());
+    }
+
+    @Test
+    void timedOutWriteThatNeverLandedIsRefunded() {
+        when(distributor.setUpgradeLevel(actor, island, "coop-limit", 1, 2)).thenReturn(CompletableFuture.failedFuture(new TimeoutException()));
+
+        assertFailure(TimeoutException.class, handler.buyUpgrade(actor, island, buyer, "coop-limit"));
+
         verify(economy).depositPlayer(payer, 25000.0);
     }
 

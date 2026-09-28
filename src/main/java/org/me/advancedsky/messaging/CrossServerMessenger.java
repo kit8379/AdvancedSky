@@ -22,6 +22,9 @@ public final class CrossServerMessenger {
     private static final String FIELD_MESSAGE = "message";
     private static final long REQUEST_TIMEOUT_SECONDS = 30L;
     private static final long MAX_MESSAGE_AGE_MILLIS = REQUEST_TIMEOUT_SECONDS * 1000L;
+    // A request is only started while its requester has most of its wait left, so the answer
+    // reaches it before it gives up and acts on a failure the host never had.
+    private static final long MAX_REQUEST_AGE_MILLIS = MAX_MESSAGE_AGE_MILLIS / 3;
     private static final int INBOX_MAX_LEN = 1000;
     private static final int READ_BLOCK_MILLIS = 1000;
     private static final int READ_COUNT = 10;
@@ -129,7 +132,8 @@ public final class CrossServerMessenger {
             }
 
             long age = System.currentTimeMillis() - message.getTimestamp();
-            if (age > MAX_MESSAGE_AGE_MILLIS) {
+            long maxAge = CrossServerMessage.TYPE_REQUEST.equals(message.getType()) ? MAX_REQUEST_AGE_MILLIS : MAX_MESSAGE_AGE_MILLIS;
+            if (age > maxAge) {
                 plugin.warning("Dropping stale cross-server " + message.getType() + " " + message.getAction() + " aged " + age + "ms from " + message.getSource());
                 deleteEntry(entry.getID());
                 return;
