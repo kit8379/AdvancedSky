@@ -175,7 +175,7 @@ class IslandSizeTest {
         assertEquals(size * size, new LevelHandler(plugin, config, database, limits, worlds, cache, grid).calIslandLevel(islandId).join());
         verify(database).updateIslandLevel(islandId, size * size);
         ArgumentCaptor<int[]> counts = ArgumentCaptor.forClass(int[].class);
-        verify(limits).reset(eq(islandId), counts.capture());
+        verify(limits).finishScan(eq(islandId), any(), counts.capture());
         assertEquals(size * size, counts.getValue()[Material.STONE.ordinal()]);
     }
 

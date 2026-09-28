@@ -11,14 +11,17 @@ import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.model.Island;
 
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Per-island block and entity caps from limits.yml. Block counts start from the material
  * histogram of the level scan (see {@link LevelHandler}) and are adjusted live on place and
- * break on the island's region thread; whatever else removes blocks is caught up by the next scan.
+ * break; a change made in a chunk the running scan has already snapshotted is carried over into
+ * the counts it produces. Whatever else removes blocks is caught up by the next scan.
  * Entities are counted inside the island boundary at spawn time. Limit tables are built at startup and on
  * reload, so the event hot path never touches YAML; an unknown name fails startup.
  */
@@ -33,7 +36,7 @@ public class LimitHandler {
     private final ConfigHandler config;
     private final IslandGrid islandGrid;
 
-    private final ConcurrentHashMap<UUID, int[]> countsByIsland = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, IslandCounts> countsByIsland = new ConcurrentHashMap<>();
 
     private volatile int[] blockLimitByOrdinal;
     private volatile int[] entityLimitByOrdinal;
@@ -84,10 +87,57 @@ public class LimitHandler {
     }
 
     /**
-     * Replaces an island's block counts with the histogram a scan just produced.
+     * Starts a level scan of the island. Its chunks are snapshotted one after another while
+     * blocks keep changing, so every change made in a chunk it has already snapshotted is kept
+     * for it until it finishes.
      */
-    public void reset(UUID islandUuid, int[] countsByMaterialOrdinal) {
-        countsByIsland.put(islandUuid, countsByMaterialOrdinal);
+    public Scan beginScan(UUID islandUuid) {
+        IslandCounts island = countsByIsland.computeIfAbsent(islandUuid, key -> new IslandCounts());
+        synchronized (island) {
+            island.scan = new Scan();
+            return island.scan;
+        }
+    }
+
+    /**
+     * The scan has snapshotted the chunk, or found it not generated: changes there from now on
+     * are missing from its histogram.
+     */
+    public void chunkScanned(UUID islandUuid, Scan scan, int chunkX, int chunkZ) {
+        IslandCounts island = countsByIsland.get(islandUuid);
+        if (island == null) {
+            return;
+        }
+
+        synchronized (island) {
+            if (island.scan == scan) {
+                scan.chunks.add(chunkKey(chunkX, chunkZ));
+            }
+        }
+    }
+
+    /**
+     * Replaces the island's block counts with the histogram the scan produced plus the changes
+     * made after their chunk was snapshotted. A scan that a newer one replaced, or of an island
+     * dropped meanwhile, changes nothing.
+     */
+    public void finishScan(UUID islandUuid, Scan scan, int[] countsByMaterialOrdinal) {
+        IslandCounts island = countsByIsland.get(islandUuid);
+        if (island == null) {
+            return;
+        }
+
+        synchronized (island) {
+            if (island.scan != scan) {
+                return;
+            }
+
+            for (int i = 0; i < countsByMaterialOrdinal.length; i++) {
+                countsByMaterialOrdinal[i] = Math.max(0, countsByMaterialOrdinal[i] + scan.changes[i]);
+            }
+            island.counts = countsByMaterialOrdinal;
+            island.scan = null;
+        }
     }
 
     /**
@@ -115,44 +165,62 @@ public class LimitHandler {
      * Whether a scan has produced counts for the island yet.
      */
     public boolean isReady(UUID islandUuid) {
-        return countsByIsland.containsKey(islandUuid);
+        IslandCounts island = countsByIsland.get(islandUuid);
+        if (island == null) {
+            return false;
+        }
+
+        synchronized (island) {
+            return island.counts != null;
+        }
     }
 
     /**
-     * Counts one more of that block on the island if its cap allows. Denies until the island's
-     * first scan since startup has produced counts, so it fails closed rather than open.
+     * Counts one more of that block, placed in the given chunk, on the island if its cap allows.
+     * Denies until the island's first scan since startup has produced counts, so it fails closed
+     * rather than open.
      */
-    public boolean tryIncrement(UUID islandUuid, Material type) {
+    public boolean tryIncrement(UUID islandUuid, Material type, int chunkX, int chunkZ) {
         int limit = blockLimitByOrdinal[type.ordinal()];
         if (limit == UNLIMITED) {
             return true;
         }
 
-        int[] counts = countsByIsland.get(islandUuid);
-        if (counts == null) {
+        IslandCounts island = countsByIsland.get(islandUuid);
+        if (island == null) {
             return false;
         }
 
-        if (counts[type.ordinal()] >= limit) {
-            return false;
-        }
+        synchronized (island) {
+            if (island.counts == null || island.counts[type.ordinal()] >= limit) {
+                return false;
+            }
 
-        counts[type.ordinal()]++;
-        return true;
+            island.counts[type.ordinal()]++;
+            island.record(type, 1, chunkX, chunkZ);
+            return true;
+        }
     }
 
-    public void decrement(UUID islandUuid, Material type) {
+    /**
+     * Counts one less of that block, removed from the given chunk. A scan in progress takes the
+     * removal even before the island's first counts exist.
+     */
+    public void decrement(UUID islandUuid, Material type, int chunkX, int chunkZ) {
         if (blockLimitByOrdinal[type.ordinal()] == UNLIMITED) {
             return;
         }
 
-        int[] counts = countsByIsland.get(islandUuid);
-        if (counts == null) {
+        IslandCounts island = countsByIsland.get(islandUuid);
+        if (island == null) {
             return;
         }
 
-        if (counts[type.ordinal()] > 0) {
-            counts[type.ordinal()]--;
+        synchronized (island) {
+            if (island.counts != null && island.counts[type.ordinal()] > 0) {
+                island.counts[type.ordinal()]--;
+            }
+            island.record(type, -1, chunkX, chunkZ);
         }
     }
 
@@ -191,5 +259,36 @@ public class LimitHandler {
         }
 
         return count < limit;
+    }
+
+    private static long chunkKey(int chunkX, int chunkZ) {
+        return ((long) chunkX << 32) | (chunkZ & 0xFFFFFFFFL);
+    }
+
+    /**
+     * An island's block counts, null until its first scan finishes, and the scan in progress.
+     * Guarded by its own monitor: events adjust it while a scan snapshots and hands over.
+     */
+    private static final class IslandCounts {
+        private int[] counts;
+        private Scan scan;
+
+        private void record(Material type, int change, int chunkX, int chunkZ) {
+            if (scan != null && scan.chunks.contains(chunkKey(chunkX, chunkZ))) {
+                scan.changes[type.ordinal()] += change;
+            }
+        }
+    }
+
+    /**
+     * A level scan in progress: the chunks it has snapshotted and the block changes made in
+     * them since.
+     */
+    public static final class Scan {
+        private final Set<Long> chunks = new HashSet<>();
+        private final int[] changes = new int[Material.values().length];
+
+        private Scan() {
+        }
     }
 }

@@ -95,10 +95,11 @@ public class LevelHandler {
         // Every batch adds to one material histogram, which yields both the level and the
         // block counts the limit handler starts from.
         int[] counts = new int[Material.values().length];
+        LimitHandler.Scan scan = limitHandler.beginScan(islandUuid);
         CompletableFuture<Void> scanned = CompletableFuture.completedFuture(null);
         for (int start = 0; start < chunkCoords.size(); start += SCAN_BATCH_SIZE) {
             List<int[]> batch = chunkCoords.subList(start, Math.min(start + SCAN_BATCH_SIZE, chunkCoords.size()));
-            scanned = scanned.thenCompose(v -> scanBatch(world, batch, minY, maxY, minBlockX, maxBlockX, minBlockZ, maxBlockZ, counts));
+            scanned = scanned.thenCompose(v -> scanBatch(world, islandUuid, scan, batch, minY, maxY, minBlockX, maxBlockX, minBlockZ, maxBlockZ, counts));
         }
 
         return scanned.thenApplyAsync(v -> {
@@ -109,8 +110,8 @@ public class LevelHandler {
             }
 
             // Hand the counts over before the database write, so a failed write still leaves
-            // the island with fresh limit counts; the region thread adjusts them from here on.
-            limitHandler.reset(islandUuid, counts);
+            // the island with fresh limit counts; place and break adjust them from here on.
+            limitHandler.finishScan(islandUuid, scan, counts);
 
             int totalLevel = (int) Math.round((double) total / 100.0);
             database.updateIslandLevel(islandUuid, totalLevel);
@@ -119,7 +120,7 @@ public class LevelHandler {
         }, plugin.getBukkitAsyncExecutor());
     }
 
-    private CompletableFuture<Void> scanBatch(World world, List<int[]> batch, int minY, int maxY, int minBlockX, int maxBlockX, int minBlockZ, int maxBlockZ, int[] counts) {
+    private CompletableFuture<Void> scanBatch(World world, UUID islandUuid, LimitHandler.Scan scan, List<int[]> batch, int minY, int maxY, int minBlockX, int maxBlockX, int minBlockZ, int maxBlockZ, int[] counts) {
         List<ChunkSnapshot> snapshots = Collections.synchronizedList(new ArrayList<>(batch.size()));
         List<CompletableFuture<Void>> taken = new ArrayList<>(batch.size());
         for (int[] coord : batch) {
@@ -127,11 +128,18 @@ public class LevelHandler {
             // instead of generating and persisting it just to scan.
             taken.add(worldHandler.onChunk(world, coord[0], coord[1], false, chunk -> {
                 snapshots.add(chunk.getChunkSnapshot());
+                limitHandler.chunkScanned(islandUuid, scan, chunk.getX(), chunk.getZ());
                 return CompletableFuture.completedFuture(null);
             }));
         }
 
         return CompletableFuture.allOf(taken.toArray(new CompletableFuture[0])).thenAcceptAsync(v -> {
+            // Chunks not generated yet held nothing when looked at; blocks placed in them from
+            // now on are the scan's to carry over as well.
+            for (int[] coord : batch) {
+                limitHandler.chunkScanned(islandUuid, scan, coord[0], coord[1]);
+            }
+
             for (ChunkSnapshot snapshot : snapshots) {
                 countSnapshot(snapshot, minY, maxY, minBlockX, maxBlockX, minBlockZ, maxBlockZ, counts);
             }

@@ -65,7 +65,7 @@ public final class IslandLimitListener implements Listener {
             return;
         }
 
-        if (!limitHandler.tryIncrement(islandUuid, type)) {
+        if (!limitHandler.tryIncrement(islandUuid, type, block.getX() >> 4, block.getZ() >> 4)) {
             event.setCancelled(true);
             event.getPlayer().sendMessage(config.getBlockLimitReachedMessage(type.name(), limit));
             plugin.debug("IslandLimitListener", "Denied block place due to limit: island=" + islandUuid + ", type=" + type + ", player=" + event.getPlayer().getUniqueId());
@@ -93,7 +93,7 @@ public final class IslandLimitListener implements Listener {
             return;
         }
 
-        limitHandler.decrement(islandUuid, type);
+        limitHandler.decrement(islandUuid, type, block.getX() >> 4, block.getZ() >> 4);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
