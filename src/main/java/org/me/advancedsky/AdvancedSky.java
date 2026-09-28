@@ -153,7 +153,6 @@ public class AdvancedSky extends JavaPlugin {
             UpgradeHandler upgradeHandler = new UpgradeHandler(this, config, databaseHandler, islandDistributor, economyHandler);
             LobbyHandler lobbyHandler = new LobbyHandler(this, config, islandDistributor);
             UuidHandler uuidHandler = new UuidHandler(this, databaseHandler);
-            IslandActivityHandler islandActivityHandler = new IslandActivityHandler(this);
             info("All main handlers loaded");
 
             info("Starting plugin messaging");
@@ -161,7 +160,7 @@ public class AdvancedSky extends JavaPlugin {
             info("Plugin messaging loaded");
 
             info("Starting all schedulers for the plugin");
-            levelUpdateScheduler = new LevelUpdateScheduler(this, levelHandler, islandActivityHandler);
+            levelUpdateScheduler = new LevelUpdateScheduler(this, levelHandler);
             info("All schedulers loaded");
 
             info("Starting API");
@@ -182,7 +181,7 @@ public class AdvancedSky extends JavaPlugin {
             info("Starting listeners");
             getServer().getPluginManager().registerEvents(new OnlinePlayersListener(this, onlinePlayerRegistry, serverID), this);
             getServer().getPluginManager().registerEvents(new IslandBorderListener(config, islandCache, islandGrid), this);
-            getServer().getPluginManager().registerEvents(new IslandActivityListener(this, config, islandCache, islandActivityHandler, levelUpdateScheduler), this);
+            getServer().getPluginManager().registerEvents(new IslandActivityListener(this, config, islandCache, levelUpdateScheduler), this);
             getServer().getPluginManager().registerEvents(new TeleportRequestListener(this, teleportHandler), this);
             getServer().getPluginManager().registerEvents(new IslandProtectionListener(config, islandCache, islandGrid), this);
             getServer().getPluginManager().registerEvents(new IslandAccessListener(this, config, islandCache), this);

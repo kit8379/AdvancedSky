@@ -3,7 +3,6 @@ package org.me.advancedsky.scheduler;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.Bukkit;
 import org.me.advancedsky.AdvancedSky;
-import org.me.advancedsky.island.IslandActivityHandler;
 import org.me.advancedsky.island.LevelHandler;
 
 import java.util.*;
@@ -12,12 +11,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Rescans island levels. An island is scheduled when a player arrives on it, scanned right away
- * (its block limit counts come from the scan) and then every few minutes while it has players.
- * The first scan to start after the last player left is its last: the island is dropped once that
- * scan finishes, holding the level and counts it ended with.
+ * Rescans island levels. Listeners report players arriving on and leaving islands; the first
+ * player on an empty island schedules it, it is scanned right away (its block limit counts come
+ * from the scan) and then every few minutes while it has players. The first scan to start after
+ * the last player left is its last: the island is dropped once that scan finishes, holding the
+ * level and counts it ended with.
  * <p>
- * All state is touched on the global region thread only.
+ * All state is touched on the global region thread only; the public methods are safe from any
+ * thread.
  */
 public final class LevelUpdateScheduler {
 
@@ -30,17 +31,20 @@ public final class LevelUpdateScheduler {
     private static final long POLL_PERIOD_TICKS = 20L;
     private final AdvancedSky plugin;
     private final LevelHandler levelHandler;
-    private final IslandActivityHandler islandActivityHandler;
     private final Map<UUID, Entry> entries = new HashMap<>();
+    private final Map<UUID, Integer> playerCounts = new HashMap<>();
+    // Leaves are numbered in the order they happen, so "someone left after this scan started"
+    // compares positions instead of clock readings that can tie.
+    private final Map<UUID, Long> lastLeaves = new HashMap<>();
+    private long leaves;
     private final PriorityQueue<Entry> pq = new PriorityQueue<>(Comparator.comparingLong(e -> e.nextRunAtMs));
     private final AtomicInteger inFlight = new AtomicInteger(0);
     private final SplittableRandom rnd = new SplittableRandom();
     private ScheduledTask task;
 
-    public LevelUpdateScheduler(AdvancedSky plugin, LevelHandler levelHandler, IslandActivityHandler islandActivityHandler) {
+    public LevelUpdateScheduler(AdvancedSky plugin, LevelHandler levelHandler) {
         this.plugin = plugin;
         this.levelHandler = levelHandler;
-        this.islandActivityHandler = islandActivityHandler;
     }
 
     public void start() {
@@ -60,18 +64,45 @@ public final class LevelUpdateScheduler {
         }
         entries.clear();
         pq.clear();
+        playerCounts.clear();
+        lastLeaves.clear();
 
         plugin.debug("LevelUpdateScheduler", "Stopped and cleared all scheduled islands.");
     }
 
     /**
-     * Schedules the island for a scan at the next poll unless it is already scheduled. Safe from
-     * any thread.
+     * A player arrived on the island. The first one on an empty island schedules it.
      */
-    public void registerIsland(UUID islandUuid) {
-        plugin.getGlobalRegionExecutor().execute(() -> register(islandUuid));
+    public void playerEnter(UUID islandUuid) {
+        plugin.getGlobalRegionExecutor().execute(() -> {
+            if (playerCounts.merge(islandUuid, 1, Integer::sum) == 1) {
+                register(islandUuid);
+            }
+        });
     }
 
+    /**
+     * A player left the island.
+     */
+    public void playerLeave(UUID islandUuid) {
+        plugin.getGlobalRegionExecutor().execute(() -> {
+            Integer count = playerCounts.get(islandUuid);
+            if (count == null) {
+                return;
+            }
+
+            if (count > 1) {
+                playerCounts.put(islandUuid, count - 1);
+            } else {
+                playerCounts.remove(islandUuid);
+            }
+            lastLeaves.put(islandUuid, ++leaves);
+        });
+    }
+
+    /**
+     * Schedules the island for a scan at the next poll unless it is already scheduled.
+     */
     private void register(UUID islandUuid) {
         if (entries.containsKey(islandUuid)) {
             return;
@@ -93,7 +124,7 @@ public final class LevelUpdateScheduler {
             Entry due = pollNextDue(now);
             if (due == null) break;
 
-            startOne(due, now);
+            startOne(due);
         }
     }
 
@@ -119,7 +150,8 @@ public final class LevelUpdateScheduler {
         return null;
     }
 
-    private void startOne(Entry e, long startedAt) {
+    private void startOne(Entry e) {
+        long leavesAtStart = leaves;
         int cur = inFlight.incrementAndGet();
         plugin.debug("LevelUpdateScheduler", "Starting calculate for " + e.islandUuid + " (inFlight=" + cur + ")");
 
@@ -129,7 +161,7 @@ public final class LevelUpdateScheduler {
         } catch (Throwable t) {
             plugin.severe("LevelUpdateScheduler: Failed to start calculate for " + e.islandUuid, t);
             inFlight.decrementAndGet();
-            reschedule(e, startedAt, System.currentTimeMillis(), false);
+            reschedule(e, leavesAtStart, System.currentTimeMillis(), false);
             return;
         }
 
@@ -143,7 +175,7 @@ public final class LevelUpdateScheduler {
                     plugin.debug("LevelUpdateScheduler", "Calculate done for " + e.islandUuid + " level=" + level + " (inFlight=" + after + ")");
                 }
 
-                reschedule(e, startedAt, System.currentTimeMillis(), err == null);
+                reschedule(e, leavesAtStart, System.currentTimeMillis(), err == null);
             });
         });
     }
@@ -153,13 +185,15 @@ public final class LevelUpdateScheduler {
      * the scan started is dropped: that scan saw its final state. A failed scan is retried
      * sooner, for as long as the island stays in use.
      */
-    private void reschedule(Entry finished, long startedAt, long now, boolean succeeded) {
+    private void reschedule(Entry finished, long leavesAtStart, long now, boolean succeeded) {
         if (entries.get(finished.islandUuid) != finished) return;
 
         finished.cancelled = true;
 
-        if (!islandActivityHandler.wasActiveSince(finished.islandUuid, startedAt)) {
+        boolean occupiedSinceStart = playerCounts.containsKey(finished.islandUuid) || lastLeaves.getOrDefault(finished.islandUuid, 0L) > leavesAtStart;
+        if (!occupiedSinceStart) {
             entries.remove(finished.islandUuid);
+            lastLeaves.remove(finished.islandUuid);
             plugin.debug("LevelUpdateScheduler", "Island " + finished.islandUuid + " has had no players since its last scan, no further scans scheduled");
             return;
         }
