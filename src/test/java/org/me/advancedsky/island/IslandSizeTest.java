@@ -117,7 +117,7 @@ class IslandSizeTest {
 
     @Test
     void hostRefreshesTheSnapshotAfterPurchaseAndAdminDowngrade() {
-        IslandOperator operator = new IslandOperator(plugin, database, null, null, snapshots, "local");
+        IslandOperator operator = new IslandOperator(plugin, database, null, null, snapshots, null, "local");
         when(snapshots.reload(islandId)).thenReturn(CompletableFuture.completedFuture(null));
         Actor buyer = new Actor.Player(owner);
         Actor admin = new Actor.Bypass("test");
@@ -134,7 +134,7 @@ class IslandSizeTest {
 
     @Test
     void rejectedWriteStillRefreshesTheSnapshotAndKeepsTheCause() {
-        IslandOperator operator = new IslandOperator(plugin, database, null, null, snapshots, "local");
+        IslandOperator operator = new IslandOperator(plugin, database, null, null, snapshots, null, "local");
         Actor actor = new Actor.Player(owner);
         when(snapshots.reload(islandId)).thenReturn(CompletableFuture.completedFuture(null));
         doThrow(new UpgradeLevelChangedException()).when(database).updateIslandUpgradeLevel(actor, islandId, "island-size", 1, 2);
@@ -145,7 +145,7 @@ class IslandSizeTest {
 
     @Test
     void committedUpgradeIsNotRefundedIfSnapshotRefreshFails() {
-        IslandOperator operator = new IslandOperator(plugin, database, null, null, snapshots, "local");
+        IslandOperator operator = new IslandOperator(plugin, database, null, null, snapshots, null, "local");
         when(snapshots.reload(islandId)).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("database unavailable")));
         assertDoesNotThrow(() -> operator.setUpgradeLevel(new Actor.Player(owner), islandId, "island-size", 1, 2).join());
         verify(plugin).severe(eq("Island data saved but could not refresh the snapshot: " + islandId), any(Throwable.class));

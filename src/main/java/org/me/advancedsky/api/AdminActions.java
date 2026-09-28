@@ -1,5 +1,6 @@
 package org.me.advancedsky.api;
 
+import org.bukkit.Location;
 import org.me.advancedsky.island.BanHandler;
 import org.me.advancedsky.island.BiomeHandler;
 import org.me.advancedsky.island.CoopHandler;
@@ -97,8 +98,8 @@ public final class AdminActions {
 
     // ---- homes and warps (on anyone's behalf) -------------------------------------------------
 
-    public CompletableFuture<Void> setHome(UUID homeOwnerUuid, String homeName, String worldName, double x, double y, double z, float yaw, float pitch) {
-        return homeHandler.setHome(actor, homeOwnerUuid, homeName, worldName, x, y, z, yaw, pitch);
+    public CompletableFuture<Void> setHome(UUID homeOwnerUuid, String homeName, Location location) {
+        return homeHandler.setHome(actor, homeOwnerUuid, homeName, location);
     }
 
     public CompletableFuture<Void> deleteHome(UUID homeOwnerUuid, String homeName) {
@@ -109,8 +110,8 @@ public final class AdminActions {
         return homeHandler.home(homeOwnerUuid, homeName, teleportPlayerUuid);
     }
 
-    public CompletableFuture<Void> setWarp(UUID islandUuid, String warpName, String worldName, double x, double y, double z, float yaw, float pitch) {
-        return warpHandler.setWarp(actor, islandUuid, warpName, worldName, x, y, z, yaw, pitch);
+    public CompletableFuture<Void> setWarp(UUID islandUuid, String warpName, Location location) {
+        return warpHandler.setWarp(actor, islandUuid, warpName, location);
     }
 
     public CompletableFuture<Void> deleteWarp(UUID islandUuid, String warpName) {
@@ -123,8 +124,11 @@ public final class AdminActions {
 
     // ---- world ------------------------------------------------------------------------------
 
-    public CompletableFuture<Void> applyBiome(String worldName, int chunkX, int chunkZ, String biomeName) {
-        return biomeHandler.applyChunkBiome(worldName, chunkX, chunkZ, biomeName);
+    /**
+     * Re-biome the chunk holding the location, in any loaded world of this server.
+     */
+    public CompletableFuture<Void> applyBiome(Location location, String biomeName) {
+        return biomeHandler.applyChunkBiome(location, biomeName);
     }
 
     // ---- upgrades ---------------------------------------------------------------------------

@@ -1,14 +1,15 @@
 package org.me.advancedsky.island;
 
-import org.bukkit.Bukkit;
+import io.papermc.paper.registry.RegistryAccess;
+import io.papermc.paper.registry.RegistryKey;
 import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.exceptions.BiomeNotUnlockedException;
-import org.me.advancedsky.exceptions.WorldNotFoundException;
 import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.thread.BukkitAsyncExecutor;
 import org.mockito.MockedStatic;
@@ -28,30 +29,27 @@ class BiomeUpgradeTest {
     private static final int SLOT = 3;
     private final UUID island = UUID.randomUUID();
     private final UUID player = UUID.randomUUID();
-    private final String world = "islands";
+    private final World world = mock(World.class);
     private final IslandGrid grid = new IslandGrid(64);
     private final AdvancedSky plugin = mock(AdvancedSky.class);
     private final ConfigHandler config = mock(ConfigHandler.class);
     private final DatabaseHandler database = mock(DatabaseHandler.class);
     private final BiomeHandler handler = new BiomeHandler(plugin, config, database, grid);
-    // A chunk in the middle of the island's area.
-    private final int chunkX;
-    private final int chunkZ;
+    // The middle of the island's area.
+    private final Location location = grid.center(world, SLOT);
 
     BiomeUpgradeTest() {
         BukkitAsyncExecutor async = mock(BukkitAsyncExecutor.class);
         doAnswer(call -> { call.<Runnable>getArgument(0).run(); return null; }).when(async).execute(any());
         when(plugin.getBukkitAsyncExecutor()).thenReturn(async);
+        when(world.getName()).thenReturn("islands");
         when(config.getServerName()).thenReturn("local");
-        when(config.getIslandWorldName()).thenReturn(world);
+        when(config.getIslandWorldName()).thenReturn("islands");
         when(database.getIslandUuid(player)).thenReturn(Optional.of(island));
         when(database.getIslandServer(island)).thenReturn(Optional.of("local"));
         when(database.getIslandSlot(island)).thenReturn(Optional.of(SLOT));
         when(database.getIslandUpgradeLevel(island, "biomes")).thenReturn(1);
         when(config.getUpgradeAllowedBiomes(1)).thenReturn(List.of("plains"));
-        Location center = grid.center(null, SLOT);
-        chunkX = center.getBlockX() >> 4;
-        chunkZ = center.getBlockZ() >> 4;
     }
 
     @Test
@@ -76,18 +74,23 @@ class BiomeUpgradeTest {
 
     @Test
     void lockedBiomeIsRefusedWithTheAllowedList() {
-        CompletionException error = assertThrows(CompletionException.class, () -> handler.applyPlayerChunkBiome(player, world, chunkX, chunkZ, "forest").join());
+        CompletionException error = assertThrows(CompletionException.class, () -> handler.applyPlayerChunkBiome(player, location, "forest").join());
         assertInstanceOf(BiomeNotUnlockedException.class, error.getCause());
         assertEquals("plains", error.getCause().getMessage());
     }
 
     @Test
     void unlockedBiomePassesTheGateInEitherSpelling() {
-        try (MockedStatic<Bukkit> ignored = mockStatic(Bukkit.class)) {
+        // Off-server there is no biome registry: reaching for it is the step after the gate.
+        IllegalStateException lookup = new IllegalStateException("biome registry reached");
+        RegistryAccess access = mock(RegistryAccess.class);
+        when(access.getRegistry(RegistryKey.BIOME)).thenThrow(lookup);
+        try (MockedStatic<RegistryAccess> registryAccess = mockStatic(RegistryAccess.class)) {
+            registryAccess.when(RegistryAccess::registryAccess).thenReturn(access);
             for (String spelling : new String[]{"plains", "minecraft:plains", "PLAINS"}) {
-                // The gate passed: the next check, the world lookup, is what fails here.
-                CompletionException error = assertThrows(CompletionException.class, () -> handler.applyPlayerChunkBiome(player, world, chunkX, chunkZ, spelling).join());
-                assertInstanceOf(WorldNotFoundException.class, error.getCause(), spelling);
+                // The gate passed: the next step, the biome lookup, is what fails here.
+                CompletionException error = assertThrows(CompletionException.class, () -> handler.applyPlayerChunkBiome(player, location, spelling).join());
+                assertSame(lookup, error.getCause(), spelling);
             }
         }
     }

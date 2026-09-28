@@ -32,7 +32,7 @@ class IslandOperatorLockTest {
     private final DatabaseHandler database = mock(DatabaseHandler.class);
     private final IslandSnapshot snapshots = mock(IslandSnapshot.class);
     private final WorldHandler worlds = mock(WorldHandler.class);
-    private final IslandOperator operator = new IslandOperator(plugin, database, worlds, null, snapshots, "local");
+    private final IslandOperator operator = new IslandOperator(plugin, database, worlds, null, snapshots, null, "local");
 
     IslandOperatorLockTest() {
         when(database.toggleIslandLock(actor, island)).thenReturn(true);

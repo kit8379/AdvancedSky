@@ -6,6 +6,7 @@ import org.bukkit.entity.Player;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.exceptions.*;
+import org.me.advancedsky.island.LimitHandler;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.model.Island;
 import org.me.advancedsky.snapshot.IslandSnapshot;
@@ -33,16 +34,18 @@ public class IslandOperator {
     private final WorldHandler worldHandler;
     private final TeleportHandler teleportHandler;
     private final IslandSnapshot islandSnapshot;
+    private final LimitHandler limitHandler;
     private final String serverID;
 
     private final Map<UUID, CompletableFuture<Void>> chains = new ConcurrentHashMap<>();
 
-    public IslandOperator(AdvancedSky plugin, DatabaseHandler database, WorldHandler worldHandler, TeleportHandler teleportHandler, IslandSnapshot islandSnapshot, String serverID) {
+    public IslandOperator(AdvancedSky plugin, DatabaseHandler database, WorldHandler worldHandler, TeleportHandler teleportHandler, IslandSnapshot islandSnapshot, LimitHandler limitHandler, String serverID) {
         this.plugin = plugin;
         this.database = database;
         this.worldHandler = worldHandler;
         this.teleportHandler = teleportHandler;
         this.islandSnapshot = islandSnapshot;
+        this.limitHandler = limitHandler;
         this.serverID = serverID;
     }
 
@@ -70,6 +73,7 @@ public class IslandOperator {
             int slot = getIslandSlot(islandUuid);
             database.deleteIsland(actor, islandUuid);
             islandSnapshot.unload(islandUuid);
+            limitHandler.unload(islandUuid);
 
             return worldHandler.deleteIsland(slot).exceptionally(e -> {
                 plugin.severe("Island rows deleted but the area could not be cleared, leaving orphaned blocks at slot " + slot + ": " + islandUuid, e);

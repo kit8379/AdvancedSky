@@ -12,35 +12,33 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.config.ConfigHandler;
-import org.me.advancedsky.model.Island;
+import org.me.advancedsky.island.IslandActivityHandler;
 import org.me.advancedsky.scheduler.LevelUpdateScheduler;
 import org.me.advancedsky.snapshot.IslandSnapshot;
-import org.me.advancedsky.world.WorldActivityHandler;
 
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Follows each player from island to island inside the island world, which NewSky reads from
- * world changes. The first player to arrive on an island starts its level updates (NewSky does
- * this when the island world loads), so its block limit counts become ready.
+ * Follows each player from island to island in the island world. The first player to arrive on
+ * an empty island schedules its level scans, which also make its block limit counts ready.
  */
-public class WorldActivityListener implements Listener {
+public class IslandActivityListener implements Listener {
 
     private final AdvancedSky plugin;
     private final ConfigHandler config;
     private final IslandSnapshot islandSnapshot;
-    private final WorldActivityHandler worldActivityHandler;
+    private final IslandActivityHandler islandActivityHandler;
     private final LevelUpdateScheduler levelUpdateScheduler;
 
     private final Map<UUID, UUID> currentIsland = new ConcurrentHashMap<>();
 
-    public WorldActivityListener(AdvancedSky plugin, ConfigHandler config, IslandSnapshot islandSnapshot, WorldActivityHandler worldActivityHandler, LevelUpdateScheduler levelUpdateScheduler) {
+    public IslandActivityListener(AdvancedSky plugin, ConfigHandler config, IslandSnapshot islandSnapshot, IslandActivityHandler islandActivityHandler, LevelUpdateScheduler levelUpdateScheduler) {
         this.plugin = plugin;
         this.config = config;
         this.islandSnapshot = islandSnapshot;
-        this.worldActivityHandler = worldActivityHandler;
+        this.islandActivityHandler = islandActivityHandler;
         this.levelUpdateScheduler = levelUpdateScheduler;
     }
 
@@ -53,7 +51,7 @@ public class WorldActivityListener implements Listener {
     public void onPlayerQuit(PlayerQuitEvent event) {
         UUID left = currentIsland.remove(event.getPlayer().getUniqueId());
         if (left != null) {
-            worldActivityHandler.playerLeave(left, System.currentTimeMillis());
+            islandActivityHandler.playerLeave(left, System.currentTimeMillis());
         }
     }
 
@@ -84,15 +82,14 @@ public class WorldActivityListener implements Listener {
         }
 
         if (previous != null) {
-            worldActivityHandler.playerLeave(previous, System.currentTimeMillis());
+            islandActivityHandler.playerLeave(previous, System.currentTimeMillis());
         }
 
         if (islandUuid != null) {
-            if (!worldActivityHandler.isTracked(islandUuid)) {
+            if (islandActivityHandler.playerEnter(islandUuid)) {
                 levelUpdateScheduler.registerIsland(islandUuid);
             }
-            worldActivityHandler.playerEnter(islandUuid);
-            plugin.debug("WorldActivityListener", "Player " + player.getName() + " entered island: " + islandUuid);
+            plugin.debug("IslandActivityListener", "Player " + player.getName() + " entered island: " + islandUuid);
         }
     }
 
@@ -101,7 +98,6 @@ public class WorldActivityListener implements Listener {
             return null;
         }
 
-        Island island = islandSnapshot.getAt(location);
-        return island == null ? null : island.getIslandUuid();
+        return islandSnapshot.getIslandUuidAt(location);
     }
 }

@@ -90,6 +90,9 @@ public class LimitHandler {
         countsByIsland.put(islandUuid, countsByMaterialOrdinal);
     }
 
+    /**
+     * Drops the counts of a deleted island.
+     */
     public void unload(UUID islandUuid) {
         countsByIsland.remove(islandUuid);
     }
@@ -116,8 +119,8 @@ public class LimitHandler {
     }
 
     /**
-     * Counts one more of that block on the island if its cap allows. Denies until the first
-     * scan has produced counts, so a freshly loaded island fails closed rather than open.
+     * Counts one more of that block on the island if its cap allows. Denies until the island's
+     * first scan since startup has produced counts, so it fails closed rather than open.
      */
     public boolean tryIncrement(UUID islandUuid, Material type) {
         int limit = blockLimitByOrdinal[type.ordinal()];

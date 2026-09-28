@@ -20,7 +20,7 @@ class IslandOperatorSnapshotTest {
     private final AdvancedSky plugin = mock(AdvancedSky.class);
     private final DatabaseHandler database = mock(DatabaseHandler.class);
     private final IslandSnapshot snapshots = mock(IslandSnapshot.class);
-    private final IslandOperator operator = new IslandOperator(plugin, database, null, null, snapshots, "local");
+    private final IslandOperator operator = new IslandOperator(plugin, database, null, null, snapshots, null, "local");
 
     @Test
     void committedMutationKeepsItsResultWhenSnapshotReloadFails() {

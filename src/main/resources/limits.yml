@@ -14,7 +14,7 @@ limit:
     OBSERVER: 100
     PISTON: 500
 
-  # Maximum entities of each type in the island world, checked when a
+  # Maximum entities of each type inside the island border, checked when a
   # creature spawns or a player places a vehicle, armor stand or hanging.
   entities:
     MINECART: 20

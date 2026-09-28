@@ -2,6 +2,7 @@ package org.me.advancedsky.command.player;
 
 import io.papermc.paper.registry.RegistryAccess;
 import io.papermc.paper.registry.RegistryKey;
+import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.me.advancedsky.AdvancedSky;
@@ -72,11 +73,9 @@ public class PlayerBiomeCommand implements SubCommand, AsyncTabComplete {
         String biomeName = args[1].toLowerCase(Locale.ROOT);
 
         UUID playerUuid = player.getUniqueId();
-        String worldName = player.getWorld().getName();
-        int chunkX = player.getLocation().getChunk().getX();
-        int chunkZ = player.getLocation().getChunk().getZ();
+        Location loc = player.getLocation();
 
-        api.player(playerUuid).applyBiome(worldName, chunkX, chunkZ, biomeName).thenRun(() -> player.sendMessage(config.getPlayerBiomeChangeSuccessMessage(biomeName))).exceptionally(ex -> {
+        api.player(playerUuid).applyBiome(loc, biomeName).thenRun(() -> player.sendMessage(config.getPlayerBiomeChangeSuccessMessage(biomeName))).exceptionally(ex -> {
             Throwable cause = ex.getCause();
             if (cause instanceof IslandDoesNotExistException) {
                 player.sendMessage(config.getPlayerNoIslandMessage());

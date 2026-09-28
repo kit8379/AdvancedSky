@@ -37,13 +37,14 @@ class WarpCommandsTest {
     private final Player player = mock(Player.class);
     private final PlayerActions playerActions = mock(PlayerActions.class);
     private final AdminActions adminActions = mock(AdminActions.class);
+    private final World world = mock(World.class);
+    private final Location location = new Location(world, 1, 2, 3);
 
     @BeforeEach
     void setUp() {
         when(player.getUniqueId()).thenReturn(playerId);
-        World world = mock(World.class);
         when(world.getName()).thenReturn(WORLD);
-        when(player.getLocation()).thenReturn(new Location(world, 1, 2, 3));
+        when(player.getLocation()).thenReturn(location);
         when(api.player(playerId)).thenReturn(playerActions);
         when(api.admin(player)).thenReturn(adminActions);
         when(api.getPlayerUuid("Member")).thenReturn(CompletableFuture.completedFuture(Optional.of(targetId)));
@@ -61,11 +62,11 @@ class WarpCommandsTest {
 
     @Test
     void adminSetAndDeleteResolveNamedMembersIsland() {
-        when(adminActions.setWarp(islandId, "shop", WORLD, 1, 2, 3, 0, 0)).thenReturn(CompletableFuture.completedFuture(null));
+        when(adminActions.setWarp(islandId, "shop", location)).thenReturn(CompletableFuture.completedFuture(null));
         when(adminActions.deleteWarp(islandId, "shop")).thenReturn(CompletableFuture.completedFuture(null));
         new AdminSetWarpCommand(plugin, api, config).execute(player, new String[]{"setwarp", "Member", "shop"});
         new AdminDelWarpCommand(plugin, api, config).execute(player, new String[]{"delwarp", "Member", "shop"});
-        verify(adminActions).setWarp(islandId, "shop", WORLD, 1, 2, 3, 0, 0);
+        verify(adminActions).setWarp(islandId, "shop", location);
         verify(adminActions).deleteWarp(islandId, "shop");
     }
 

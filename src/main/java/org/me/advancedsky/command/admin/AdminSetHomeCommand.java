@@ -72,12 +72,6 @@ public class AdminSetHomeCommand implements SubCommand, AsyncTabComplete {
         String homeName = args[2];
 
         Location loc = player.getLocation();
-        String worldName = loc.getWorld().getName();
-        double x = loc.getX();
-        double y = loc.getY();
-        double z = loc.getZ();
-        float yaw = loc.getYaw();
-        float pitch = loc.getPitch();
 
         api.getPlayerUuid(homePlayerName).thenCompose(targetUuidOpt -> {
             if (targetUuidOpt.isEmpty()) {
@@ -85,7 +79,7 @@ public class AdminSetHomeCommand implements SubCommand, AsyncTabComplete {
                 return CompletableFuture.completedFuture(null);
             }
 
-            return api.admin(sender).setHome(targetUuidOpt.get(), homeName, worldName, x, y, z, yaw, pitch).thenRun(() -> sender.sendMessage(config.getAdminSetHomeSuccessMessage(homePlayerName, homeName)));
+            return api.admin(sender).setHome(targetUuidOpt.get(), homeName, loc).thenRun(() -> sender.sendMessage(config.getAdminSetHomeSuccessMessage(homePlayerName, homeName)));
         }).exceptionally(ex -> {
             Throwable cause = ex.getCause();
             if (cause instanceof LocationNotInIslandException) {

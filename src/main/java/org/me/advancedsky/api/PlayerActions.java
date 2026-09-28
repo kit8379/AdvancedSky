@@ -1,5 +1,6 @@
 package org.me.advancedsky.api;
 
+import org.bukkit.Location;
 import org.me.advancedsky.island.*;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.model.Invitation;
@@ -168,8 +169,11 @@ public final class PlayerActions {
 
     // ---- homes and warps --------------------------------------------------------------------
 
-    public CompletableFuture<Void> setHome(String homeName, String worldName, double x, double y, double z, float yaw, float pitch) {
-        return homeHandler.setHome(actor, playerUuid, homeName, worldName, x, y, z, yaw, pitch);
+    /**
+     * At a location on this player's own island, on the server hosting it.
+     */
+    public CompletableFuture<Void> setHome(String homeName, Location location) {
+        return homeHandler.setHome(actor, playerUuid, homeName, location);
     }
 
     public CompletableFuture<Void> deleteHome(String homeName) {
@@ -180,8 +184,11 @@ public final class PlayerActions {
         return homeHandler.home(playerUuid, homeName, playerUuid);
     }
 
-    public CompletableFuture<Void> setWarp(String warpName, String worldName, double x, double y, double z, float yaw, float pitch) {
-        return ownIsland().thenCompose(islandUuid -> warpHandler.setWarp(actor, islandUuid, warpName, worldName, x, y, z, yaw, pitch));
+    /**
+     * At a location on this player's own island, on the server hosting it.
+     */
+    public CompletableFuture<Void> setWarp(String warpName, Location location) {
+        return ownIsland().thenCompose(islandUuid -> warpHandler.setWarp(actor, islandUuid, warpName, location));
     }
 
     public CompletableFuture<Void> deleteWarp(String warpName) {
@@ -198,10 +205,11 @@ public final class PlayerActions {
     // ---- world ------------------------------------------------------------------------------
 
     /**
-     * Re-biome a chunk of this player's own island world; any other world is refused.
+     * Re-biome the chunk holding the location, which must be on this player's own island, on the
+     * server hosting it.
      */
-    public CompletableFuture<Void> applyBiome(String worldName, int chunkX, int chunkZ, String biomeName) {
-        return biomeHandler.applyPlayerChunkBiome(playerUuid, worldName, chunkX, chunkZ, biomeName);
+    public CompletableFuture<Void> applyBiome(Location location, String biomeName) {
+        return biomeHandler.applyPlayerChunkBiome(playerUuid, location, biomeName);
     }
 
     // ---- upgrades ---------------------------------------------------------------------------

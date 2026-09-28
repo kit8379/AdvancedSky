@@ -247,7 +247,7 @@ messages:
   player-biome-change-success: "<green>Biome changed to <yellow>{biome}"
   player-biome-must-in-own-island: "<red>You must be in your own island to use this command"
 
-  admin-biome-must-in-island: "<red>You must be standing in an island world to use this command"
+  admin-biome-must-in-island: "<red>You must be standing in the island world to use this command"
   admin-biome-change-success: "<green>Chunk biome changed to <yellow>{biome}"
 
   # ================================================================================================================

@@ -1,5 +1,6 @@
 package org.me.advancedsky.island;
 
+import org.bukkit.Location;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cluster.OnlinePlayerRegistry;
 import org.me.advancedsky.config.ConfigHandler;
@@ -38,13 +39,13 @@ public class HomeHandler {
      * Sets a home at a location on this server, which must lie in the area of the player's own
      * island: in the island world of the server hosting it.
      */
-    public CompletableFuture<Void> setHome(Actor actor, UUID playerUuid, String homeName, String worldName, double x, double y, double z, float yaw, float pitch) {
+    public CompletableFuture<Void> setHome(Actor actor, UUID playerUuid, String homeName, Location location) {
         return CompletableFuture.supplyAsync(() -> {
             UUID islandUuid = database.getIslandUuid(playerUuid).orElseThrow(IslandDoesNotExistException::new);
 
             String host = database.getIslandServer(islandUuid).orElseThrow(IslandDoesNotExistException::new);
             int slot = database.getIslandSlot(islandUuid).orElseThrow(IslandDoesNotExistException::new);
-            if (!host.equals(config.getServerName()) || !worldName.equals(config.getIslandWorldName()) || !islandGrid.isInArea(slot, x, z)) {
+            if (!host.equals(config.getServerName()) || location.getWorld() == null || !location.getWorld().getName().equals(config.getIslandWorldName()) || !islandGrid.isInArea(slot, location.getX(), location.getZ())) {
                 throw new LocationNotInIslandException();
             }
 
@@ -53,7 +54,7 @@ public class HomeHandler {
                 throw new HomeNameNotLegalException();
             }
 
-            String homeLocation = x + "," + y + "," + z + "," + yaw + "," + pitch;
+            String homeLocation = location.getX() + "," + location.getY() + "," + location.getZ() + "," + location.getYaw() + "," + location.getPitch();
 
             return islandDistributor.setHome(actor, islandUuid, playerUuid, normalizedHomeName, homeLocation);
         }, plugin.getBukkitAsyncExecutor()).thenCompose(future -> future);

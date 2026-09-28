@@ -27,7 +27,8 @@ demand; AdvancedSky keeps every island of a server in one pre-loaded world, on a
   reaches the player.
 - **One pre-loaded island world per server.** Islands sit on a square spiral grid; the slot
   number in MySQL maps to a position, so no coordinates are stored. Each island server keeps a
-  snapshot of all its islands, loaded at startup, for the listeners to read.
+  snapshot of all its islands, read in one pass at startup before anyone can join, for the
+  listeners to read.
 - **Borders per player.** NewSky's per-world border becomes a border sent to each player around
   the island they stand on, and a move out of the island boundary is refused.
 - **The starter island is a world, not a file.** Every island server also loads a template world
@@ -102,8 +103,6 @@ that lands on the island centre, `min` and `max` are opposite corners. `island.s
 island's `default` home, relative to its centre. Both can change at any time; they only affect
 islands created afterwards. `lobby.world-name` and `lobby.location` are where `/island lobby`
 and every forced removal (delete, lock, ban, expel) send players on the lobby servers.
-`island.island-unload-interval-seconds` is how long an island stays empty before its level
-scans and block limit counts stop; the next player to arrive starts them again.
 
 Island geometry is fixed in code (`IslandGrid`): centres are 2048 blocks apart and shifted by
 256 blocks so that every island sits in the middle of its own 512x512 region file (region index
@@ -207,9 +206,12 @@ These work as in NewSky, with the island area in place of the island world:
 
 - `island-size` is the island width: the protection boundary, each player's border and the area
   the level scan and entity limits cover, centred on the island.
-- Block limits ride the level scan and fail closed until an island's first scan; the scan
-  starts when the first player arrives on an island and stops once it has been empty for
-  `island.island-unload-interval-seconds`.
+- Level scans follow the players: the first player to arrive on an island starts them, they
+  repeat every few minutes while it has players, and the first scan after the last player left
+  is its last, so the stored level matches what they left behind.
+- Block limits ride the level scan. Their counts start with an island's first scan after a
+  restart (placing a capped block is refused until then) and are kept until the island is
+  deleted.
 - Entity limits count the entities inside the island boundary.
 
 ## PlaceholderAPI
@@ -260,8 +262,9 @@ api.admin(sender).deleteIsland(islandUuid);     // arbitrary target, sender's na
 ```
 
 `player(uuid)` can only act as that player on that player's own island; `admin(sender)` takes
-arbitrary targets. `getIslandUuidAt(location)` finds the island under a location among the
-islands hosted on the server it runs on. Completions can land on any thread; hop to the right
+arbitrary targets. Homes, warps and biomes are set at a `Location`, which must lie on the
+island on the server hosting it (admin biomes: any chunk). `getIslandUuidAt(location)` finds the
+island under a location among the islands hosted on the server it runs on. Completions can land on any thread; hop to the right
 region thread yourself before touching world, entity or inventory state.
 
 ## Building

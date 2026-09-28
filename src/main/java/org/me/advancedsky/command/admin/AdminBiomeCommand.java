@@ -2,6 +2,7 @@ package org.me.advancedsky.command.admin;
 
 import io.papermc.paper.registry.RegistryAccess;
 import io.papermc.paper.registry.RegistryKey;
+import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.me.advancedsky.AdvancedSky;
@@ -70,17 +71,15 @@ public class AdminBiomeCommand implements SubCommand, AsyncTabComplete {
         }
 
 
-        String worldName = player.getWorld().getName();
-        if (!worldName.equals(config.getIslandWorldName())) {
+        Location loc = player.getLocation();
+        if (!loc.getWorld().getName().equals(config.getIslandWorldName())) {
             player.sendMessage(config.getAdminBiomeMustInIslandMessage());
             return true;
         }
 
         String biomeName = args[1].toLowerCase(Locale.ROOT);
-        int chunkX = player.getLocation().getChunk().getX();
-        int chunkZ = player.getLocation().getChunk().getZ();
 
-        api.admin(sender).applyBiome(worldName, chunkX, chunkZ, biomeName).thenRun(() -> {
+        api.admin(sender).applyBiome(loc, biomeName).thenRun(() -> {
             player.sendMessage(config.getAdminBiomeChangeSuccessMessage(biomeName));
         }).exceptionally(ex -> {
             Throwable cause = ex.getCause();

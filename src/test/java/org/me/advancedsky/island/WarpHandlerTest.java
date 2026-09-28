@@ -2,6 +2,7 @@ package org.me.advancedsky.island;
 
 import com.zaxxer.hikari.HikariDataSource;
 import org.bukkit.Location;
+import org.bukkit.World;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,6 +35,8 @@ import static org.mockito.Mockito.*;
 class WarpHandlerTest {
     private static final String WORLD = "islands";
     private final IslandGrid grid = new IslandGrid(64);
+    private final World islandWorld = world(WORLD);
+    private final World otherWorld = world("world");
     private final UUID island = UUID.randomUUID();
     private final UUID owner = UUID.randomUUID();
     private final UUID member = UUID.randomUUID();
@@ -84,7 +87,7 @@ class WarpHandlerTest {
         players = mock(OnlinePlayerRegistry.class);
         snapshot = new IslandSnapshot(plugin, database, grid);
         snapshot.load(island).join();
-        operator = new IslandOperator(plugin, database, null, null, snapshot, "test");
+        operator = new IslandOperator(plugin, database, null, null, snapshot, null, "test");
         when(distributor.setWarp(any(), any(), anyString(), anyString())).thenAnswer(call ->
                 operator.setWarp(call.getArgument(0), call.getArgument(1), call.getArgument(2), call.getArgument(3)));
         when(distributor.deleteWarp(any(), any(), anyString())).thenAnswer(call ->
@@ -150,7 +153,7 @@ class WarpHandlerTest {
                 () -> database.deleteWarpPoint(new Actor.Player(visitor), island, "shop"));
         assertThrows(IslandDoesNotExistException.class,
                 () -> database.updateWarpPoint(new Actor.Player(UUID.randomUUID()), island, "shop", "changed"));
-        handler.setWarp(admin, island, "shop", WORLD, 5, 70, 3, 0, 0).join();
+        handler.setWarp(admin, island, "shop", new Location(islandWorld, 5, 70, 3)).join();
         assertEquals("5.0,70.0,3.0,0.0,0.0", database.getIslandWarps(island).get("shop"));
         handler.delWarp(admin, island, "shop").join();
         assertTrue(database.getIslandWarps(island).isEmpty());
@@ -159,12 +162,12 @@ class WarpHandlerTest {
     @Test
     void wrongWorldAndInvalidNameDoNotWriteEvenForAdmin() {
         assertFailure(LocationNotInIslandException.class,
-                handler.setWarp(admin, island, "shop", "world", 1, 2, 3, 0, 0));
+                handler.setWarp(admin, island, "shop", new Location(otherWorld, 1, 2, 3)));
         Location otherIsland = grid.center(null, 1);
         assertFailure(LocationNotInIslandException.class,
-                handler.setWarp(admin, island, "shop", WORLD, otherIsland.getX(), 2, otherIsland.getZ(), 0, 0));
+                handler.setWarp(admin, island, "shop", new Location(islandWorld, otherIsland.getX(), 2, otherIsland.getZ())));
         assertFailure(WarpNameNotLegalException.class,
-                handler.setWarp(new Actor.Player(owner), island, "bad name", WORLD, 1, 2, 3, 0, 0));
+                handler.setWarp(new Actor.Player(owner), island, "bad name", new Location(islandWorld, 1, 2, 3)));
         assertTrue(database.getIslandWarps(island).isEmpty());
     }
 
@@ -225,9 +228,9 @@ class WarpHandlerTest {
 
     @Test
     void completedHomeAndWarpWritesRefreshOnlyDefaultRespawnPoints() {
-        homes.setHome(new Actor.Player(owner), owner, "DEFAULT", WORLD, 1, 70, 3, 45, 10).join();
-        homes.setHome(new Actor.Player(member), member, "default", WORLD, 2, 70, 3, 0, 0).join();
-        homes.setHome(new Actor.Player(owner), owner, "mine", WORLD, 99, 70, 3, 0, 0).join();
+        homes.setHome(new Actor.Player(owner), owner, "DEFAULT", new Location(islandWorld, 1, 70, 3, 45, 10)).join();
+        homes.setHome(new Actor.Player(member), member, "default", new Location(islandWorld, 2, 70, 3)).join();
+        homes.setHome(new Actor.Player(owner), owner, "mine", new Location(islandWorld, 99, 70, 3)).join();
         set(owner, "default", 4);
         set(member, "shop", 99);
 
@@ -235,7 +238,7 @@ class WarpHandlerTest {
         assertEquals("4.0,70.0,3.0,0.0,0.0", snapshot.get(island).getDefaultWarp());
         assertThrows(UnsupportedOperationException.class, () -> snapshot.get(island).getDefaultHomes().clear());
 
-        homes.setHome(new Actor.Player(member), member, "default", WORLD, 5, 70, 3, 0, 0).join();
+        homes.setHome(new Actor.Player(member), member, "default", new Location(islandWorld, 5, 70, 3)).join();
         set(member, "default", 6);
         assertEquals("5.0,70.0,3.0,0.0,0.0", snapshot.get(island).getDefaultHomes().get(member));
         assertEquals("6.0,70.0,3.0,0.0,0.0", snapshot.get(island).getDefaultWarp());
@@ -251,7 +254,7 @@ class WarpHandlerTest {
 
     @Test
     void newMembersDefaultHomeIsIncludedByMembershipSnapshotReload() {
-        homes.setHome(new Actor.Player(owner), owner, "default", WORLD, 1, 70, 3, 0, 0).join();
+        homes.setHome(new Actor.Player(owner), owner, "default", new Location(islandWorld, 1, 70, 3)).join();
         UUID newMember = UUID.randomUUID();
         operator.addMember(new Actor.Player(newMember), island, newMember, "member").join();
         assertEquals("1.0,70.0,3.0,0.0,0.0", snapshot.get(island).getDefaultHomes().get(newMember));
@@ -259,7 +262,7 @@ class WarpHandlerTest {
     }
 
     private void set(UUID player, String name, double x) {
-        handler.setWarp(new Actor.Player(player), island, name, WORLD, x, 70, 3, 0, 0).join();
+        handler.setWarp(new Actor.Player(player), island, name, new Location(islandWorld, x, 70, 3)).join();
     }
 
     private void assertFailure(Class<? extends Throwable> type, CompletableFuture<?> result) {
@@ -271,6 +274,12 @@ class WarpHandlerTest {
             for (int i = 0; i < args.length; i++) statement.setString(i + 1, args[i].toString());
             statement.execute();
         }
+    }
+
+    private static World world(String name) {
+        World world = mock(World.class);
+        when(world.getName()).thenReturn(name);
+        return world;
     }
 
     private void field(String name, Object value) throws Exception {

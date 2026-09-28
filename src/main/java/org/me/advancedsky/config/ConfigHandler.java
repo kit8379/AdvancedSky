@@ -347,10 +347,6 @@ public class ConfigHandler {
         return upgrades.getDouble("upgrades." + upgradeId + "." + level + ".price");
     }
 
-    public int getIslandUnloadInterval() {
-        return config.getInt("island.island-unload-interval-seconds");
-    }
-
     public String getBaseCommandMode() {
         return config.getString("command.base-command-mode");
     }

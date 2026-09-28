@@ -26,7 +26,7 @@ import org.me.advancedsky.snapshot.IslandSnapshot;
 import java.util.UUID;
 
 /**
- * Enforces limits.yml on island worlds. Runs after protection has had its say, so a placement
+ * Enforces limits.yml on islands. Runs after protection has had its say, so a placement
  * outside the border or by a non-member is already cancelled here. Break and burn release a
  * block's count; anything else that removes blocks is caught up by the next level scan.
  */

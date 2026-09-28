@@ -2,7 +2,7 @@ package org.me.advancedsky.database;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import org.bukkit.Location;
+import org.bukkit.util.BlockVector;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.*;
@@ -342,19 +342,6 @@ public class DatabaseHandler {
                 result.put(rs.getString("server"), rs.getInt("island_count"));
             }
             return result;
-        });
-    }
-
-    /**
-     * Islands hosted on the given server.
-     */
-    public Set<UUID> getIslandUuidsByServer(String server) {
-        return executeQuery("SELECT island_uuid FROM " + prefix + "islands WHERE server = ?", stmt -> stmt.setString(1, server), rs -> {
-            Set<UUID> result = new HashSet<>();
-            while (rs.next()) {
-                result.add(parseRequiredUuid(rs.getString("island_uuid"), "islands.island_uuid"));
-            }
-            return result.isEmpty() ? Set.of() : Set.copyOf(result);
         });
     }
 
@@ -994,91 +981,105 @@ public class DatabaseHandler {
     }
 
     public Island getIslandSnapshot(UUID islandUuid) {
-        return withConnection(connection -> {
-            String islandSql = "SELECT slot, `lock`, pvp FROM " + prefix + "islands WHERE island_uuid = ? LIMIT 1";
-            int[] islandData = executeQuery(connection, islandSql, stmt -> {
-                stmt.setString(1, islandUuid.toString());
-            }, rs -> {
-                if (!rs.next()) {
-                    return null;
-                }
-                return new int[]{rs.getInt("slot"), rs.getBoolean("lock") ? 1 : 0, rs.getBoolean("pvp") ? 1 : 0};
-            });
+        return withConnection(connection -> getIslandSnapshots(connection, "i.island_uuid = ?", stmt -> stmt.setString(1, islandUuid.toString())).get(islandUuid));
+    }
 
-            if (islandData == null) {
-                return null;
+    /**
+     * Every island hosted on the server, read in one pass: an island server keeps all of them in
+     * its snapshot for good.
+     */
+    public Map<UUID, Island> getIslandSnapshotsByServer(String server) {
+        return withConnection(connection -> getIslandSnapshots(connection, "i.server = ?", stmt -> stmt.setString(1, server)));
+    }
+
+    /**
+     * Snapshots of the islands the filter selects, a condition on the islands table aliased
+     * {@code i}. Each table is read once for all of them.
+     */
+    private Map<UUID, Island> getIslandSnapshots(Connection connection, String filter, PreparedStatementConsumer binder) throws SQLException {
+        Map<UUID, int[]> islandData = executeQuery(connection, "SELECT i.island_uuid, i.slot, i.`lock`, i.pvp FROM " + prefix + "islands i WHERE " + filter, binder, rs -> {
+            Map<UUID, int[]> result = new LinkedHashMap<>();
+            while (rs.next()) {
+                result.put(parseRequiredUuid(rs.getString("island_uuid"), "islands.island_uuid"), new int[]{rs.getInt("slot"), rs.getBoolean("lock") ? 1 : 0, rs.getBoolean("pvp") ? 1 : 0});
             }
-            int slot = islandData[0];
-            boolean lock = islandData[1] == 1;
-            boolean pvp = islandData[2] == 1;
+            return result;
+        });
 
-            UUID ownerUuid = null;
-            Set<UUID> members = new LinkedHashSet<>();
+        if (islandData.isEmpty()) {
+            return Map.of();
+        }
 
-            String playersSql = "SELECT player_uuid, role FROM " + prefix + "island_players WHERE island_uuid = ?";
-            Map<UUID, String> players = executeQuery(connection, playersSql, stmt -> {
-                stmt.setString(1, islandUuid.toString());
-            }, rs -> {
-                Map<UUID, String> result = new LinkedHashMap<>();
-                while (rs.next()) {
-                    UUID playerUuid = parseRequiredUuid(rs.getString("player_uuid"), "island_players.player_uuid");
-                    result.put(playerUuid, rs.getString("role"));
-                }
-                return result;
-            });
-
-            for (Map.Entry<UUID, String> entry : players.entrySet()) {
-                if ("owner".equalsIgnoreCase(entry.getValue())) {
-                    ownerUuid = entry.getKey();
-                } else if ("member".equalsIgnoreCase(entry.getValue())) {
-                    members.add(entry.getKey());
+        Map<UUID, UUID> owners = new HashMap<>();
+        Map<UUID, Set<UUID>> members = new HashMap<>();
+        executeQuery(connection, "SELECT p.island_uuid, p.player_uuid, p.role FROM " + prefix + "island_players p JOIN " + prefix + "islands i ON i.island_uuid = p.island_uuid WHERE " + filter, binder, rs -> {
+            while (rs.next()) {
+                UUID islandUuid = parseRequiredUuid(rs.getString("island_uuid"), "island_players.island_uuid");
+                UUID playerUuid = parseRequiredUuid(rs.getString("player_uuid"), "island_players.player_uuid");
+                String role = rs.getString("role");
+                if ("owner".equalsIgnoreCase(role)) {
+                    owners.put(islandUuid, playerUuid);
+                } else if ("member".equalsIgnoreCase(role)) {
+                    members.computeIfAbsent(islandUuid, key -> new LinkedHashSet<>()).add(playerUuid);
                 }
             }
+            return null;
+        });
 
+        Map<UUID, Set<UUID>> coops = readPlayerSets(connection, "SELECT c.island_uuid, c.cooped_player AS player FROM " + prefix + "island_coops c JOIN " + prefix + "islands i ON i.island_uuid = c.island_uuid WHERE " + filter, binder, "island_coops");
+        Map<UUID, Set<UUID>> bans = readPlayerSets(connection, "SELECT b.island_uuid, b.banned_player AS player FROM " + prefix + "island_bans b JOIN " + prefix + "islands i ON i.island_uuid = b.island_uuid WHERE " + filter, binder, "island_bans");
+
+        Map<UUID, Map<UUID, String>> defaultHomes = new HashMap<>();
+        executeQuery(connection, "SELECT h.island_uuid, h.player_uuid, h.home_location FROM " + prefix + "island_homes h JOIN " + prefix + "islands i ON i.island_uuid = h.island_uuid WHERE h.home_name = 'default' AND " + filter, binder, rs -> {
+            while (rs.next()) {
+                UUID islandUuid = parseRequiredUuid(rs.getString("island_uuid"), "island_homes.island_uuid");
+                defaultHomes.computeIfAbsent(islandUuid, key -> new LinkedHashMap<>()).put(parseRequiredUuid(rs.getString("player_uuid"), "island_homes.player_uuid"), rs.getString("home_location"));
+            }
+            return null;
+        });
+
+        Map<UUID, String> defaultWarps = new HashMap<>();
+        executeQuery(connection, "SELECT w.island_uuid, w.warp_location FROM " + prefix + "island_warps w JOIN " + prefix + "islands i ON i.island_uuid = w.island_uuid WHERE w.warp_name = 'default' AND " + filter, binder, rs -> {
+            while (rs.next()) {
+                defaultWarps.put(parseRequiredUuid(rs.getString("island_uuid"), "island_warps.island_uuid"), rs.getString("warp_location"));
+            }
+            return null;
+        });
+
+        // An island with no stored level for an upgrade is at the lowest configured one.
+        Map<UUID, Map<String, Integer>> upgradeLevels = new HashMap<>();
+        executeQuery(connection, "SELECT u.island_uuid, u.upgrade_id, u.level FROM " + prefix + "island_upgrades u JOIN " + prefix + "islands i ON i.island_uuid = u.island_uuid WHERE u.upgrade_id IN ('island-size', 'generator-rates') AND " + filter, binder, rs -> {
+            while (rs.next()) {
+                upgradeLevels.computeIfAbsent(parseRequiredUuid(rs.getString("island_uuid"), "island_upgrades.island_uuid"), key -> new HashMap<>()).put(rs.getString("upgrade_id"), rs.getInt("level"));
+            }
+            return null;
+        });
+        int defaultSizeLevel = config.getUpgradeLevels("island-size").getFirst();
+        int defaultGeneratorLevel = config.getUpgradeLevels("generator-rates").getFirst();
+
+        Map<UUID, Island> result = new LinkedHashMap<>();
+        for (Map.Entry<UUID, int[]> entry : islandData.entrySet()) {
+            UUID islandUuid = entry.getKey();
+            int[] data = entry.getValue();
+
+            UUID ownerUuid = owners.get(islandUuid);
             if (ownerUuid == null) {
                 throw new IllegalStateException("Island owner does not exist in database for island: " + islandUuid);
             }
 
-            String coopsSql = "SELECT cooped_player FROM " + prefix + "island_coops WHERE island_uuid = ?";
-            Set<UUID> coops = executeQuery(connection, coopsSql, stmt -> {
-                stmt.setString(1, islandUuid.toString());
-            }, rs -> {
-                Set<UUID> result = new LinkedHashSet<>();
-                while (rs.next()) {
-                    result.add(parseRequiredUuid(rs.getString("cooped_player"), "island_coops.cooped_player"));
-                }
-                return result;
-            });
+            Map<String, Integer> levels = upgradeLevels.getOrDefault(islandUuid, Map.of());
+            result.put(islandUuid, new Island(islandUuid, data[0], data[1] == 1, data[2] == 1, ownerUuid, members.getOrDefault(islandUuid, Set.of()), coops.getOrDefault(islandUuid, Set.of()), bans.getOrDefault(islandUuid, Set.of()), defaultHomes.getOrDefault(islandUuid, Map.of()), defaultWarps.get(islandUuid), levels.getOrDefault("island-size", defaultSizeLevel), levels.getOrDefault("generator-rates", defaultGeneratorLevel)));
+        }
 
-            String bansSql = "SELECT banned_player FROM " + prefix + "island_bans WHERE island_uuid = ?";
-            Set<UUID> bans = executeQuery(connection, bansSql, stmt -> {
-                stmt.setString(1, islandUuid.toString());
-            }, rs -> {
-                Set<UUID> result = new LinkedHashSet<>();
-                while (rs.next()) {
-                    result.add(parseRequiredUuid(rs.getString("banned_player"), "island_bans.banned_player"));
-                }
-                return result;
-            });
+        return result;
+    }
 
-            Map<UUID, String> defaultHomes = executeQuery(connection, "SELECT player_uuid, home_location FROM " + prefix + "island_homes WHERE island_uuid = ? AND home_name = 'default'", stmt -> {
-                stmt.setString(1, islandUuid.toString());
-            }, rs -> {
-                Map<UUID, String> result = new LinkedHashMap<>();
-                while (rs.next()) {
-                    result.put(parseRequiredUuid(rs.getString("player_uuid"), "island_homes.player_uuid"), rs.getString("home_location"));
-                }
-                return result;
-            });
-
-            String defaultWarp = executeQuery(connection, "SELECT warp_location FROM " + prefix + "island_warps WHERE island_uuid = ? AND warp_name = 'default'", stmt -> {
-                stmt.setString(1, islandUuid.toString());
-            }, rs -> rs.next() ? rs.getString("warp_location") : null);
-
-            int sizeLevel = getIslandUpgradeLevel(connection, islandUuid, "island-size");
-            int generatorLevel = getIslandUpgradeLevel(connection, islandUuid, "generator-rates");
-
-            return new Island(islandUuid, slot, lock, pvp, ownerUuid, members.isEmpty() ? Set.of() : Set.copyOf(members), coops.isEmpty() ? Set.of() : Set.copyOf(coops), bans.isEmpty() ? Set.of() : Set.copyOf(bans), defaultHomes, defaultWarp, sizeLevel, generatorLevel);
+    private Map<UUID, Set<UUID>> readPlayerSets(Connection connection, String sql, PreparedStatementConsumer binder, String table) throws SQLException {
+        return executeQuery(connection, sql, binder, rs -> {
+            Map<UUID, Set<UUID>> result = new HashMap<>();
+            while (rs.next()) {
+                result.computeIfAbsent(parseRequiredUuid(rs.getString("island_uuid"), table + ".island_uuid"), key -> new LinkedHashSet<>()).add(parseRequiredUuid(rs.getString("player"), table + ".player"));
+            }
+            return result;
         });
     }
 
@@ -1111,10 +1112,10 @@ public class DatabaseHandler {
 
     /**
      * Where a new island's players arrive: {@code island.spawn} from the island's centre block.
-     * Only the centre's coordinates are needed, as homes are stored without a world.
+     * Homes are stored without a world, so the centre's coordinates are enough.
      */
     private String getDefaultHomePoint(int slot) {
-        Location center = islandGrid.center(null, slot);
+        BlockVector center = islandGrid.centerOf(slot);
         return (center.getX() + config.getIslandSpawnX()) + "," + (center.getY() + config.getIslandSpawnY()) + "," + (center.getZ() + config.getIslandSpawnZ()) + "," + config.getIslandSpawnYaw() + "," + config.getIslandSpawnPitch();
     }
 

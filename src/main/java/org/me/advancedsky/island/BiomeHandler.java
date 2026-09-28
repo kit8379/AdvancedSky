@@ -3,6 +3,7 @@ package org.me.advancedsky.island;
 import io.papermc.paper.registry.RegistryAccess;
 import io.papermc.paper.registry.RegistryKey;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Registry;
 import org.bukkit.World;
@@ -36,14 +37,18 @@ public final class BiomeHandler {
         this.islandGrid = islandGrid;
     }
 
-    public CompletableFuture<Void> applyPlayerChunkBiome(UUID playerUuid, String worldName, int chunkX, int chunkZ, String biomeName) {
+    /**
+     * Re-biomes the chunk holding the location, which must lie in the player's own island area on
+     * the server hosting it.
+     */
+    public CompletableFuture<Void> applyPlayerChunkBiome(UUID playerUuid, Location location, String biomeName) {
         return CompletableFuture.runAsync(() -> {
             // Players may only re-biome their own island; admins use applyChunkBiome directly.
             UUID islandUuid = database.getIslandUuid(playerUuid).orElseThrow(IslandDoesNotExistException::new);
 
             String host = database.getIslandServer(islandUuid).orElseThrow(IslandDoesNotExistException::new);
             int slot = database.getIslandSlot(islandUuid).orElseThrow(IslandDoesNotExistException::new);
-            if (!host.equals(config.getServerName()) || !worldName.equals(config.getIslandWorldName()) || !islandGrid.isInArea(slot, (chunkX << 4) + 8, (chunkZ << 4) + 8)) {
+            if (!host.equals(config.getServerName()) || location.getWorld() == null || !location.getWorld().getName().equals(config.getIslandWorldName()) || !islandGrid.isInArea(slot, location.getX(), location.getZ())) {
                 throw new LocationNotInIslandException();
             }
 
@@ -57,14 +62,21 @@ public final class BiomeHandler {
             if (!allowed.contains(key)) {
                 throw new BiomeNotUnlockedException(String.join(", ", allowed));
             }
-        }, plugin.getBukkitAsyncExecutor()).thenCompose(v -> applyChunkBiome(worldName, chunkX, chunkZ, biomeName));
+        }, plugin.getBukkitAsyncExecutor()).thenCompose(v -> applyChunkBiome(location, biomeName));
     }
 
-    public CompletableFuture<Void> applyChunkBiome(String worldName, int chunkX, int chunkZ, String biomeName) {
-        World world = Bukkit.getWorld(worldName);
+    /**
+     * Re-biomes the chunk holding the location. Island areas are chunk aligned, so a chunk lies
+     * wholly inside or outside one.
+     */
+    public CompletableFuture<Void> applyChunkBiome(Location location, String biomeName) {
+        World world = location.getWorld();
         if (world == null) {
             return CompletableFuture.failedFuture(new WorldNotFoundException());
         }
+
+        int chunkX = location.getBlockX() >> 4;
+        int chunkZ = location.getBlockZ() >> 4;
 
         Biome biome = parseBiome(biomeName);
         if (biome == null) {
@@ -97,14 +109,15 @@ public final class BiomeHandler {
         return applied;
     }
 
+    /**
+     * Biome keys are lowercase; {@code plains}, {@code PLAINS} and {@code minecraft:plains} all
+     * name the same biome. Null for anything that is not a valid key or not a biome.
+     */
     private Biome parseBiome(String biomeName) {
         Registry<@org.jetbrains.annotations.NotNull Biome> biomeRegistry = RegistryAccess.registryAccess().getRegistry(RegistryKey.BIOME);
 
-        NamespacedKey key = NamespacedKey.fromString(biomeName);
-        if (key == null) {
-            key = NamespacedKey.minecraft(biomeName);
-        }
-
-        return biomeRegistry.get(key);
+        // fromString defaults the namespace to minecraft and returns null instead of throwing.
+        NamespacedKey key = NamespacedKey.fromString(biomeName.toLowerCase(Locale.ROOT));
+        return key == null ? null : biomeRegistry.get(key);
     }
 }

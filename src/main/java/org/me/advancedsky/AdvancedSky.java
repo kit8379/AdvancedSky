@@ -25,7 +25,6 @@ import org.me.advancedsky.network.IslandDistributor;
 import org.me.advancedsky.network.IslandOperator;
 import org.me.advancedsky.placeholder.AdvancedSkyExpansion;
 import org.me.advancedsky.redis.RedisHandler;
-import org.me.advancedsky.scheduler.IslandUnloadScheduler;
 import org.me.advancedsky.scheduler.LevelUpdateScheduler;
 import org.me.advancedsky.snapshot.IslandSnapshot;
 import org.me.advancedsky.teleport.TeleportHandler;
@@ -33,7 +32,6 @@ import org.me.advancedsky.thread.BukkitAsyncExecutor;
 import org.me.advancedsky.thread.GlobalRegionExecutor;
 import org.me.advancedsky.util.ServerUtil;
 import org.me.advancedsky.uuid.UuidHandler;
-import org.me.advancedsky.world.WorldActivityHandler;
 import org.me.advancedsky.world.WorldHandler;
 
 import java.lang.reflect.Constructor;
@@ -47,7 +45,6 @@ public class AdvancedSky extends JavaPlugin {
     private RedisHandler redisHandler;
     private DatabaseHandler databaseHandler;
     private OnlinePlayerRegistry onlinePlayerRegistry;
-    private IslandUnloadScheduler islandUnloadScheduler;
     private LevelUpdateScheduler levelUpdateScheduler;
     private CrossServerMessenger crossServerMessenger;
     private LimitHandler limitHandler;
@@ -115,6 +112,11 @@ public class AdvancedSky extends JavaPlugin {
 
             info("Loading island snapshot");
             IslandSnapshot islandSnapshot = new IslandSnapshot(this, databaseHandler, islandGrid);
+            // Islands never leave their host, so its snapshot holds all of them for good, loaded before
+            // any player can join or any request arrive.
+            if (!config.isLobbyOnly()) {
+                islandSnapshot.loadAll(serverID);
+            }
             info("Island snapshot loaded");
 
             info("Starting world handler");
@@ -127,7 +129,8 @@ public class AdvancedSky extends JavaPlugin {
 
             info("Starting handlers for island remote requests");
             crossServerMessenger = new CrossServerMessenger(this, redisHandler, serverID);
-            IslandOperator islandOperator = new IslandOperator(this, databaseHandler, worldHandler, teleportHandler, islandSnapshot, serverID);
+            limitHandler = new LimitHandler(this, config, islandGrid);
+            IslandOperator islandOperator = new IslandOperator(this, databaseHandler, worldHandler, teleportHandler, islandSnapshot, limitHandler, serverID);
             IslandDistributor islandDistributor = new IslandDistributor(this, databaseHandler, islandOperator, onlinePlayerRegistry, crossServerMessenger, config.getIslandServerNames(), serverID);
             registerCrossServerHandlers(crossServerMessenger, islandOperator);
             info("All handlers for remote requests loaded");
@@ -141,7 +144,6 @@ public class AdvancedSky extends JavaPlugin {
             PlayerHandler playerHandler = new PlayerHandler(this, databaseHandler, islandDistributor, invitationStore, onlinePlayerRegistry);
             HomeHandler homeHandler = new HomeHandler(this, config, databaseHandler, islandDistributor, onlinePlayerRegistry, islandGrid);
             WarpHandler warpHandler = new WarpHandler(this, config, databaseHandler, islandDistributor, onlinePlayerRegistry, islandGrid);
-            limitHandler = new LimitHandler(this, config, islandGrid);
             levelHandler = new LevelHandler(this, config, databaseHandler, limitHandler, worldHandler, islandSnapshot, islandGrid);
             cobblestoneGeneratorHandler = new CobblestoneGeneratorHandler(this, config);
             BanHandler banHandler = new BanHandler(this, databaseHandler, islandDistributor);
@@ -151,7 +153,7 @@ public class AdvancedSky extends JavaPlugin {
             UpgradeHandler upgradeHandler = new UpgradeHandler(this, config, databaseHandler, islandDistributor, economyHandler);
             LobbyHandler lobbyHandler = new LobbyHandler(this, config, islandDistributor);
             UuidHandler uuidHandler = new UuidHandler(this, databaseHandler);
-            WorldActivityHandler worldActivityHandler = new WorldActivityHandler(this);
+            IslandActivityHandler islandActivityHandler = new IslandActivityHandler(this);
             info("All main handlers loaded");
 
             info("Starting plugin messaging");
@@ -159,8 +161,7 @@ public class AdvancedSky extends JavaPlugin {
             info("Plugin messaging loaded");
 
             info("Starting all schedulers for the plugin");
-            levelUpdateScheduler = new LevelUpdateScheduler(this, levelHandler);
-            islandUnloadScheduler = new IslandUnloadScheduler(this, config, worldActivityHandler, levelUpdateScheduler, limitHandler);
+            levelUpdateScheduler = new LevelUpdateScheduler(this, levelHandler, islandActivityHandler);
             info("All schedulers loaded");
 
             info("Starting API");
@@ -181,7 +182,7 @@ public class AdvancedSky extends JavaPlugin {
             info("Starting listeners");
             getServer().getPluginManager().registerEvents(new OnlinePlayersListener(this, onlinePlayerRegistry, serverID), this);
             getServer().getPluginManager().registerEvents(new IslandBorderListener(config, islandSnapshot, islandGrid), this);
-            getServer().getPluginManager().registerEvents(new WorldActivityListener(this, config, islandSnapshot, worldActivityHandler, levelUpdateScheduler), this);
+            getServer().getPluginManager().registerEvents(new IslandActivityListener(this, config, islandSnapshot, islandActivityHandler, levelUpdateScheduler), this);
             getServer().getPluginManager().registerEvents(new TeleportRequestListener(this, teleportHandler), this);
             getServer().getPluginManager().registerEvents(new IslandProtectionListener(config, islandSnapshot, islandGrid), this);
             getServer().getPluginManager().registerEvents(new IslandAccessListener(this, config, islandSnapshot), this);
@@ -214,18 +215,8 @@ public class AdvancedSky extends JavaPlugin {
             getServer().getPluginManager().registerEvents(asyncTabCompleteListener, this);
             info("All commands registered");
 
-            // Islands never leave their host, so its snapshot holds all of them for good. Loaded before
-            // players can join, as NewSky loads a snapshot before its island world opens: listeners
-            // fail closed on an island without one. A snapshot that fails to load stays unavailable.
-            if (!config.isLobbyOnly()) {
-                info("Loading the snapshots of the islands hosted here");
-                Set<UUID> hostedIslands = databaseHandler.getIslandUuidsByServer(serverID);
-                CompletableFuture.allOf(hostedIslands.stream().map(islandUuid -> CompletableFuture.supplyAsync(() -> islandSnapshot.load(islandUuid), bukkitAsyncExecutor).thenCompose(loaded -> loaded).exceptionally(error -> null)).toArray(CompletableFuture[]::new)).join();
-                info("Loaded the snapshots of " + hostedIslands.size() + " islands");
-            }
 
             crossServerMessenger.start();
-            islandUnloadScheduler.start();
             levelUpdateScheduler.start();
 
         } catch (Exception e) {
@@ -289,10 +280,6 @@ public class AdvancedSky extends JavaPlugin {
 
         if (levelUpdateScheduler != null) {
             levelUpdateScheduler.stop();
-        }
-
-        if (islandUnloadScheduler != null) {
-            islandUnloadScheduler.stop();
         }
 
         if (crossServerMessenger != null) {

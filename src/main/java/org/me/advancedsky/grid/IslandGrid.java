@@ -2,6 +2,7 @@ package org.me.advancedsky.grid;
 
 import org.bukkit.Location;
 import org.bukkit.World;
+import org.bukkit.util.BlockVector;
 
 /**
  * Maps an island slot to a position in the island world. Slots are unique across the whole
@@ -59,8 +60,17 @@ public final class IslandGrid {
      * Centre block of the island in the given slot.
      */
     public Location center(World world, int slot) {
+        BlockVector center = centerOf(slot);
+        return new Location(world, center.getBlockX(), center.getBlockY(), center.getBlockZ());
+    }
+
+    /**
+     * Coordinates of the centre block of the island in the given slot, the same in the island
+     * world of every server.
+     */
+    public BlockVector centerOf(int slot) {
         int[] cell = spiralCell(slot);
-        return new Location(world, cell[0] * SPACING + CENTER_OFFSET, height, cell[1] * SPACING + CENTER_OFFSET);
+        return new BlockVector(cell[0] * SPACING + CENTER_OFFSET, height, cell[1] * SPACING + CENTER_OFFSET);
     }
 
     /**
@@ -94,8 +104,9 @@ public final class IslandGrid {
     }
 
     /**
-     * Whether the block column lies inside the island boundary of the given size, as NewSky lays
-     * it out around an island world's origin: from -size/2 to size - size/2 - 1 of the centre.
+     * Whether the block column lies inside the island boundary of the given size: from -size/2 to
+     * size - size/2 - 1 blocks of the island centre, the layout NewSky's island border has around
+     * its world's origin.
      */
     public boolean isInsideIsland(int slot, int size, int blockX, int blockZ) {
         int[] cell = spiralCell(slot);

@@ -4,7 +4,10 @@ import io.papermc.paper.threadedregions.scheduler.GlobalRegionScheduler;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.Bukkit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.island.IslandActivityHandler;
 import org.me.advancedsky.island.LevelHandler;
 import org.me.advancedsky.thread.GlobalRegionExecutor;
 import org.mockito.ArgumentCaptor;
@@ -24,7 +27,8 @@ class LevelUpdateSchedulerTest {
     private final AdvancedSky plugin = mock(AdvancedSky.class);
     private final GlobalRegionScheduler globalScheduler = mock(GlobalRegionScheduler.class);
     private final LevelHandler levelHandler = mock(LevelHandler.class);
-    private final LevelUpdateScheduler scheduler = new LevelUpdateScheduler(plugin, levelHandler);
+    private final IslandActivityHandler activity = new IslandActivityHandler(plugin);
+    private final LevelUpdateScheduler scheduler = new LevelUpdateScheduler(plugin, levelHandler, activity);
 
     LevelUpdateSchedulerTest() {
         // The global region thread runs registrations and completions inline here.
@@ -33,47 +37,36 @@ class LevelUpdateSchedulerTest {
         when(plugin.getGlobalRegionExecutor()).thenReturn(global);
     }
 
-    @Test
-    void staleScanCompletionLeavesTheFreshRegistrationDueNow() {
-        CompletableFuture<Integer> staleScan = new CompletableFuture<>();
-        when(levelHandler.calIslandLevel(island)).thenReturn(staleScan, new CompletableFuture<>());
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void islandLeftBeforeItsScanStartedIsDroppedAfterThatScan(boolean scanSucceeds) {
+        CompletableFuture<Integer> scan = new CompletableFuture<>();
+        when(levelHandler.calIslandLevel(island)).thenReturn(scan, new CompletableFuture<>());
+        activity.playerEnter(island);
+        activity.playerLeave(island, System.currentTimeMillis() - 60_000L);
         Runnable tick = startAndCaptureTick();
 
         scheduler.registerIsland(island);
+        tick.run();
+        if (scanSucceeds) {
+            scan.complete(7);
+        } else {
+            scan.completeExceptionally(new IllegalStateException("Level scan failed"));
+        }
         tick.run();
         verify(levelHandler, times(1)).calIslandLevel(island);
 
-        // The island is unregistered mid-scan and registered again: a fresh entry is due for its first scan.
-        scheduler.unregisterIsland(island);
+        // Dropped, not merely rescheduled: registering again makes it due at the next poll.
         scheduler.registerIsland(island);
-
-        staleScan.complete(7);
         tick.run();
-
         verify(levelHandler, times(2)).calIslandLevel(island);
     }
 
     @Test
-    void staleScanFailureLeavesTheFreshRegistrationDueNow() {
-        CompletableFuture<Integer> staleScan = new CompletableFuture<>();
-        when(levelHandler.calIslandLevel(island)).thenReturn(staleScan, new CompletableFuture<>());
-        Runnable tick = startAndCaptureTick();
-
-        scheduler.registerIsland(island);
-        tick.run();
-        scheduler.unregisterIsland(island);
-        scheduler.registerIsland(island);
-
-        staleScan.completeExceptionally(new IllegalStateException("Level scan failed"));
-        tick.run();
-
-        verify(levelHandler, times(2)).calIslandLevel(island);
-    }
-
-    @Test
-    void ownCompletionStillReschedulesTheIsland() {
+    void occupiedIslandIsRescheduledAfterItsScan() {
         CompletableFuture<Integer> scan = new CompletableFuture<>();
         when(levelHandler.calIslandLevel(island)).thenReturn(scan);
+        activity.playerEnter(island);
         Runnable tick = startAndCaptureTick();
 
         scheduler.registerIsland(island);
@@ -81,7 +74,25 @@ class LevelUpdateSchedulerTest {
         scan.complete(7);
         tick.run();
 
-        // Rescheduled minutes ahead, so the next poll does not start another scan.
+        // Rescheduled minutes ahead: still scheduled, so registering again changes nothing.
+        scheduler.registerIsland(island);
+        tick.run();
+        verify(levelHandler, times(1)).calIslandLevel(island);
+    }
+
+    @Test
+    void registeringAnAlreadyScheduledIslandDoesNotResetIt() {
+        when(levelHandler.calIslandLevel(island)).thenReturn(new CompletableFuture<>());
+        activity.playerEnter(island);
+        Runnable tick = startAndCaptureTick();
+
+        scheduler.registerIsland(island);
+        scheduler.registerIsland(island);
+        tick.run();
+        // A second player arriving mid-scan does not queue a fresh scan behind the running one.
+        scheduler.registerIsland(island);
+        tick.run();
+
         verify(levelHandler, times(1)).calIslandLevel(island);
     }
 

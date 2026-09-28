@@ -18,7 +18,7 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Island upgrades: one level per island for each upgrade id in the config, bought with Vault
  * money and gated by island level. Limits are enforced inside database write transactions;
- * island size is applied by the host to its snapshot and world border.
+ * island size is applied by the host to its snapshot, and players see it through their border.
  */
 public class UpgradeHandler {
 

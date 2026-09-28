@@ -1,5 +1,6 @@
 package org.me.advancedsky.island;
 
+import org.bukkit.Location;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cluster.OnlinePlayerRegistry;
 import org.me.advancedsky.config.ConfigHandler;
@@ -34,11 +35,15 @@ public class WarpHandler {
         this.islandGrid = islandGrid;
     }
 
-    public CompletableFuture<Void> setWarp(Actor actor, UUID islandUuid, String warpName, String worldName, double x, double y, double z, float yaw, float pitch) {
+    /**
+     * Sets a warp at a location on this server, which must lie in the island's area: in the
+     * island world of the server hosting it.
+     */
+    public CompletableFuture<Void> setWarp(Actor actor, UUID islandUuid, String warpName, Location location) {
         return CompletableFuture.supplyAsync(() -> {
             String host = database.getIslandServer(islandUuid).orElseThrow(IslandDoesNotExistException::new);
             int slot = database.getIslandSlot(islandUuid).orElseThrow(IslandDoesNotExistException::new);
-            if (!host.equals(config.getServerName()) || !worldName.equals(config.getIslandWorldName()) || !islandGrid.isInArea(slot, x, z)) {
+            if (!host.equals(config.getServerName()) || location.getWorld() == null || !location.getWorld().getName().equals(config.getIslandWorldName()) || !islandGrid.isInArea(slot, location.getX(), location.getZ())) {
                 throw new LocationNotInIslandException();
             }
 
@@ -47,7 +52,7 @@ public class WarpHandler {
                 throw new WarpNameNotLegalException();
             }
 
-            String warpLocation = x + "," + y + "," + z + "," + yaw + "," + pitch;
+            String warpLocation = location.getX() + "," + location.getY() + "," + location.getZ() + "," + location.getYaw() + "," + location.getPitch();
 
             return islandDistributor.setWarp(actor, islandUuid, normalizedWarpName, warpLocation);
         }, plugin.getBukkitAsyncExecutor()).thenCompose(future -> future);

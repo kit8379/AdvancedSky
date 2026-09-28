@@ -74,12 +74,6 @@ public class AdminSetWarpCommand implements SubCommand, AsyncTabComplete {
         String warpName = args[2];
 
         Location loc = player.getLocation();
-        String worldName = loc.getWorld().getName();
-        double x = loc.getX();
-        double y = loc.getY();
-        double z = loc.getZ();
-        float yaw = loc.getYaw();
-        float pitch = loc.getPitch();
 
         api.getPlayerUuid(warpPlayerName).thenCompose(targetUuidOpt -> {
             if (targetUuidOpt.isEmpty()) {
@@ -89,7 +83,7 @@ public class AdminSetWarpCommand implements SubCommand, AsyncTabComplete {
 
             UUID targetUuid = targetUuidOpt.get();
 
-            return api.getIslandUuid(targetUuid).thenCompose(islandUuid -> api.admin(sender).setWarp(islandUuid, warpName, worldName, x, y, z, yaw, pitch)).thenRun(() -> sender.sendMessage(config.getAdminSetWarpSuccessMessage(warpPlayerName, warpName)));
+            return api.getIslandUuid(targetUuid).thenCompose(islandUuid -> api.admin(sender).setWarp(islandUuid, warpName, loc)).thenRun(() -> sender.sendMessage(config.getAdminSetWarpSuccessMessage(warpPlayerName, warpName)));
         }).exceptionally(ex -> {
             Throwable cause = ex.getCause();
             if (cause instanceof IslandDoesNotExistException) {

@@ -70,14 +70,8 @@ public class PlayerSetWarpCommand implements SubCommand, AsyncTabComplete {
         UUID playerUuid = player.getUniqueId();
 
         Location loc = player.getLocation();
-        String worldName = loc.getWorld().getName();
-        double x = loc.getX();
-        double y = loc.getY();
-        double z = loc.getZ();
-        float yaw = loc.getYaw();
-        float pitch = loc.getPitch();
 
-        api.player(playerUuid).setWarp(warpName, worldName, x, y, z, yaw, pitch).thenRun(() -> player.sendMessage(config.getPlayerSetWarpSuccessMessage(warpName))).exceptionally(ex -> {
+        api.player(playerUuid).setWarp(warpName, loc).thenRun(() -> player.sendMessage(config.getPlayerSetWarpSuccessMessage(warpName))).exceptionally(ex -> {
             Throwable cause = ex.getCause();
             if (cause instanceof LocationNotInIslandException || cause instanceof IslandDoesNotExistException) {
                 player.sendMessage(config.getPlayerMustInIslandSetWarpMessage());

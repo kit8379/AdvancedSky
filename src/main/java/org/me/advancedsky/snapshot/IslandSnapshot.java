@@ -66,6 +66,17 @@ public class IslandSnapshot {
         return slot < 0 ? null : islandsBySlot.get(slot);
     }
 
+    /**
+     * Loads every island hosted on the server in one read. Called once at startup, before any
+     * other load, mutation or listener can touch the snapshot.
+     */
+    public void loadAll(String server) {
+        database.getIslandSnapshotsByServer(server).forEach((islandUuid, island) -> {
+            islands.put(islandUuid, island);
+            islandsBySlot.put(island.getSlot(), islandUuid);
+        });
+    }
+
     public CompletableFuture<Void> load(UUID islandUuid) {
         long generation = nextLoadGeneration.incrementAndGet();
         loading.put(islandUuid, generation);
@@ -79,7 +90,7 @@ public class IslandSnapshot {
 
             if (island == null) {
                 islands.remove(islandUuid);
-                throw new IllegalStateException("Island org.me.advancedsky.snapshot does not exist: " + islandUuid);
+                throw new IllegalStateException("Island does not exist: " + islandUuid);
             }
 
             loading.compute(islandUuid, (key, current) -> {
@@ -97,7 +108,7 @@ public class IslandSnapshot {
         } catch (Throwable error) {
             if (loading.remove(islandUuid, generation)) {
                 dirty.put(islandUuid, Boolean.TRUE);
-                plugin.severe("Failed to load island org.me.advancedsky.snapshot: " + islandUuid, error);
+                plugin.severe("Failed to load island snapshot: " + islandUuid, error);
             }
 
             return CompletableFuture.failedFuture(error);
