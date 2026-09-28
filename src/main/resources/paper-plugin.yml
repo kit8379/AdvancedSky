@@ -5,3 +5,14 @@ loader: 'org.me.advancedsky.loader.AdvancedSkyLoader'
 api-version: '1.21'
 authors: [ kit8379 ]
 folia-supported: true
+
+dependencies:
+  server:
+    PlaceholderAPI:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    Vault:
+      load: BEFORE
+      required: true
+      join-classpath: true

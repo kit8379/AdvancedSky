@@ -16,8 +16,7 @@ import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.economy.EconomyHandler;
 import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.island.*;
-import org.me.advancedsky.listener.OnlinePlayersListener;
-import org.me.advancedsky.listener.TeleportRequestListener;
+import org.me.advancedsky.listener.*;
 import org.me.advancedsky.message.PlayerMessageHandler;
 import org.me.advancedsky.messaging.CrossServerMessenger;
 import org.me.advancedsky.model.Actor;
@@ -167,7 +166,17 @@ public class AdvancedSky extends JavaPlugin {
 
             info("Starting listeners");
             getServer().getPluginManager().registerEvents(new OnlinePlayersListener(this, onlinePlayerRegistry, serverID), this);
+            getServer().getPluginManager().registerEvents(new IslandBorderListener(config, islandSnapshot, islandGrid), this);
+            getServer().getPluginManager().registerEvents(new WorldActivityListener(this, config, islandSnapshot, worldActivityHandler, levelUpdateScheduler), this);
             getServer().getPluginManager().registerEvents(new TeleportRequestListener(this, teleportHandler), this);
+            getServer().getPluginManager().registerEvents(new IslandProtectionListener(config, islandSnapshot, islandGrid), this);
+            getServer().getPluginManager().registerEvents(new IslandAccessListener(this, config, islandSnapshot), this);
+            getServer().getPluginManager().registerEvents(new IslandRespawnListener(this, config, islandSnapshot), this);
+            getServer().getPluginManager().registerEvents(new IslandPvPListener(this, config, islandSnapshot), this);
+            getServer().getPluginManager().registerEvents(new CobblestoneGeneratorListener(config, islandSnapshot, cobblestoneGeneratorHandler), this);
+            getServer().getPluginManager().registerEvents(new IslandLimitListener(this, config, limitHandler, islandSnapshot), this);
+            getServer().getPluginManager().registerEvents(new UuidUpdateListener(this, uuidHandler), this);
+            getServer().getPluginManager().registerEvents(new IslandCoopListener(this, coopHandler, onlinePlayerRegistry), this);
             info("All listeners loaded");
 
             info("Registering commands");
