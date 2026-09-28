@@ -11,6 +11,7 @@ import org.me.advancedsky.api.AdvancedSkyAPI;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.model.Island;
+import org.me.advancedsky.teleport.TeleportHandler;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -28,6 +29,7 @@ class IslandAccessListenerTest {
     private final Player player = mock(Player.class);
     private final UUID playerUuid = UUID.randomUUID();
     private final Location location = new Location(world, 256, 101, 256);
+    private final TeleportHandler teleports = new TeleportHandler();
 
     @BeforeEach
     void setUp() {
@@ -68,6 +70,18 @@ class IslandAccessListenerTest {
     }
 
     @Test
+    void anArrivalThroughAPendingTeleportIsLeftToTheTeleportCheck() {
+        Island island = new Island(UUID.randomUUID(), 1, false, false, UUID.randomUUID(), Set.of(), Set.of(), Set.of(playerUuid), Map.of(), null, 1, 1);
+        when(cache.getIslandUuidAt(location)).thenReturn(island.getIslandUuid());
+        when(cache.getAt(location)).thenReturn(island);
+        teleports.addPendingTeleport(playerUuid, new Location(world, 2304, 101, 256));
+
+        join();
+
+        verify(api, never()).lobby(any());
+    }
+
+    @Test
     void membersStay() {
         Island island = new Island(UUID.randomUUID(), 1, true, false, UUID.randomUUID(), Set.of(playerUuid), Set.of(), Set.of(), Map.of(), null, 1, 1);
         when(cache.getIslandUuidAt(location)).thenReturn(island.getIslandUuid());
@@ -79,6 +93,6 @@ class IslandAccessListenerTest {
     }
 
     private void join() {
-        new IslandAccessListener(plugin, config, cache).onPlayerJoin(new PlayerJoinEvent(player, net.kyori.adventure.text.Component.empty()));
+        new IslandAccessListener(plugin, config, cache, teleports).onPlayerJoin(new PlayerJoinEvent(player, net.kyori.adventure.text.Component.empty()));
     }
 }

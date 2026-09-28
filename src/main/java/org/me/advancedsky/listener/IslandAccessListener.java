@@ -12,6 +12,7 @@ import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.model.Island;
+import org.me.advancedsky.teleport.TeleportHandler;
 
 import java.util.UUID;
 
@@ -20,15 +21,25 @@ public class IslandAccessListener implements Listener {
     private final AdvancedSky plugin;
     private final ConfigHandler config;
     private final IslandCache islandCache;
+    private final TeleportHandler teleportHandler;
 
-    public IslandAccessListener(AdvancedSky plugin, ConfigHandler config, IslandCache islandCache) {
+    public IslandAccessListener(AdvancedSky plugin, ConfigHandler config, IslandCache islandCache, TeleportHandler teleportHandler) {
         this.plugin = plugin;
         this.config = config;
         this.islandCache = islandCache;
+        this.teleportHandler = teleportHandler;
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST)
+    /**
+     * Runs before the pending teleport is taken at HIGHEST. A player arriving through one is
+     * checked where it takes them, as a teleport, not where they last logged out here.
+     */
+    @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerJoin(PlayerJoinEvent event) {
+        if (teleportHandler.hasPendingTeleport(event.getPlayer().getUniqueId())) {
+            return;
+        }
+
         checkAccess(event.getPlayer());
     }
 
