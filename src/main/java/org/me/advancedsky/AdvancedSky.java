@@ -23,6 +23,7 @@ import org.me.advancedsky.messaging.CrossServerMessenger;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.network.IslandDistributor;
 import org.me.advancedsky.network.IslandOperator;
+import org.me.advancedsky.placeholder.AdvancedSkyExpansion;
 import org.me.advancedsky.redis.RedisHandler;
 import org.me.advancedsky.scheduler.IslandUnloadScheduler;
 import org.me.advancedsky.scheduler.LevelUpdateScheduler;
@@ -53,6 +54,7 @@ public class AdvancedSky extends JavaPlugin {
     private LevelHandler levelHandler;
     private CobblestoneGeneratorHandler cobblestoneGeneratorHandler;
     private AdvancedSkyAPI api;
+    private AdvancedSkyExpansion placeholderExpansion;
     private BukkitAsyncExecutor bukkitAsyncExecutor;
     private GlobalRegionExecutor globalRegionExecutor;
 
@@ -165,6 +167,17 @@ public class AdvancedSky extends JavaPlugin {
             api = new AdvancedSkyAPI(this, coreHandler, playerHandler, homeHandler, warpHandler, levelHandler, banHandler, coopHandler, lobbyHandler, playerMessageHandler, uuidHandler, biomeHandler, upgradeHandler);
             info("API loaded");
 
+            if (getServer().getPluginManager().isPluginEnabled("PlaceholderAPI")) {
+                placeholderExpansion = new AdvancedSkyExpansion(this, config, api);
+                if (placeholderExpansion.register()) {
+                    info("PlaceholderAPI expansion registered");
+                } else {
+                    placeholderExpansion.stop();
+                    placeholderExpansion = null;
+                    warning("Could not register PlaceholderAPI expansion");
+                }
+            }
+
             info("Starting listeners");
             getServer().getPluginManager().registerEvents(new OnlinePlayersListener(this, onlinePlayerRegistry, serverID), this);
             getServer().getPluginManager().registerEvents(new IslandBorderListener(config, islandSnapshot, islandGrid), this);
@@ -273,6 +286,11 @@ public class AdvancedSky extends JavaPlugin {
     }
 
     public void shutdown() {
+        if (placeholderExpansion != null) {
+            placeholderExpansion.stop();
+            placeholderExpansion = null;
+        }
+
         if (levelUpdateScheduler != null) {
             levelUpdateScheduler.stop();
         }
