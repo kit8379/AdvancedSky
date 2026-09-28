@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -17,11 +18,15 @@ import java.util.concurrent.atomic.AtomicLong;
  * startup, reloaded by the host after each change it makes, and read on every block break, PvP
  * hit and move. Islands are found by id or, for a location, by the grid slot whose area holds it.
  * <p>
- * An island whose load failed (dirty) is unavailable so listeners fail closed. A reload in
- * flight keeps serving the previous entry: it is at most one mutation behind for one DB
- * round trip, and blanking it would let the access listener lobby-bounce legitimate members.
+ * An island whose load failed (dirty) is unavailable so listeners fail closed, and is loaded
+ * again with a growing delay until a load succeeds. A reload in flight keeps serving the
+ * previous entry: it is at most one mutation behind for one DB round trip, and blanking it would
+ * let the access listener lobby-bounce legitimate members.
  */
 public class IslandCache {
+
+    private static final long RETRY_FIRST_DELAY_SECONDS = 2L;
+    private static final long RETRY_MAX_DELAY_SECONDS = 30L;
 
     private final AdvancedSky plugin;
     private final DatabaseHandler database;
@@ -29,7 +34,8 @@ public class IslandCache {
 
     private final Map<UUID, Island> islands = new ConcurrentHashMap<>();
     private final Map<Integer, UUID> islandsBySlot = new ConcurrentHashMap<>();
-    private final Map<UUID, Boolean> dirty = new ConcurrentHashMap<>();
+    // Each dirty island maps to the retry that owns it, so one failure streak runs one retry.
+    private final Map<UUID, Object> dirty = new ConcurrentHashMap<>();
     private final Map<UUID, Long> loading = new ConcurrentHashMap<>();
     private final AtomicLong nextLoadGeneration = new AtomicLong();
 
@@ -89,8 +95,9 @@ public class IslandCache {
                 return CompletableFuture.completedFuture(null);
             }
 
+            // Gone from the database: its area is a free slot now, not an island to retry.
             if (island == null) {
-                islands.remove(islandUuid);
+                unload(islandUuid);
                 throw new IllegalStateException("Island does not exist: " + islandUuid);
             }
 
@@ -108,12 +115,33 @@ public class IslandCache {
             return CompletableFuture.completedFuture(null);
         } catch (Throwable error) {
             if (loading.remove(islandUuid, generation)) {
-                dirty.put(islandUuid, Boolean.TRUE);
                 plugin.severe("Failed to load island into the cache: " + islandUuid, error);
+                Object retry = new Object();
+                if (dirty.putIfAbsent(islandUuid, retry) == null) {
+                    retryLoad(islandUuid, retry, RETRY_FIRST_DELAY_SECONDS);
+                }
             }
 
             return CompletableFuture.failedFuture(error);
         }
+    }
+
+    /**
+     * Loads a dirty island again after the delay, doubling it up to a cap, while the island is
+     * still dirty under this retry. Any load that succeeds, or an unload, ends it.
+     */
+    private void retryLoad(UUID islandUuid, Object retry, long delaySeconds) {
+        CompletableFuture.delayedExecutor(delaySeconds, TimeUnit.SECONDS, plugin.getBukkitAsyncExecutor()).execute(() -> {
+            if (dirty.get(islandUuid) != retry) {
+                return;
+            }
+
+            load(islandUuid).whenComplete((v, error) -> {
+                if (dirty.get(islandUuid) == retry) {
+                    retryLoad(islandUuid, retry, Math.min(delaySeconds * 2, RETRY_MAX_DELAY_SECONDS));
+                }
+            });
+        });
     }
 
     public CompletableFuture<Void> reload(UUID islandUuid) {
