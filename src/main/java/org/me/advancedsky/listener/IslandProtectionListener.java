@@ -99,6 +99,19 @@ public class IslandProtectionListener implements Listener {
         player.sendMessage(config.getCannotEditIslandMessage());
     }
 
+    /**
+     * Whether the player may come onto the island: not banned from it, and it is unlocked or
+     * they belong to it.
+     */
+    private boolean mayEnter(Player player, Island island) {
+        UUID playerUuid = player.getUniqueId();
+        if (island.getBans().contains(playerUuid)) {
+            return false;
+        }
+
+        return !island.isLock() || island.getOwner().equals(playerUuid) || island.getMembers().contains(playerUuid) || island.getCoops().contains(playerUuid);
+    }
+
     private Player resolvePlayer(Entity entity) {
         if (entity instanceof Player player) {
             return player;
@@ -385,22 +398,37 @@ public class IslandProtectionListener implements Listener {
             return;
         }
 
-        if (player.isOp()) {
+        if (player.isOp() || mayEnter(player, island)) {
             return;
         }
 
-        UUID playerUuid = player.getUniqueId();
-        if (island.getBans().contains(playerUuid)) {
-            event.setCancelled(true);
-            player.sendMessage(config.getPlayerBannedMessage());
+        event.setCancelled(true);
+        player.sendMessage(island.getBans().contains(player.getUniqueId()) ? config.getPlayerBannedMessage() : config.getIslandLockedMessage());
+    }
+
+    /**
+     * Walking or flying onto an island from outside its boundary follows the same rule as
+     * teleporting there. Silent, because a refused step is tried again every tick.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onPlayerMove(PlayerMoveEvent event) {
+        if (!event.hasChangedBlock()) {
             return;
         }
 
-        boolean allowed = !island.isLock() || island.getOwner().equals(playerUuid) || island.getMembers().contains(playerUuid) || island.getCoops().contains(playerUuid);
+        Location to = event.getTo();
+        if (!isIslandWorld(to)) {
+            return;
+        }
 
-        if (!allowed) {
+        Player player = event.getPlayer();
+        Island island = islandCache.getAt(to);
+        if (island == null || player.isOp() || mayEnter(player, island)) {
+            return;
+        }
+
+        if (isInsideIslandBoundary(island, to) && !isInsideIslandBoundary(island, event.getFrom())) {
             event.setCancelled(true);
-            player.sendMessage(config.getIslandLockedMessage());
         }
     }
 
