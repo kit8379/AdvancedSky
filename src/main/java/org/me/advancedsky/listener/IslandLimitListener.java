@@ -144,8 +144,7 @@ public final class IslandLimitListener implements Listener {
             return null;
         }
 
-        Island island = islandSnapshot.getAt(location);
-        return island == null ? null : island.getIslandUuid();
+        return islandSnapshot.getIslandUuidAt(location);
     }
 
     private boolean isIslandWorld(World world) {

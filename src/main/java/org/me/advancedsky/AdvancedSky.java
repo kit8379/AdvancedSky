@@ -214,23 +214,19 @@ public class AdvancedSky extends JavaPlugin {
             getServer().getPluginManager().registerEvents(asyncTabCompleteListener, this);
             info("All commands registered");
 
+            // Islands never leave their host, so its snapshot holds all of them for good. Loaded before
+            // players can join, as NewSky loads a snapshot before its island world opens: listeners
+            // fail closed on an island without one. A snapshot that fails to load stays unavailable.
+            if (!config.isLobbyOnly()) {
+                info("Loading the snapshots of the islands hosted here");
+                Set<UUID> hostedIslands = databaseHandler.getIslandUuidsByServer(serverID);
+                CompletableFuture.allOf(hostedIslands.stream().map(islandUuid -> CompletableFuture.supplyAsync(() -> islandSnapshot.load(islandUuid), bukkitAsyncExecutor).thenCompose(loaded -> loaded).exceptionally(error -> null)).toArray(CompletableFuture[]::new)).join();
+                info("Loaded the snapshots of " + hostedIslands.size() + " islands");
+            }
+
             crossServerMessenger.start();
             islandUnloadScheduler.start();
             levelUpdateScheduler.start();
-
-            // Islands never leave their host, so its snapshot holds all of them for good. Loaded off the
-            // startup thread; listeners fail closed on an island until its snapshot is in.
-            if (!config.isLobbyOnly()) {
-                CompletableFuture.runAsync(() -> {
-                    for (UUID islandUuid : databaseHandler.getIslandUuidsByServer(serverID)) {
-                        islandSnapshot.load(islandUuid);
-                    }
-                    info("Loaded the snapshot of every island hosted here");
-                }, bukkitAsyncExecutor).exceptionally(error -> {
-                    severe("Failed to load the snapshots of the islands hosted here", error);
-                    return null;
-                });
-            }
 
         } catch (Exception e) {
             getLogger().log(Level.SEVERE, "An error occurred during plugin initialization", e);

@@ -49,7 +49,10 @@ public class IslandRespawnListener implements Listener {
 
         Island island = islandSnapshot.getAt(deathLocation);
         if (island == null) {
-            plugin.severe("Cannot resolve respawn for " + playerUuid + ": no island snapshot available at " + deathLocation);
+            // Dying in the gap or on a free slot is dying on no island: vanilla respawn.
+            if (islandSnapshot.getIslandUuidAt(deathLocation) != null) {
+                plugin.severe("Cannot resolve respawn for " + playerUuid + ": island snapshot unavailable at " + deathLocation);
+            }
             return;
         }
         UUID islandUuid = island.getIslandUuid();

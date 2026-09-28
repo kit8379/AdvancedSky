@@ -6,7 +6,6 @@ import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.model.Actor;
-import org.me.advancedsky.model.Island;
 import org.me.advancedsky.network.IslandDistributor;
 import org.me.advancedsky.snapshot.IslandSnapshot;
 
@@ -67,7 +66,6 @@ public class CoreHandler {
             return null;
         }
 
-        Island island = islandSnapshot.getAt(location);
-        return island == null ? null : island.getIslandUuid();
+        return islandSnapshot.getIslandUuidAt(location);
     }
 }

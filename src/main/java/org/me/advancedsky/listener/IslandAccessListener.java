@@ -50,7 +50,11 @@ public class IslandAccessListener implements Listener {
 
         Island island = islandSnapshot.getAt(location);
         if (island == null) {
-            denyAccess(player, config.getIslandLockedMessage());
+            // The gap and free slots belong to no island (a first join lands on the world spawn,
+            // in the never-allocated slot 0); only an island whose snapshot is unavailable fails closed.
+            if (islandSnapshot.getIslandUuidAt(location) != null) {
+                denyAccess(player, config.getIslandLockedMessage());
+            }
             return;
         }
 

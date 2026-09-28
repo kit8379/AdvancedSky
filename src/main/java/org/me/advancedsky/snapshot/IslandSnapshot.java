@@ -52,13 +52,18 @@ public class IslandSnapshot {
      * caller checks that the location is in the island world.
      */
     public Island getAt(Location location) {
-        int slot = islandGrid.slotAt(location.getX(), location.getZ());
-        if (slot < 0) {
-            return null;
-        }
-
-        UUID islandUuid = islandsBySlot.get(slot);
+        UUID islandUuid = getIslandUuidAt(location);
         return islandUuid == null ? null : get(islandUuid);
+    }
+
+    /**
+     * The island hosted here whose area holds the location, even while its snapshot is
+     * unavailable, as NewSky knows an island from its world's name alone. Null in the gap and on
+     * free slots.
+     */
+    public UUID getIslandUuidAt(Location location) {
+        int slot = islandGrid.slotAt(location.getX(), location.getZ());
+        return slot < 0 ? null : islandsBySlot.get(slot);
     }
 
     public CompletableFuture<Void> load(UUID islandUuid) {
