@@ -3,8 +3,8 @@
 Multi-server Skyblock for Paper **and Folia**. Every island is created on one island server and
 stays there for its whole life, so no world is ever loaded or unloaded at runtime.
 
-> Status: early. `/island create` pastes the template island and `/island delete` clears the
-> island area; everything else is still to come, feature by feature. The code follows NewSky's
+> Status: early. Island create/delete, homes and the lobby work; everything else is still to
+> come, feature by feature. The code follows NewSky's
 > structure (commands → API → handlers → `IslandDistributor` → `IslandOperator`).
 
 ## Design
@@ -24,8 +24,9 @@ stays there for its whole life, so no world is ever loaded or unloaded at runtim
 - **The starter island is a world, not a file.** Every island server also loads a template world
   where the starter island is built in game. Creating an island copies that box block by block,
   tile entities included, so no schematic tooling is involved.
-- **Folia-compatible scheduling only.** Region scheduler for blocks, async scheduler for MySQL
-  and Redis. The same jar runs on Paper.
+- **Folia-compatible scheduling only.** Region scheduler for blocks, the player's own scheduler
+  for teleports and plugin messages, the global region scheduler for player lookups, async
+  scheduler for MySQL and Redis. The same jar runs on Paper.
 
 ## Flows
 
@@ -37,35 +38,47 @@ stays there for its whole life, so no world is ever loaded or unloaded at runtim
    at a time on the region threads that own the chunks. If the paste fails, the area and the row
    are removed again and the failure is returned.
 
-The player is not teleported yet; that arrives with the home feature.
+4. Take the player to the island's `default` home, as `/island home` does.
 
 `/island delete` (asked three times, as in NewSky): read the host from MySQL and run the delete
-there. The host deletes the row (owner only, under the island row lock), then clears the island
-area: it walks the 32x32 chunks of the island's region file in batches, removes non-player
+there. The host deletes the row (owner only, under the island row lock), sends everyone standing
+in the island area to the lobby, then clears the area: it walks the 32x32 chunks of the island's region file in batches, removes non-player
 entities and every block, and skips chunks that were never generated. Slots are never handed out
 twice, so a new island can never land on an area that is still being cleared.
+
+`/island home [name]` (also `/island go`, and bare `/island`): read the home from MySQL, then ask
+the island's host to teleport the player. If the player is on another server, the host keeps the
+teleport and the player is sent there through the proxy; it fires when they join. `/island lobby`
+works the same way with a random server from `servers.lobby`.
+
+`/island sethome [name]` only works on your own island: in `island.world`, on the server hosting
+it, inside its 512x512 area. Homes are stored as absolute coordinates. `default` is created with
+the island (`island.spawn` from its centre) and cannot be deleted. There is no home limit yet;
+it arrives with upgrades.
 
 ## Requirements
 
 - Paper or Folia 1.21.11, Java 21
 - MySQL / MariaDB
 - Redis 5.0 or newer (Streams)
-- Velocity or BungeeCord
+- Velocity or BungeeCord with the BungeeCord plugin message channel enabled (Velocity: `bungee-plugin-message-channel = true`)
 
 Runtime libraries (MySQL driver, HikariCP, Jedis) are downloaded by the plugin loader on first start.
 
 ## Configuration
 
-Per server, only `server.name` (the proxy name of this server) and `server.world` differ. Every
-other section is identical across the network. See `config.yml` for the details.
+Per server, only `server.name` (the proxy name of this server) differs. Every other section is
+identical across the network. See `config.yml` for the details.
 
 Every server running the plugin must be listed once, either under `servers.island` (hosts
-islands, needs the island world and the template world at startup) or `servers.lobby` (commands
+islands, needs `island.world` and the template world at startup) or `servers.lobby` (commands
 only). Networks that share one Redis must each use their own `cluster-id`.
 
 `island.template` names the template world and the box to copy: `anchor` is the template block
-that lands on the island centre, `min` and `max` are opposite corners. It can change at any time;
-it only affects islands created afterwards.
+that lands on the island centre, `min` and `max` are opposite corners. `island.spawn` is the new
+island's `default` home, relative to its centre. Both can change at any time; they only affect
+islands created afterwards. `lobby.world-name` and `lobby.location` are where `/island lobby`
+and a delete send players on the lobby servers.
 
 Island geometry is fixed in code (`IslandGrid`): centres are 2048 blocks apart and shifted by
 256 blocks so that every island sits in the middle of its own 512x512 region file (region index
@@ -83,6 +96,10 @@ Command aliases, permissions, syntax and descriptions are in `commands.yml`; mes
 - `advancedsky.island.player` (required for `/island` itself)
 - `advancedsky.island.player.create`
 - `advancedsky.island.player.delete`
+- `advancedsky.island.player.home`
+- `advancedsky.island.player.sethome`
+- `advancedsky.island.player.delhome`
+- `advancedsky.island.player.lobby`
 - `advancedsky.island.player.help`
 
 All default to operators until granted by a permission plugin.

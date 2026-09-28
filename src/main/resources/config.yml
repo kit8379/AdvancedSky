@@ -2,7 +2,7 @@
 # AdvancedSky Configuration
 #
 # Design:
-# - `server`   : per-server identity (the only section that usually differs)
+# - `server`   : per-server identity (the only section that differs)
 # - everything else: usually the same across all servers in the network
 # - an island is created on one island server and stays there forever
 # ===================================================================
@@ -13,10 +13,6 @@
 server:
   # Must match the server name in your BungeeCord / Velocity config.
   name: "sky1"
-
-  # World on this server that holds the islands. Only read on island servers, where it must
-  # already be loaded when the plugin enables (Folia cannot load worlds at runtime).
-  world: "skyblock"
 
 
 # ===================================================================
@@ -78,9 +74,31 @@ servers:
 
 
 # ===================================================================
+# Lobby Fallback
+# ===================================================================
+# Where players are sent when they must leave an island forcibly
+# (e.g., island delete) or run /island lobby. The server is picked at random from `servers.lobby`.
+lobby:
+  # Lobby world name (must exist on all lobby servers).
+  world-name: "world"
+
+  # Spawn location inside the lobby world.
+  location:
+    x: 0.0
+    y: 100.0
+    z: 0.0
+    yaw: 0.0
+    pitch: 0.0
+
+
+# ===================================================================
 # Island
 # ===================================================================
 island:
+  # World that holds the islands, with the same name on every island server. It must already be
+  # loaded when the plugin enables (Folia cannot load worlds at runtime).
+  world: "skyblock"
+
   # Y level of the island centre block.
   # Do not change once islands exist: every island position is derived from it.
   height: 100
@@ -102,6 +120,25 @@ island:
       x: 32
       y: 160
       z: 32
+
+  # Where a new island's default home is, relative to its centre block.
+  spawn:
+    x: 0.5
+    y: 1.0
+    z: 0.5
+    yaw: 0.0
+    pitch: 0.0
+
+
+# ===================================================================
+# Commands
+# ===================================================================
+command:
+  # Default behavior of `/island` when used with no arguments.
+  # Options:
+  # - "help"   : show help
+  # - "island" : teleport to your island home (players without an island get the no-island message)
+  base-command-mode: "island"
 
 
 # ===================================================================

@@ -1,8 +1,13 @@
 package org.me.advancedsky.api;
 
+import net.kyori.adventure.text.Component;
 import org.me.advancedsky.island.CoreHandler;
+import org.me.advancedsky.island.HomeHandler;
+import org.me.advancedsky.island.LobbyHandler;
 import org.me.advancedsky.island.PlayerHandler;
+import org.me.advancedsky.message.PlayerMessageHandler;
 
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -22,10 +27,16 @@ public class AdvancedSkyAPI {
 
     private final CoreHandler coreHandler;
     private final PlayerHandler playerHandler;
+    private final HomeHandler homeHandler;
+    private final LobbyHandler lobbyHandler;
+    private final PlayerMessageHandler playerMessageHandler;
 
-    public AdvancedSkyAPI(CoreHandler coreHandler, PlayerHandler playerHandler) {
+    public AdvancedSkyAPI(CoreHandler coreHandler, PlayerHandler playerHandler, HomeHandler homeHandler, LobbyHandler lobbyHandler, PlayerMessageHandler playerMessageHandler) {
         this.coreHandler = coreHandler;
         this.playerHandler = playerHandler;
+        this.homeHandler = homeHandler;
+        this.lobbyHandler = lobbyHandler;
+        this.playerMessageHandler = playerMessageHandler;
     }
 
     // ================================================================================================================
@@ -35,7 +46,7 @@ public class AdvancedSkyAPI {
     /** Act as this player: own identity, own island, player rules apply. */
     @SuppressWarnings("unused")
     public PlayerActions player(UUID playerUuid) {
-        return new PlayerActions(playerUuid, coreHandler);
+        return new PlayerActions(playerUuid, coreHandler, homeHandler);
     }
 
     // ================================================================================================================
@@ -50,5 +61,25 @@ public class AdvancedSkyAPI {
     @SuppressWarnings("unused")
     public CompletableFuture<UUID> getIslandOwner(UUID islandUuid) {
         return playerHandler.getIslandOwner(islandUuid);
+    }
+
+    @SuppressWarnings("unused")
+    public CompletableFuture<Set<String>> getHomeNames(UUID playerUuid) {
+        return homeHandler.getHomeNames(playerUuid);
+    }
+
+    // ================================================================================================================
+    // Live-player actions - no island state, so neither handle applies
+    // ================================================================================================================
+
+    /** Moves a player to a lobby server. Touches no island state; also the fail-closed bounce. */
+    @SuppressWarnings("unused")
+    public CompletableFuture<Void> lobby(UUID playerUuid) {
+        return lobbyHandler.lobby(playerUuid);
+    }
+
+    @SuppressWarnings("unused")
+    public void sendPlayerMessage(UUID playerUuid, Component message) {
+        playerMessageHandler.sendPlayerMessage(playerUuid, message);
     }
 }

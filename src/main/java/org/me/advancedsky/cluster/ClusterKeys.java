@@ -6,6 +6,9 @@ package org.me.advancedsky.cluster;
  */
 public final class ClusterKeys {
 
+    private static final String ONLINE_PLAYERS = "online:players";
+    private static final String ONLINE_PLAYER_SERVERS = "online:player_servers";
+
     private final String prefix;
 
     public ClusterKeys(String clusterId) {
@@ -14,5 +17,13 @@ public final class ClusterKeys {
 
     public String messagingInbox(String serverName) {
         return prefix + "messaging:inbox:" + serverName;
+    }
+
+    public String onlinePlayers() {
+        return prefix + ONLINE_PLAYERS;
+    }
+
+    public String onlinePlayerServers() {
+        return prefix + ONLINE_PLAYER_SERVERS;
     }
 }

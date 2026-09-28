@@ -2,6 +2,7 @@ package org.me.advancedsky.database;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import org.bukkit.Location;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.*;
@@ -14,11 +15,15 @@ import java.util.*;
 public class DatabaseHandler {
 
     private final AdvancedSky plugin;
+    private final ConfigHandler config;
+    private final IslandGrid islandGrid;
     private final HikariDataSource dataSource;
     private final String prefix;
 
-    public DatabaseHandler(AdvancedSky plugin, ConfigHandler config) {
+    public DatabaseHandler(AdvancedSky plugin, ConfigHandler config, IslandGrid islandGrid) {
         this.plugin = plugin;
+        this.config = config;
+        this.islandGrid = islandGrid;
         this.prefix = config.getMySQLTablePrefix();
 
         String host = config.getMySQLHost();
@@ -95,16 +100,16 @@ public class DatabaseHandler {
         }
     }
 
-    private void executeUpdate(Connection connection, String query, PreparedStatementConsumer consumer) throws SQLException {
+    private int executeUpdate(Connection connection, String query, PreparedStatementConsumer consumer) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(query)) {
             consumer.use(statement);
-            statement.executeUpdate();
+            return statement.executeUpdate();
         }
     }
 
-    private void executeUpdate(String query, PreparedStatementConsumer consumer) {
+    private int executeUpdate(String query, PreparedStatementConsumer consumer) {
         try (Connection connection = dataSource.getConnection()) {
-            executeUpdate(connection, query, consumer);
+            return executeUpdate(connection, query, consumer);
         } catch (SQLIntegrityConstraintViolationException e) {
             throw new ConstraintViolationException(e);
         } catch (SQLException e) {
@@ -144,6 +149,9 @@ public class DatabaseHandler {
 
         executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "island_players (" + "player_uuid CHAR(36) NOT NULL," + "island_uuid CHAR(36) NOT NULL," + "role VARCHAR(56) NOT NULL," + "PRIMARY KEY (player_uuid, island_uuid)," + "UNIQUE KEY uq_island_players_player_uuid (player_uuid)," + "KEY idx_island_players_island_uuid (island_uuid)," + "KEY idx_island_players_island_role (island_uuid, role)," + "CONSTRAINT fk_island_players_island " + "FOREIGN KEY (island_uuid) REFERENCES " + prefix + "islands(island_uuid) " + "ON DELETE CASCADE" + ") ENGINE=InnoDB;", stmt -> {
         });
+
+        executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "island_homes (" + "player_uuid CHAR(36) NOT NULL," + "home_name VARCHAR(32) NOT NULL," + "home_location VARCHAR(256)," + "island_uuid CHAR(36) NOT NULL," + "PRIMARY KEY (player_uuid, island_uuid, home_name)," + "KEY idx_island_homes_island (island_uuid)," + "KEY idx_island_homes_island_player (island_uuid, player_uuid)," + "CONSTRAINT fk_island_homes_island " + "FOREIGN KEY (island_uuid) REFERENCES " + prefix + "islands(island_uuid) " + "ON DELETE CASCADE," + "CONSTRAINT fk_island_homes_player_membership " + "FOREIGN KEY (player_uuid, island_uuid) REFERENCES " + prefix + "island_players(player_uuid, island_uuid) " + "ON DELETE CASCADE" + ") ENGINE=InnoDB;", stmt -> {
+        });
     }
 
     // ================================================================================================================
@@ -152,6 +160,30 @@ public class DatabaseHandler {
 
     public Optional<UUID> getIslandOwner(UUID islandUuid) {
         return withConnection(connection -> getIslandOwner(connection, islandUuid));
+    }
+
+    public Map<String, String> getIslandHomes(UUID islandUuid, UUID playerUuid) {
+        String sql = "SELECT home_name, home_location FROM " + prefix + "island_homes WHERE island_uuid = ? AND player_uuid = ?";
+
+        return executeQuery(sql, stmt -> {
+            stmt.setString(1, islandUuid.toString());
+            stmt.setString(2, playerUuid.toString());
+        }, rs -> {
+            Map<String, String> result = new LinkedHashMap<>();
+
+            while (rs.next()) {
+                String homeName = rs.getString("home_name");
+                String homeLocation = rs.getString("home_location");
+
+                if (homeName == null || homeName.isEmpty()) {
+                    continue;
+                }
+
+                result.put(homeName, homeLocation == null ? "" : homeLocation);
+            }
+
+            return result.isEmpty() ? Collections.emptyMap() : Map.copyOf(result);
+        });
     }
 
     public Optional<UUID> getIslandUuid(UUID playerUuid) {
@@ -224,10 +256,40 @@ public class DatabaseHandler {
                     stmt.setString(3, "owner");
                 });
 
+                // Only the coordinates of the centre are needed: homes are stored without a world.
+                Location center = islandGrid.center(null, slot);
+                String homePoint = (center.getX() + config.getIslandSpawnX()) + "," + (center.getY() + config.getIslandSpawnY()) + "," + (center.getZ() + config.getIslandSpawnZ()) + "," + config.getIslandSpawnYaw() + "," + config.getIslandSpawnPitch();
+
+                executeUpdate(connection, "INSERT INTO " + prefix + "island_homes (player_uuid, island_uuid, home_name, home_location) VALUES (?, ?, ?, ?) " + "ON DUPLICATE KEY UPDATE island_uuid = VALUES(island_uuid), home_location = VALUES(home_location);", stmt -> {
+                    stmt.setString(1, ownerUuid.toString());
+                    stmt.setString(2, islandUuid.toString());
+                    stmt.setString(3, "default");
+                    stmt.setString(4, homePoint);
+                });
+
                 return slot;
             });
         } catch (ConstraintViolationException e) {
             throw new IslandAlreadyExistException();
+        }
+    }
+
+    public void updateHomePoint(Actor actor, UUID islandUuid, UUID playerUuid, String homeName, String homeLocation) {
+        try {
+            inTransaction(connection -> {
+                lockIsland(connection, islandUuid);
+
+                executeUpdate(connection, "INSERT INTO " + prefix + "island_homes (player_uuid, island_uuid, home_name, home_location) VALUES (?, ?, ?, ?) " + "ON DUPLICATE KEY UPDATE island_uuid = VALUES(island_uuid), home_location = VALUES(home_location);", stmt -> {
+                    stmt.setString(1, playerUuid.toString());
+                    stmt.setString(2, islandUuid.toString());
+                    stmt.setString(3, homeName);
+                    stmt.setString(4, homeLocation);
+                });
+
+                return null;
+            });
+        } catch (ConstraintViolationException e) {
+            throw new IslandDoesNotExistException();
         }
     }
 
@@ -242,6 +304,18 @@ public class DatabaseHandler {
 
             return null;
         });
+    }
+
+    public void deleteHomePoint(UUID islandUuid, UUID playerUuid, String homeName) {
+        int deleted = executeUpdate("DELETE FROM " + prefix + "island_homes WHERE island_uuid = ? AND player_uuid = ? AND home_name = ?;", stmt -> {
+            stmt.setString(1, islandUuid.toString());
+            stmt.setString(2, playerUuid.toString());
+            stmt.setString(3, homeName);
+        });
+
+        if (deleted == 0) {
+            throw new HomeDoesNotExistException();
+        }
     }
 
     // ================================================================================================================

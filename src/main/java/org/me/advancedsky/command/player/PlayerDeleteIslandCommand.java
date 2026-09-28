@@ -101,7 +101,7 @@ public class PlayerDeleteIslandCommand implements SubCommand {
                     reset(playerUuid);
 
                     return api.player(playerUuid).deleteIsland().thenRun(() -> {
-                        player.sendMessage(config.getPlayerDeleteSuccessMessage());
+                        api.sendPlayerMessage(playerUuid, config.getPlayerDeleteSuccessMessage());
                     });
                 }
 

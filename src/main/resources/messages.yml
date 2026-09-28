@@ -42,6 +42,25 @@ messages:
   player-delete-island-success: "<green>Your island has been deleted!"
 
   # ================================================================================================================
+  # Island - Teleport: Lobby
+  # ================================================================================================================
+
+  player-lobby-success: "<green>You have been teleported to the lobby server!"
+
+  # ================================================================================================================
+  # Island - Teleport: Home
+  # ================================================================================================================
+
+  home-name-not-legal: "<red>Invalid home name. <gray>Allowed characters: <white>[a-z0-9_-]<gray>, length: <white>1-32<gray> characters."
+
+  player-must-in-island-set-home: "<red>You must be on your island to set a home!"
+  player-set-home-success: "<green>Home <aqua>{home}<green> set successfully!"
+  player-no-home: "<red>You don't have a home named <aqua>{home}<red>!"
+  player-home-success: "<green>Teleported to home <aqua>{home}<green>!"
+  player-delete-home-success: "<green>Home <aqua>{home}<green> deleted successfully!"
+  player-cannot-delete-default-home: "<red>You can't delete the default home!"
+
+  # ================================================================================================================
   # Help
   # ================================================================================================================
 

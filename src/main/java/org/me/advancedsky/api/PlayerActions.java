@@ -1,6 +1,7 @@
 package org.me.advancedsky.api;
 
 import org.me.advancedsky.island.CoreHandler;
+import org.me.advancedsky.island.HomeHandler;
 import org.me.advancedsky.model.Actor;
 
 import java.util.UUID;
@@ -22,11 +23,13 @@ public final class PlayerActions {
     private final UUID playerUuid;
     private final Actor actor;
     private final CoreHandler coreHandler;
+    private final HomeHandler homeHandler;
 
-    PlayerActions(UUID playerUuid, CoreHandler coreHandler) {
+    PlayerActions(UUID playerUuid, CoreHandler coreHandler, HomeHandler homeHandler) {
         this.playerUuid = playerUuid;
         this.actor = new Actor.Player(playerUuid);
         this.coreHandler = coreHandler;
+        this.homeHandler = homeHandler;
     }
 
     /**
@@ -50,5 +53,19 @@ public final class PlayerActions {
      */
     public CompletableFuture<Void> deleteIsland() {
         return ownIsland().thenCompose(islandUuid -> coreHandler.deleteIsland(actor, islandUuid));
+    }
+
+    // ---- homes and warps --------------------------------------------------------------------
+
+    public CompletableFuture<Void> setHome(String homeName, String worldName, double x, double y, double z, float yaw, float pitch) {
+        return homeHandler.setHome(actor, playerUuid, homeName, worldName, x, y, z, yaw, pitch);
+    }
+
+    public CompletableFuture<Void> deleteHome(String homeName) {
+        return homeHandler.delHome(playerUuid, homeName);
+    }
+
+    public CompletableFuture<Void> home(String homeName) {
+        return homeHandler.home(playerUuid, homeName, playerUuid);
     }
 }

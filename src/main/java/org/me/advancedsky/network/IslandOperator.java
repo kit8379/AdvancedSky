@@ -1,9 +1,14 @@
 package org.me.advancedsky.network;
 
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.entity.Player;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.model.Actor;
+import org.me.advancedsky.teleport.TeleportHandler;
+import org.me.advancedsky.util.LocationUtils;
 import org.me.advancedsky.world.WorldHandler;
 
 import java.util.Map;
@@ -22,14 +27,16 @@ public class IslandOperator {
     private final AdvancedSky plugin;
     private final DatabaseHandler database;
     private final WorldHandler worldHandler;
+    private final TeleportHandler teleportHandler;
     private final String serverID;
 
     private final Map<UUID, CompletableFuture<Void>> chains = new ConcurrentHashMap<>();
 
-    public IslandOperator(AdvancedSky plugin, DatabaseHandler database, WorldHandler worldHandler, String serverID) {
+    public IslandOperator(AdvancedSky plugin, DatabaseHandler database, WorldHandler worldHandler, TeleportHandler teleportHandler, String serverID) {
         this.plugin = plugin;
         this.database = database;
         this.worldHandler = worldHandler;
+        this.teleportHandler = teleportHandler;
         this.serverID = serverID;
     }
 
@@ -61,6 +68,45 @@ public class IslandOperator {
             }).thenRunAsync(() -> {
                 plugin.debug("IslandOperator", "Deleted island " + islandUuid + " at slot " + slot);
             }, plugin.getBukkitAsyncExecutor());
+        });
+    }
+
+    public CompletableFuture<Boolean> prepareTeleport(UUID playerUuid, String teleportWorld, String teleportLocation) {
+        return teleportOrStore(playerUuid, teleportWorld, teleportLocation);
+    }
+
+    /**
+     * Teleports the player at once when they are on this server, otherwise stores the teleport
+     * for their next join here. True when teleported in place.
+     */
+    private CompletableFuture<Boolean> teleportOrStore(UUID playerUuid, String teleportWorld, String teleportLocation) {
+        return CompletableFuture.supplyAsync(() -> {
+            Location location = LocationUtils.stringToLocation(teleportWorld, teleportLocation);
+            Player player = Bukkit.getPlayer(playerUuid);
+
+            // teleportAsync runs on the thread that owns the player; a player who left meanwhile gets no task.
+            if (player != null && player.getScheduler().run(plugin, task -> player.teleportAsync(location), null) != null) {
+                plugin.debug("IslandOperator", "Teleported player " + playerUuid + " to location: " + teleportLocation + " in world: " + teleportWorld);
+                return true;
+            }
+
+            teleportHandler.addPendingTeleport(playerUuid, location);
+            plugin.debug("IslandOperator", "Stored pending teleport for player " + playerUuid + " to location: " + teleportLocation + " in world: " + teleportWorld);
+            return false;
+        }, plugin.getGlobalRegionExecutor());
+    }
+
+    public CompletableFuture<Void> setHome(Actor actor, UUID islandUuid, UUID playerUuid, String homeName, String homeLocation) {
+        return serialized(islandUuid, () -> {
+            database.updateHomePoint(actor, islandUuid, playerUuid, homeName, homeLocation);
+            return CompletableFuture.completedFuture(null);
+        });
+    }
+
+    public CompletableFuture<Void> deleteHome(UUID islandUuid, UUID playerUuid, String homeName) {
+        return serialized(islandUuid, () -> {
+            database.deleteHomePoint(islandUuid, playerUuid, homeName);
+            return CompletableFuture.completedFuture(null);
         });
     }
 

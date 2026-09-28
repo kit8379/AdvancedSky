@@ -14,6 +14,27 @@ commands:
       permission: 'advancedsky.island.player.delete'
       syntax: ''
       description: 'Delete your island'
+    sethome:
+      aliases: []
+      permission: 'advancedsky.island.player.sethome'
+      syntax: '[homeName]'
+      description: 'Set a new home for your island'
+    delhome:
+      aliases: []
+      permission: 'advancedsky.island.player.delhome'
+      syntax: '<homeName>'
+      description: 'Delete an existing home on your island'
+    home:
+      aliases:
+        - 'go'
+      permission: 'advancedsky.island.player.home'
+      syntax: '[homeName]'
+      description: 'Teleport to your island home'
+    lobby:
+      aliases: []
+      permission: 'advancedsky.island.player.lobby'
+      syntax: ''
+      description: 'Teleport to the lobby'
     help:
       aliases: []
       permission: 'advancedsky.island.player.help'

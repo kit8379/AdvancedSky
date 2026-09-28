@@ -72,8 +72,9 @@ public class WorldHandler {
     }
 
     /**
-     * Removes every block and non-player entity in the island's area, chunk by chunk. Chunks that
-     * were never generated are skipped so the delete does not create them.
+     * Sends every player in the island's area to the lobby, then removes every block and
+     * non-player entity in it, chunk by chunk. Chunks that were never generated are skipped so the
+     * delete does not create them.
      */
     public CompletableFuture<Void> deleteIsland(int slot) {
         Location center = grid.center(requireWorld(), slot);
@@ -88,7 +89,7 @@ public class WorldHandler {
                 chunks.add(new ChunkPos(cx, cz));
             }
         }
-        return clearInBatches(chunks, 0);
+        return removePlayersFromIsland(chunks).thenCompose(v -> clearInBatches(chunks, 0));
     }
 
     // ===================================================================
@@ -149,6 +150,37 @@ public class WorldHandler {
     // ===================================================================
     // Area clearing
     // ===================================================================
+
+    /**
+     * Players can only stand in loaded chunks, so only those are looked at, each on the thread
+     * that owns it.
+     */
+    private CompletableFuture<Void> removePlayersFromIsland(List<ChunkPos> chunks) {
+        List<CompletableFuture<Void>> checks = new ArrayList<>();
+        for (ChunkPos pos : chunks) {
+            CompletableFuture<Void> checked = new CompletableFuture<>();
+            Bukkit.getRegionScheduler().run(plugin, world, pos.x(), pos.z(), task -> {
+                try {
+                    if (world.isChunkLoaded(pos.x(), pos.z())) {
+                        for (Entity entity : world.getChunkAt(pos.x(), pos.z()).getEntities()) {
+                            if (entity instanceof Player player) {
+                                plugin.getApi().lobby(player.getUniqueId()).exceptionally(e -> {
+                                    plugin.severe("Failed to send player " + player.getUniqueId() + " to the lobby off a deleted island", e);
+                                    return null;
+                                });
+                                plugin.debug("WorldHandler", "Removed player " + player.getUniqueId() + " from island area at chunk " + pos);
+                            }
+                        }
+                    }
+                    checked.complete(null);
+                } catch (Throwable t) {
+                    checked.completeExceptionally(t);
+                }
+            });
+            checks.add(checked);
+        }
+        return allOf(checks);
+    }
 
     private CompletableFuture<Void> clearInBatches(List<ChunkPos> chunks, int from) {
         if (from >= chunks.size()) {

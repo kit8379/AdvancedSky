@@ -1,0 +1,61 @@
+package org.me.advancedsky.message;
+
+import net.kyori.adventure.text.Component;
+import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
+import org.json.JSONObject;
+import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.messaging.CrossServerMessenger;
+import org.me.advancedsky.cluster.OnlinePlayerRegistry;
+import org.me.advancedsky.util.ComponentUtils;
+
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+
+public class PlayerMessageHandler {
+
+    public static final String ACTION_PLAYER_MESSAGE_SEND = "player.message.send";
+
+    private final AdvancedSky plugin;
+    private final CrossServerMessenger messenger;
+    private final OnlinePlayerRegistry onlinePlayerRegistry;
+    private final String serverID;
+
+    public PlayerMessageHandler(AdvancedSky plugin, CrossServerMessenger messenger, OnlinePlayerRegistry onlinePlayerRegistry, String serverID) {
+        this.plugin = plugin;
+        this.messenger = messenger;
+        this.onlinePlayerRegistry = onlinePlayerRegistry;
+        this.serverID = serverID;
+
+        messenger.register(ACTION_PLAYER_MESSAGE_SEND, payload -> deliverLocal(UUID.fromString(payload.getString("uuid")), ComponentUtils.deserialize(payload.getString("component"))).thenApply(v -> new JSONObject()));
+    }
+
+    public void sendPlayerMessage(UUID playerUuid, Component message) {
+        CompletableFuture.runAsync(() -> {
+            String targetServer = onlinePlayerRegistry.getOnlinePlayerServer(playerUuid);
+            if (serverID.equals(targetServer)|| targetServer == null) {
+                deliverLocal(playerUuid, message);
+                return;
+            }
+
+            JSONObject payload = new JSONObject();
+            payload.put("uuid", playerUuid.toString());
+            payload.put("component", ComponentUtils.serialize(message));
+
+            messenger.requestVoid(targetServer, ACTION_PLAYER_MESSAGE_SEND, payload).exceptionally(e -> {
+                plugin.severe("Failed to send cross-server player message to " + playerUuid, e);
+                return null;
+            });
+        }, plugin.getBukkitAsyncExecutor());
+    }
+
+    private CompletableFuture<Void> deliverLocal(UUID playerUuid, Component message) {
+        return CompletableFuture.runAsync(() -> {
+            Player player = Bukkit.getPlayer(playerUuid);
+            if (player != null) {
+                player.sendMessage(message);
+                plugin.debug("PlayerMessageHandler", "Delivered message to player " + playerUuid);
+            }
+        }, plugin.getGlobalRegionExecutor());
+    }
+}

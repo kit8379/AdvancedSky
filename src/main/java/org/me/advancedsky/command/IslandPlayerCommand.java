@@ -3,6 +3,7 @@ package org.me.advancedsky.command;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.api.AdvancedSkyAPI;
@@ -25,6 +26,10 @@ public class IslandPlayerCommand implements CommandExecutor, AsyncCommandTabRout
 
         subCommands.add(new PlayerCreateIslandCommand(plugin, api, config));
         subCommands.add(new PlayerDeleteIslandCommand(plugin, api, config));
+        subCommands.add(new PlayerHomeCommand(plugin, api, config));
+        subCommands.add(new PlayerSetHomeCommand(plugin, api, config));
+        subCommands.add(new PlayerDelHomeCommand(plugin, api, config));
+        subCommands.add(new PlayerLobbyCommand(plugin, api, config));
         subCommands.add(new PlayerHelpCommand(config, subCommands));
 
         for (SubCommand cmd : subCommands) {
@@ -99,11 +104,28 @@ public class IslandPlayerCommand implements CommandExecutor, AsyncCommandTabRout
         }
 
         if (args.length == 0) {
-            SubCommand helpCmd = subCommandMap.get("help");
-            if (helpCmd != null) {
-                return helpCmd.execute(sender, new String[]{"help"});
+            String mode = config.getBaseCommandMode();
+            if ("island".equalsIgnoreCase(mode)) {
+                if (!(sender instanceof Player player)) {
+                    sender.sendMessage(config.getOnlyPlayerCanRunCommandMessage());
+                    return true;
+                }
+
+                SubCommand homeCmd = subCommandMap.get("home");
+                String homePerm = homeCmd.getPermission();
+                if (homePerm != null && !homePerm.isEmpty() && !player.hasPermission(homePerm)) {
+                    player.sendMessage(config.getNoPermissionCommandMessage());
+                    return true;
+                }
+
+                return homeCmd.execute(player, new String[]{"home"});
+            } else {
+                SubCommand helpCmd = subCommandMap.get("help");
+                if (helpCmd != null) {
+                    return helpCmd.execute(sender, new String[]{"help"});
+                }
+                return true;
             }
-            return true;
         }
 
         String subName = args[0].toLowerCase(Locale.ROOT);

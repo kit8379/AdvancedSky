@@ -1,0 +1,106 @@
+package org.me.advancedsky.command.player;
+
+import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
+import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.api.AdvancedSkyAPI;
+import org.me.advancedsky.command.AsyncTabComplete;
+import org.me.advancedsky.command.SubCommand;
+import org.me.advancedsky.config.ConfigHandler;
+import org.me.advancedsky.exceptions.HomeDoesNotExistException;
+import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+
+/**
+ * /is delhome <homeName>
+ */
+public class PlayerDelHomeCommand implements SubCommand, AsyncTabComplete {
+    private final AdvancedSky plugin;
+    private final AdvancedSkyAPI api;
+    private final ConfigHandler config;
+
+    public PlayerDelHomeCommand(AdvancedSky plugin, AdvancedSkyAPI api, ConfigHandler config) {
+        this.plugin = plugin;
+        this.api = api;
+        this.config = config;
+    }
+
+    @Override
+    public String getName() {
+        return "delhome";
+    }
+
+    @Override
+    public String[] getAliases() {
+        return config.getPlayerDelHomeAliases();
+    }
+
+    @Override
+    public String getPermission() {
+        return config.getPlayerDelHomePermission();
+    }
+
+    @Override
+    public String getSyntax() {
+        return config.getPlayerDelHomeSyntax();
+    }
+
+    @Override
+    public String getDescription() {
+        return config.getPlayerDelHomeDescription();
+    }
+
+    @Override
+    public boolean execute(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(config.getOnlyPlayerCanRunCommandMessage());
+            return true;
+        }
+
+        if (args.length < 2) {
+            return false;
+        }
+
+        String homeName = args[1];
+
+        // Case-insensitive: names are stored lowercased and common MySQL collations compare
+        // case-insensitively, so "Default" would otherwise slip past this guard and delete it.
+        if ("default".equalsIgnoreCase(homeName)) {
+            player.sendMessage(config.getPlayerCannotDeleteDefaultHomeMessage());
+            return true;
+        }
+
+        api.player(player.getUniqueId()).deleteHome(homeName).thenRun(() -> {
+            player.sendMessage(config.getPlayerDelHomeSuccessMessage(homeName));
+        }).exceptionally(ex -> {
+            Throwable cause = ex.getCause();
+            if (cause instanceof IslandDoesNotExistException) {
+                player.sendMessage(config.getPlayerNoIslandMessage());
+            } else if (cause instanceof HomeDoesNotExistException) {
+                player.sendMessage(config.getPlayerNoHomeMessage(homeName));
+            } else {
+                player.sendMessage(config.getUnknownExceptionMessage());
+                plugin.severe("Error deleting home for player " + player.getName(), ex);
+            }
+            return null;
+        });
+
+        return true;
+    }
+
+    @Override
+    public CompletableFuture<List<String>> tabCompleteAsync(CommandSender sender, String label, String[] args) {
+        if (args.length != 2 || !(sender instanceof Player player)) {
+            return CompletableFuture.completedFuture(Collections.emptyList());
+        }
+
+        String prefix = args[1].toLowerCase(Locale.ROOT);
+
+        return api.getHomeNames(player.getUniqueId()).thenApply(homeNames -> homeNames.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList())).exceptionally(ex -> Collections.emptyList());
+    }
+}

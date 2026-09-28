@@ -110,10 +110,6 @@ public class ConfigHandler {
         return config.getString("server.name");
     }
 
-    public String getIslandWorldName() {
-        return config.getString("server.world");
-    }
-
     public String getMySQLHost() {
         return config.getString("mysql.host");
     }
@@ -174,6 +170,34 @@ public class ConfigHandler {
         return getLobbyServerNames().contains(getServerName());
     }
 
+    public String getLobbyWorldName() {
+        return config.getString("lobby.world-name");
+    }
+
+    public double getLobbyX() {
+        return config.getDouble("lobby.location.x");
+    }
+
+    public double getLobbyY() {
+        return config.getDouble("lobby.location.y");
+    }
+
+    public double getLobbyZ() {
+        return config.getDouble("lobby.location.z");
+    }
+
+    public float getLobbyYaw() {
+        return (float) config.getDouble("lobby.location.yaw");
+    }
+
+    public float getLobbyPitch() {
+        return (float) config.getDouble("lobby.location.pitch");
+    }
+
+    public String getIslandWorldName() {
+        return config.getString("island.world");
+    }
+
     public int getIslandHeight() {
         return config.getInt("island.height");
     }
@@ -216,6 +240,30 @@ public class ConfigHandler {
 
     public int getTemplateMaxZ() {
         return config.getInt("island.template.max.z");
+    }
+
+    public double getIslandSpawnX() {
+        return config.getDouble("island.spawn.x");
+    }
+
+    public double getIslandSpawnY() {
+        return config.getDouble("island.spawn.y");
+    }
+
+    public double getIslandSpawnZ() {
+        return config.getDouble("island.spawn.z");
+    }
+
+    public float getIslandSpawnYaw() {
+        return (float) config.getDouble("island.spawn.yaw");
+    }
+
+    public float getIslandSpawnPitch() {
+        return (float) config.getDouble("island.spawn.pitch");
+    }
+
+    public String getBaseCommandMode() {
+        return config.getString("command.base-command-mode");
     }
 
     public boolean isDebug() {
@@ -262,6 +310,70 @@ public class ConfigHandler {
         return commands.getString("commands.player.delete.description");
     }
 
+    public String[] getPlayerSetHomeAliases() {
+        return commands.getStringList("commands.player.sethome.aliases").toArray(new String[0]);
+    }
+
+    public String getPlayerSetHomePermission() {
+        return commands.getString("commands.player.sethome.permission");
+    }
+
+    public String getPlayerSetHomeSyntax() {
+        return commands.getString("commands.player.sethome.syntax");
+    }
+
+    public String getPlayerSetHomeDescription() {
+        return commands.getString("commands.player.sethome.description");
+    }
+
+    public String[] getPlayerDelHomeAliases() {
+        return commands.getStringList("commands.player.delhome.aliases").toArray(new String[0]);
+    }
+
+    public String getPlayerDelHomePermission() {
+        return commands.getString("commands.player.delhome.permission");
+    }
+
+    public String getPlayerDelHomeSyntax() {
+        return commands.getString("commands.player.delhome.syntax");
+    }
+
+    public String getPlayerDelHomeDescription() {
+        return commands.getString("commands.player.delhome.description");
+    }
+
+    public String[] getPlayerHomeAliases() {
+        return commands.getStringList("commands.player.home.aliases").toArray(new String[0]);
+    }
+
+    public String getPlayerHomePermission() {
+        return commands.getString("commands.player.home.permission");
+    }
+
+    public String getPlayerHomeSyntax() {
+        return commands.getString("commands.player.home.syntax");
+    }
+
+    public String getPlayerHomeDescription() {
+        return commands.getString("commands.player.home.description");
+    }
+
+    public String[] getPlayerLobbyAliases() {
+        return commands.getStringList("commands.player.lobby.aliases").toArray(new String[0]);
+    }
+
+    public String getPlayerLobbyPermission() {
+        return commands.getString("commands.player.lobby.permission");
+    }
+
+    public String getPlayerLobbySyntax() {
+        return commands.getString("commands.player.lobby.syntax");
+    }
+
+    public String getPlayerLobbyDescription() {
+        return commands.getString("commands.player.lobby.description");
+    }
+
     public String[] getPlayerHelpAliases() {
         return commands.getStringList("commands.player.help.aliases").toArray(new String[0]);
     }
@@ -291,6 +403,10 @@ public class ConfigHandler {
         return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.no-permission-command")));
     }
 
+    public Component getHomeNameNotLegalMessage() {
+        return ColorUtils.colorize(messages.getString("messages.home-name-not-legal"));
+    }
+
     public Component getIslandGridFullMessage() {
         return ColorUtils.colorize(messages.getString("messages.island-grid-full"));
     }
@@ -316,6 +432,10 @@ public class ConfigHandler {
         return ColorUtils.colorize(messages.getString("messages.player-already-has-island"));
     }
 
+    public Component getPlayerMustInIslandSetHomeMessage() {
+        return ColorUtils.colorize(messages.getString("messages.player-must-in-island-set-home"));
+    }
+
     public Component getPlayerCreateSuccessMessage() {
         return ColorUtils.colorize(messages.getString("messages.player-create-island-success"));
     }
@@ -334,6 +454,30 @@ public class ConfigHandler {
 
     public Component getPlayerDeleteNotOwnerMessage() {
         return ColorUtils.colorize(messages.getString("messages.player-delete-not-owner"));
+    }
+
+    public Component getPlayerSetHomeSuccessMessage(String home) {
+        return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.player-set-home-success")).replace("{home}", home));
+    }
+
+    public Component getPlayerDelHomeSuccessMessage(String home) {
+        return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.player-delete-home-success")).replace("{home}", home));
+    }
+
+    public Component getPlayerCannotDeleteDefaultHomeMessage() {
+        return ColorUtils.colorize(messages.getString("messages.player-cannot-delete-default-home"));
+    }
+
+    public Component getPlayerNoHomeMessage(String home) {
+        return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.player-no-home")).replace("{home}", home));
+    }
+
+    public Component getPlayerHomeSuccessMessage(String home) {
+        return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.player-home-success")).replace("{home}", home));
+    }
+
+    public Component getPlayerLobbySuccessMessage() {
+        return ColorUtils.colorize(messages.getString("messages.player-lobby-success"));
     }
 
     // Help

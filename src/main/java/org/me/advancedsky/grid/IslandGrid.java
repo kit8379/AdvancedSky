@@ -64,6 +64,19 @@ public final class IslandGrid {
     }
 
     /**
+     * Whether the block column at x, z lies in the area of the island in the given slot, the
+     * same area a delete clears.
+     */
+    public boolean isInArea(int slot, double x, double z) {
+        int[] cell = spiralCell(slot);
+        int centerX = cell[0] * SPACING + CENTER_OFFSET;
+        int centerZ = cell[1] * SPACING + CENTER_OFFSET;
+        int blockX = (int) Math.floor(x);
+        int blockZ = (int) Math.floor(z);
+        return blockX >= centerX - AREA_RADIUS && blockX < centerX + AREA_RADIUS && blockZ >= centerZ - AREA_RADIUS && blockZ < centerZ + AREA_RADIUS;
+    }
+
+    /**
      * Cell {x, z} for a 0-based index on a square spiral: 0 is the origin, 1..8 the first ring,
      * 9..24 the second ring, and so on. Each ring is walked clockwise starting just below its
      * top-right corner.
