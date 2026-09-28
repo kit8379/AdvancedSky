@@ -58,12 +58,12 @@ class DatabaseHandlerUpgradeTest {
     }
 
     @Test
-    void snapshotReadsTheSavedIslandSizeAndDefaultsToTheFirstLevel() {
-        assertEquals(1, database.getIslandSnapshot(island).getSizeLevel());
+    void islandReadsTheSavedIslandSizeAndDefaultsToTheFirstLevel() {
+        assertEquals(1, database.getIslandCache(island).getSizeLevel());
         database.updateIslandUpgradeLevel(admin, island, "island-size", 1, 2);
-        assertEquals(2, database.getIslandSnapshot(island).getSizeLevel());
+        assertEquals(2, database.getIslandCache(island).getSizeLevel());
         database.updateIslandUpgradeLevel(admin, island, "island-size", 2, 1);
-        assertEquals(1, database.getIslandSnapshot(island).getSizeLevel());
+        assertEquals(1, database.getIslandCache(island).getSizeLevel());
     }
 
     @Test
@@ -189,9 +189,9 @@ class DatabaseHandlerUpgradeTest {
     }
 
     @Test
-    void snapshotCarriesTheGeneratorRatesLevel() {
-        assertEquals(1, database.getIslandSnapshot(island).getGeneratorLevel());
+    void islandCarriesTheGeneratorRatesLevel() {
+        assertEquals(1, database.getIslandCache(island).getGeneratorLevel());
         database.updateIslandUpgradeLevel(admin, island, "generator-rates", 1, 2);
-        assertEquals(2, database.getIslandSnapshot(island).getGeneratorLevel());
+        assertEquals(2, database.getIslandCache(island).getGeneratorLevel());
     }
 }

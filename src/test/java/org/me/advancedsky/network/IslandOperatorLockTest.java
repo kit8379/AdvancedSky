@@ -3,12 +3,14 @@ package org.me.advancedsky.network;
 import org.bukkit.entity.Player;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.model.Island;
-import org.me.advancedsky.snapshot.IslandSnapshot;
 import org.me.advancedsky.world.WorldHandler;
 import org.mockito.ArgumentCaptor;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 import java.util.Map;
 import java.util.Optional;
@@ -16,9 +18,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Predicate;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
 
 class IslandOperatorLockTest {
     private static final int SLOT = 4;
@@ -30,20 +29,20 @@ class IslandOperatorLockTest {
     private final Actor actor = new Actor.Player(owner);
     private final AdvancedSky plugin = mock(AdvancedSky.class);
     private final DatabaseHandler database = mock(DatabaseHandler.class);
-    private final IslandSnapshot snapshots = mock(IslandSnapshot.class);
+    private final IslandCache cache = mock(IslandCache.class);
     private final WorldHandler worlds = mock(WorldHandler.class);
-    private final IslandOperator operator = new IslandOperator(plugin, database, worlds, null, snapshots, null, "local");
+    private final IslandOperator operator = new IslandOperator(plugin, database, worlds, null, cache, null, "local");
 
     IslandOperatorLockTest() {
         when(database.toggleIslandLock(actor, island)).thenReturn(true);
         when(database.getIslandSlot(island)).thenReturn(Optional.of(SLOT));
-        when(snapshots.reload(island)).thenReturn(CompletableFuture.completedFuture(null));
+        when(cache.reload(island)).thenReturn(CompletableFuture.completedFuture(null));
         when(worlds.removePlayersFromIsland(eq(SLOT), any())).thenReturn(CompletableFuture.completedFuture(null));
     }
 
     @Test
-    void lockingEvictsByTheReloadedSnapshotWithoutReadingTheDatabase() {
-        when(snapshots.get(island)).thenReturn(new Island(island, SLOT, true, false, owner, Set.of(member), Set.of(coop), Set.of(), Map.of(), null, 1, 1));
+    void lockingEvictsByTheReloadedCacheWithoutReadingTheDatabase() {
+        when(cache.get(island)).thenReturn(new Island(island, SLOT, true, false, owner, Set.of(member), Set.of(coop), Set.of(), Map.of(), null, 1, 1));
 
         assertTrue(operator.toggleIslandLock(actor, island).join());
 
@@ -57,8 +56,8 @@ class IslandOperatorLockTest {
     }
 
     @Test
-    void lockingFallsBackToTheDatabaseWhenTheSnapshotIsUnavailable() {
-        when(snapshots.get(island)).thenReturn(null);
+    void lockingFallsBackToTheDatabaseWhenTheCacheEntryIsUnavailable() {
+        when(cache.get(island)).thenReturn(null);
         when(database.getIslandPlayers(island)).thenReturn(Map.of(owner, "owner", member, "member"));
         when(database.getIslandCoops(island)).thenReturn(Set.of(coop));
 

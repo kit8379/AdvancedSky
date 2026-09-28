@@ -20,11 +20,13 @@ import org.bukkit.event.entity.EntityPlaceEvent;
 import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.listener.IslandLimitListener;
 import org.me.advancedsky.model.Island;
-import org.me.advancedsky.snapshot.IslandSnapshot;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 import java.io.InputStreamReader;
 import java.lang.reflect.Field;
@@ -35,9 +37,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
-
 class LimitHandlerTest {
     private static final String ISLAND_WORLD = "islands";
     private static final int SLOT = 2;
@@ -45,7 +44,7 @@ class LimitHandlerTest {
     private final IslandGrid grid = new IslandGrid(64);
     private final AdvancedSky plugin = mock(AdvancedSky.class);
     private final UUID island = UUID.randomUUID();
-    private final Island snapshot = new Island(island, SLOT, false, false, UUID.randomUUID(), Set.of(), Set.of(), Set.of(), Map.of(), null, 1, 1);
+    private final Island cachedIsland = new Island(island, SLOT, false, false, UUID.randomUUID(), Set.of(), Set.of(), Set.of(), Map.of(), null, 1, 1);
     private final Location center = grid.center(null, SLOT);
 
     private ConfigHandler defaultLimits() throws Exception {
@@ -104,8 +103,8 @@ class LimitHandlerTest {
 
         World world = mock(World.class);
         assertEquals(0, limits.getEntityLimit(EntityType.MINECART));
-        assertFalse(limits.canSpawnEntity(snapshot, world, EntityType.MINECART));
-        assertTrue(limits.canSpawnEntity(snapshot, world, EntityType.ARMOR_STAND));
+        assertFalse(limits.canSpawnEntity(cachedIsland, world, EntityType.MINECART));
+        assertTrue(limits.canSpawnEntity(cachedIsland, world, EntityType.ARMOR_STAND));
     }
 
     @Test
@@ -161,13 +160,13 @@ class LimitHandlerTest {
         List<Entity> entities = new ArrayList<>(entities(world, EntityType.MINECART, 19, center.getBlockX()));
         entities.addAll(entities(world, EntityType.ARMOR_STAND, 5, center.getBlockX()));
         when(centreChunk.getEntities()).thenReturn(entities.toArray(Entity[]::new));
-        assertTrue(limits.canSpawnEntity(snapshot, world, EntityType.MINECART));
+        assertTrue(limits.canSpawnEntity(cachedIsland, world, EntityType.MINECART));
 
         List<Entity> full = entities(world, EntityType.MINECART, 20, center.getBlockX());
         when(centreChunk.getEntities()).thenReturn(full.toArray(Entity[]::new));
-        assertFalse(limits.canSpawnEntity(snapshot, world, EntityType.MINECART));
+        assertFalse(limits.canSpawnEntity(cachedIsland, world, EntityType.MINECART));
 
-        assertTrue(limits.canSpawnEntity(snapshot, world, EntityType.ZOMBIE));
+        assertTrue(limits.canSpawnEntity(cachedIsland, world, EntityType.ZOMBIE));
         verify(centreChunk, times(2)).getEntities();
         verify(edgeChunk, times(2)).getEntities();
     }
@@ -189,7 +188,7 @@ class LimitHandlerTest {
         Component calculating = Component.text("calculating");
         when(config.getBlockLimitReachedMessage("HOPPER", 50)).thenReturn(full);
         when(config.getBlockLimitCalculatingMessage()).thenReturn(calculating);
-        IslandLimitListener listener = new IslandLimitListener(plugin, config, limits, snapshots());
+        IslandLimitListener listener = new IslandLimitListener(plugin, config, limits, cache());
         Player player = mock(Player.class);
 
         BlockPlaceEvent notReady = placeEvent(ISLAND_WORLD, Material.HOPPER, player);
@@ -227,7 +226,7 @@ class LimitHandlerTest {
         LimitHandler limits = mock(LimitHandler.class);
         when(limits.getBlockLimit(any())).thenReturn(LimitHandler.UNLIMITED);
         when(limits.getBlockLimit(Material.HOPPER)).thenReturn(50);
-        IslandLimitListener listener = new IslandLimitListener(plugin, islandWorldConfig(), limits, snapshots());
+        IslandLimitListener listener = new IslandLimitListener(plugin, islandWorldConfig(), limits, cache());
         Player player = mock(Player.class);
 
         listener.onBlockBreak(new BlockBreakEvent(block(ISLAND_WORLD, Material.HOPPER), player));
@@ -243,11 +242,11 @@ class LimitHandlerTest {
         LimitHandler limits = mock(LimitHandler.class);
         when(limits.getEntityLimit(any())).thenReturn(LimitHandler.UNLIMITED);
         when(limits.getEntityLimit(EntityType.MINECART)).thenReturn(20);
-        IslandLimitListener listener = new IslandLimitListener(plugin, islandWorldConfig(), limits, snapshots());
+        IslandLimitListener listener = new IslandLimitListener(plugin, islandWorldConfig(), limits, cache());
         World islandWorld = world(ISLAND_WORLD);
         World overworld = world("world");
 
-        when(limits.canSpawnEntity(snapshot, islandWorld, EntityType.MINECART)).thenReturn(false);
+        when(limits.canSpawnEntity(cachedIsland, islandWorld, EntityType.MINECART)).thenReturn(false);
         EntityPlaceEvent denied = new EntityPlaceEvent(entity(EntityType.MINECART), mock(Player.class), block(islandWorld, Material.RAIL), BlockFace.UP);
         listener.onEntityPlace(denied);
         assertTrue(denied.isCancelled());
@@ -275,17 +274,17 @@ class LimitHandlerTest {
     /**
      * The island sits in its slot; nothing else is hosted.
      */
-    private IslandSnapshot snapshots() {
-        IslandSnapshot snapshots = mock(IslandSnapshot.class);
-        when(snapshots.getAt(any(Location.class))).thenAnswer(call -> {
+    private IslandCache cache() {
+        IslandCache cache = mock(IslandCache.class);
+        when(cache.getAt(any(Location.class))).thenAnswer(call -> {
             Location location = call.getArgument(0);
-            return grid.slotAt(location.getX(), location.getZ()) == SLOT ? snapshot : null;
+            return grid.slotAt(location.getX(), location.getZ()) == SLOT ? cachedIsland : null;
         });
-        when(snapshots.getIslandUuidAt(any(Location.class))).thenAnswer(call -> {
+        when(cache.getIslandUuidAt(any(Location.class))).thenAnswer(call -> {
             Location location = call.getArgument(0);
             return grid.slotAt(location.getX(), location.getZ()) == SLOT ? island : null;
         });
-        return snapshots;
+        return cache;
     }
 
     private List<Entity> entities(World world, EntityType type, int count, int blockX) {

@@ -7,6 +7,7 @@ import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.json.JSONObject;
 import org.me.advancedsky.api.AdvancedSkyAPI;
+import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.cluster.InvitationStore;
 import org.me.advancedsky.cluster.OnlinePlayerRegistry;
 import org.me.advancedsky.command.AsyncTabCompleteListener;
@@ -26,7 +27,6 @@ import org.me.advancedsky.network.IslandOperator;
 import org.me.advancedsky.placeholder.AdvancedSkyExpansion;
 import org.me.advancedsky.redis.RedisHandler;
 import org.me.advancedsky.scheduler.LevelUpdateScheduler;
-import org.me.advancedsky.snapshot.IslandSnapshot;
 import org.me.advancedsky.teleport.TeleportHandler;
 import org.me.advancedsky.thread.BukkitAsyncExecutor;
 import org.me.advancedsky.thread.GlobalRegionExecutor;
@@ -110,14 +110,14 @@ public class AdvancedSky extends JavaPlugin {
             onlinePlayerRegistry.addAllOnlinePlayers(onlinePlayers, serverID);
             info("Redis cache state handler loaded");
 
-            info("Loading island snapshot");
-            IslandSnapshot islandSnapshot = new IslandSnapshot(this, databaseHandler, islandGrid);
-            // Islands never leave their host, so its snapshot holds all of them for good, loaded before
+            info("Loading island cache");
+            IslandCache islandCache = new IslandCache(this, databaseHandler, islandGrid);
+            // Islands never leave their host, so its cache holds all of them for good, loaded before
             // any player can join or any request arrive.
             if (!config.isLobbyOnly()) {
-                islandSnapshot.loadAll(serverID);
+                islandCache.loadAll(serverID);
             }
-            info("Island snapshot loaded");
+            info("Island cache loaded");
 
             info("Starting world handler");
             WorldHandler worldHandler = new WorldHandler(this, config, islandGrid);
@@ -130,7 +130,7 @@ public class AdvancedSky extends JavaPlugin {
             info("Starting handlers for island remote requests");
             crossServerMessenger = new CrossServerMessenger(this, redisHandler, serverID);
             limitHandler = new LimitHandler(this, config, islandGrid);
-            IslandOperator islandOperator = new IslandOperator(this, databaseHandler, worldHandler, teleportHandler, islandSnapshot, limitHandler, serverID);
+            IslandOperator islandOperator = new IslandOperator(this, databaseHandler, worldHandler, teleportHandler, islandCache, limitHandler, serverID);
             IslandDistributor islandDistributor = new IslandDistributor(this, databaseHandler, islandOperator, onlinePlayerRegistry, crossServerMessenger, config.getIslandServerNames(), serverID);
             registerCrossServerHandlers(crossServerMessenger, islandOperator);
             info("All handlers for remote requests loaded");
@@ -140,11 +140,11 @@ public class AdvancedSky extends JavaPlugin {
             info("Player message handler loaded");
 
             info("Starting main handlers for the plugin");
-            CoreHandler coreHandler = new CoreHandler(this, config, databaseHandler, islandDistributor, islandSnapshot);
+            CoreHandler coreHandler = new CoreHandler(this, config, databaseHandler, islandDistributor, islandCache);
             PlayerHandler playerHandler = new PlayerHandler(this, databaseHandler, islandDistributor, invitationStore, onlinePlayerRegistry);
             HomeHandler homeHandler = new HomeHandler(this, config, databaseHandler, islandDistributor, onlinePlayerRegistry, islandGrid);
             WarpHandler warpHandler = new WarpHandler(this, config, databaseHandler, islandDistributor, onlinePlayerRegistry, islandGrid);
-            levelHandler = new LevelHandler(this, config, databaseHandler, limitHandler, worldHandler, islandSnapshot, islandGrid);
+            levelHandler = new LevelHandler(this, config, databaseHandler, limitHandler, worldHandler, islandCache, islandGrid);
             cobblestoneGeneratorHandler = new CobblestoneGeneratorHandler(this, config);
             BanHandler banHandler = new BanHandler(this, databaseHandler, islandDistributor);
             CoopHandler coopHandler = new CoopHandler(this, databaseHandler, islandDistributor, onlinePlayerRegistry);
@@ -181,15 +181,15 @@ public class AdvancedSky extends JavaPlugin {
 
             info("Starting listeners");
             getServer().getPluginManager().registerEvents(new OnlinePlayersListener(this, onlinePlayerRegistry, serverID), this);
-            getServer().getPluginManager().registerEvents(new IslandBorderListener(config, islandSnapshot, islandGrid), this);
-            getServer().getPluginManager().registerEvents(new IslandActivityListener(this, config, islandSnapshot, islandActivityHandler, levelUpdateScheduler), this);
+            getServer().getPluginManager().registerEvents(new IslandBorderListener(config, islandCache, islandGrid), this);
+            getServer().getPluginManager().registerEvents(new IslandActivityListener(this, config, islandCache, islandActivityHandler, levelUpdateScheduler), this);
             getServer().getPluginManager().registerEvents(new TeleportRequestListener(this, teleportHandler), this);
-            getServer().getPluginManager().registerEvents(new IslandProtectionListener(config, islandSnapshot, islandGrid), this);
-            getServer().getPluginManager().registerEvents(new IslandAccessListener(this, config, islandSnapshot), this);
-            getServer().getPluginManager().registerEvents(new IslandRespawnListener(this, config, islandSnapshot), this);
-            getServer().getPluginManager().registerEvents(new IslandPvPListener(this, config, islandSnapshot), this);
-            getServer().getPluginManager().registerEvents(new CobblestoneGeneratorListener(config, islandSnapshot, cobblestoneGeneratorHandler), this);
-            getServer().getPluginManager().registerEvents(new IslandLimitListener(this, config, limitHandler, islandSnapshot), this);
+            getServer().getPluginManager().registerEvents(new IslandProtectionListener(config, islandCache, islandGrid), this);
+            getServer().getPluginManager().registerEvents(new IslandAccessListener(this, config, islandCache), this);
+            getServer().getPluginManager().registerEvents(new IslandRespawnListener(this, config, islandCache), this);
+            getServer().getPluginManager().registerEvents(new IslandPvPListener(this, config, islandCache), this);
+            getServer().getPluginManager().registerEvents(new CobblestoneGeneratorListener(config, islandCache, cobblestoneGeneratorHandler), this);
+            getServer().getPluginManager().registerEvents(new IslandLimitListener(this, config, limitHandler, islandCache), this);
             getServer().getPluginManager().registerEvents(new UuidUpdateListener(this, uuidHandler), this);
             getServer().getPluginManager().registerEvents(new IslandCoopListener(this, coopHandler, onlinePlayerRegistry), this);
             info("All listeners loaded");

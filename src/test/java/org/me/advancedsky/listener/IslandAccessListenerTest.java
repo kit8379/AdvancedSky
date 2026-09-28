@@ -8,23 +8,22 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.api.AdvancedSkyAPI;
+import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.model.Island;
-import org.me.advancedsky.snapshot.IslandSnapshot;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
-
 class IslandAccessListenerTest {
     private final AdvancedSky plugin = mock(AdvancedSky.class);
     private final AdvancedSkyAPI api = mock(AdvancedSkyAPI.class);
     private final ConfigHandler config = mock(ConfigHandler.class);
-    private final IslandSnapshot snapshots = mock(IslandSnapshot.class);
+    private final IslandCache cache = mock(IslandCache.class);
     private final World world = mock(World.class);
     private final Player player = mock(Player.class);
     private final UUID playerUuid = UUID.randomUUID();
@@ -49,8 +48,8 @@ class IslandAccessListenerTest {
     }
 
     @Test
-    void anIslandWhoseSnapshotIsUnavailableFailsClosed() {
-        when(snapshots.getIslandUuidAt(location)).thenReturn(UUID.randomUUID());
+    void anIslandWhoseCacheEntryIsUnavailableFailsClosed() {
+        when(cache.getIslandUuidAt(location)).thenReturn(UUID.randomUUID());
 
         join();
 
@@ -60,8 +59,8 @@ class IslandAccessListenerTest {
     @Test
     void bannedPlayersAreSentToTheLobby() {
         Island island = new Island(UUID.randomUUID(), 1, false, false, UUID.randomUUID(), Set.of(), Set.of(), Set.of(playerUuid), Map.of(), null, 1, 1);
-        when(snapshots.getIslandUuidAt(location)).thenReturn(island.getIslandUuid());
-        when(snapshots.getAt(location)).thenReturn(island);
+        when(cache.getIslandUuidAt(location)).thenReturn(island.getIslandUuid());
+        when(cache.getAt(location)).thenReturn(island);
 
         join();
 
@@ -71,8 +70,8 @@ class IslandAccessListenerTest {
     @Test
     void membersStay() {
         Island island = new Island(UUID.randomUUID(), 1, true, false, UUID.randomUUID(), Set.of(playerUuid), Set.of(), Set.of(), Map.of(), null, 1, 1);
-        when(snapshots.getIslandUuidAt(location)).thenReturn(island.getIslandUuid());
-        when(snapshots.getAt(location)).thenReturn(island);
+        when(cache.getIslandUuidAt(location)).thenReturn(island.getIslandUuid());
+        when(cache.getAt(location)).thenReturn(island);
 
         join();
 
@@ -80,6 +79,6 @@ class IslandAccessListenerTest {
     }
 
     private void join() {
-        new IslandAccessListener(plugin, config, snapshots).onPlayerJoin(new PlayerJoinEvent(player, net.kyori.adventure.text.Component.empty()));
+        new IslandAccessListener(plugin, config, cache).onPlayerJoin(new PlayerJoinEvent(player, net.kyori.adventure.text.Component.empty()));
     }
 }

@@ -9,11 +9,13 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.event.block.BlockFormEvent;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.listener.CobblestoneGeneratorListener;
 import org.me.advancedsky.model.Island;
-import org.me.advancedsky.snapshot.IslandSnapshot;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 import java.io.InputStreamReader;
 import java.lang.reflect.Field;
@@ -22,9 +24,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
 
 class CobblestoneGeneratorTest {
     private static final String ISLAND_WORLD = "islands";
@@ -91,9 +90,9 @@ class CobblestoneGeneratorTest {
     void formedCobblestoneBecomesTheRolledBlockOnlyOnIslands() {
         UUID islandUuid = UUID.randomUUID();
         Island island = new Island(islandUuid, SLOT, false, false, UUID.randomUUID(), Set.of(), Set.of(), Set.of(), Map.of(), null, 1, 3);
-        // The snapshot holds only this island: every other slot, and the gap, has none.
-        IslandSnapshot snapshots = mock(IslandSnapshot.class);
-        when(snapshots.getAt(any(Location.class))).thenAnswer(call -> {
+        // The cache holds only this island: every other slot, and the gap, has none.
+        IslandCache cache = mock(IslandCache.class);
+        when(cache.getAt(any(Location.class))).thenAnswer(call -> {
             Location location = call.getArgument(0);
             return GRID.slotAt(location.getX(), location.getZ()) == SLOT ? island : null;
         });
@@ -101,7 +100,7 @@ class CobblestoneGeneratorTest {
         when(config.getIslandWorldName()).thenReturn(ISLAND_WORLD);
         CobblestoneGeneratorHandler generator = mock(CobblestoneGeneratorHandler.class);
         when(generator.roll(3)).thenReturn(Material.IRON_ORE);
-        CobblestoneGeneratorListener listener = new CobblestoneGeneratorListener(config, snapshots, generator);
+        CobblestoneGeneratorListener listener = new CobblestoneGeneratorListener(config, cache, generator);
         Location onIsland = GRID.center(null, SLOT);
         Location otherIsland = GRID.center(null, SLOT + 1);
 

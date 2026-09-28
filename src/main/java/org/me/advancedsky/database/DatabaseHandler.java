@@ -980,23 +980,23 @@ public class DatabaseHandler {
         });
     }
 
-    public Island getIslandSnapshot(UUID islandUuid) {
-        return withConnection(connection -> getIslandSnapshots(connection, "i.island_uuid = ?", stmt -> stmt.setString(1, islandUuid.toString())).get(islandUuid));
+    public Island getIslandCache(UUID islandUuid) {
+        return withConnection(connection -> getIslandCaches(connection, "i.island_uuid = ?", stmt -> stmt.setString(1, islandUuid.toString())).get(islandUuid));
     }
 
     /**
      * Every island hosted on the server, read in one pass: an island server keeps all of them in
-     * its snapshot for good.
+     * its cache for good.
      */
-    public Map<UUID, Island> getIslandSnapshotsByServer(String server) {
-        return withConnection(connection -> getIslandSnapshots(connection, "i.server = ?", stmt -> stmt.setString(1, server)));
+    public Map<UUID, Island> getIslandCachesByServer(String server) {
+        return withConnection(connection -> getIslandCaches(connection, "i.server = ?", stmt -> stmt.setString(1, server)));
     }
 
     /**
-     * Snapshots of the islands the filter selects, a condition on the islands table aliased
+     * The islands the filter selects, a condition on the islands table aliased
      * {@code i}. Each table is read once for all of them.
      */
-    private Map<UUID, Island> getIslandSnapshots(Connection connection, String filter, PreparedStatementConsumer binder) throws SQLException {
+    private Map<UUID, Island> getIslandCaches(Connection connection, String filter, PreparedStatementConsumer binder) throws SQLException {
         Map<UUID, int[]> islandData = executeQuery(connection, "SELECT i.island_uuid, i.slot, i.`lock`, i.pvp FROM " + prefix + "islands i WHERE " + filter, binder, rs -> {
             Map<UUID, int[]> result = new LinkedHashMap<>();
             while (rs.next()) {

@@ -24,9 +24,9 @@ import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectTypeCategory;
 import org.bukkit.potion.PotionType;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.model.Island;
-import org.me.advancedsky.snapshot.IslandSnapshot;
 
 import java.util.UUID;
 
@@ -34,16 +34,16 @@ public class IslandPvPListener implements Listener {
 
     private final AdvancedSky plugin;
     private final ConfigHandler config;
-    private final IslandSnapshot islandSnapshot;
+    private final IslandCache islandCache;
 
     // Both handlers run on the region thread that owns the entities; the explosion follows the
     // projectile hit within the same call stack, so a tick-scoped mark per thread is enough.
     private final ThreadLocal<WindChargeHit> windChargeHit = new ThreadLocal<>();
 
-    public IslandPvPListener(AdvancedSky plugin, ConfigHandler config, IslandSnapshot islandSnapshot) {
+    public IslandPvPListener(AdvancedSky plugin, ConfigHandler config, IslandCache islandCache) {
         this.plugin = plugin;
         this.config = config;
-        this.islandSnapshot = islandSnapshot;
+        this.islandCache = islandCache;
     }
 
     private UUID resolvePlayerUuid(Entity entity) {
@@ -65,7 +65,7 @@ public class IslandPvPListener implements Listener {
             return true;
         }
 
-        Island island = islandSnapshot.getAt(location);
+        Island island = islandCache.getAt(location);
         return island != null && island.isPvp();
     }
 

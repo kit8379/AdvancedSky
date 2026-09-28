@@ -6,26 +6,26 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockFormEvent;
+import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.island.CobblestoneGeneratorHandler;
 import org.me.advancedsky.model.Island;
-import org.me.advancedsky.snapshot.IslandSnapshot;
 
 
 /**
  * Cobblestone formed by lava meeting water on an island becomes the block its generator-rates
  * upgrade level rolls. Runs after protection has had its say, so a form outside the island
- * boundary is already cancelled here. An unavailable snapshot leaves vanilla cobblestone.
+ * boundary is already cancelled here. An unavailable cache entry leaves vanilla cobblestone.
  */
 public class CobblestoneGeneratorListener implements Listener {
 
     private final ConfigHandler config;
-    private final IslandSnapshot islandSnapshot;
+    private final IslandCache islandCache;
     private final CobblestoneGeneratorHandler generator;
 
-    public CobblestoneGeneratorListener(ConfigHandler config, IslandSnapshot islandSnapshot, CobblestoneGeneratorHandler generator) {
+    public CobblestoneGeneratorListener(ConfigHandler config, IslandCache islandCache, CobblestoneGeneratorHandler generator) {
         this.config = config;
-        this.islandSnapshot = islandSnapshot;
+        this.islandCache = islandCache;
         this.generator = generator;
     }
 
@@ -40,7 +40,7 @@ public class CobblestoneGeneratorListener implements Listener {
             return;
         }
 
-        Island island = islandSnapshot.getAt(event.getBlock().getLocation());
+        Island island = islandCache.getAt(event.getBlock().getLocation());
         if (island == null) {
             return;
         }

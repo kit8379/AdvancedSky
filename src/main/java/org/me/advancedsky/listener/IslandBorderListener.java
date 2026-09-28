@@ -12,10 +12,10 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
+import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.model.Island;
-import org.me.advancedsky.snapshot.IslandSnapshot;
 
 import java.util.Map;
 import java.util.UUID;
@@ -30,7 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class IslandBorderListener implements Listener {
 
     private final ConfigHandler config;
-    private final IslandSnapshot islandSnapshot;
+    private final IslandCache islandCache;
     private final IslandGrid islandGrid;
 
     /**
@@ -38,9 +38,9 @@ public class IslandBorderListener implements Listener {
      */
     private final Map<UUID, Long> shownBorders = new ConcurrentHashMap<>();
 
-    public IslandBorderListener(ConfigHandler config, IslandSnapshot islandSnapshot, IslandGrid islandGrid) {
+    public IslandBorderListener(ConfigHandler config, IslandCache islandCache, IslandGrid islandGrid) {
         this.config = config;
-        this.islandSnapshot = islandSnapshot;
+        this.islandCache = islandCache;
         this.islandGrid = islandGrid;
     }
 
@@ -119,7 +119,7 @@ public class IslandBorderListener implements Listener {
             return null;
         }
 
-        return islandSnapshot.getAt(location);
+        return islandCache.getAt(location);
     }
 
     private boolean isInside(Island island, Location location) {

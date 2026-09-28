@@ -2,12 +2,12 @@ package org.me.advancedsky.island;
 
 import org.bukkit.Location;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.network.IslandDistributor;
-import org.me.advancedsky.snapshot.IslandSnapshot;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -18,14 +18,14 @@ public class CoreHandler {
     private final ConfigHandler config;
     private final DatabaseHandler database;
     private final IslandDistributor islandDistributor;
-    private final IslandSnapshot islandSnapshot;
+    private final IslandCache islandCache;
 
-    public CoreHandler(AdvancedSky plugin, ConfigHandler config, DatabaseHandler database, IslandDistributor islandDistributor, IslandSnapshot islandSnapshot) {
+    public CoreHandler(AdvancedSky plugin, ConfigHandler config, DatabaseHandler database, IslandDistributor islandDistributor, IslandCache islandCache) {
         this.plugin = plugin;
         this.config = config;
         this.database = database;
         this.islandDistributor = islandDistributor;
-        this.islandSnapshot = islandSnapshot;
+        this.islandCache = islandCache;
     }
 
     public CompletableFuture<Void> createIsland(UUID ownerUuid) {
@@ -66,6 +66,6 @@ public class CoreHandler {
             return null;
         }
 
-        return islandSnapshot.getIslandUuidAt(location);
+        return islandCache.getIslandUuidAt(location);
     }
 }

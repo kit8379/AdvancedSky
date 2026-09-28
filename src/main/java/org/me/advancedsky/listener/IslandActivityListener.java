@@ -11,10 +11,10 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.island.IslandActivityHandler;
 import org.me.advancedsky.scheduler.LevelUpdateScheduler;
-import org.me.advancedsky.snapshot.IslandSnapshot;
 
 import java.util.Map;
 import java.util.UUID;
@@ -28,16 +28,16 @@ public class IslandActivityListener implements Listener {
 
     private final AdvancedSky plugin;
     private final ConfigHandler config;
-    private final IslandSnapshot islandSnapshot;
+    private final IslandCache islandCache;
     private final IslandActivityHandler islandActivityHandler;
     private final LevelUpdateScheduler levelUpdateScheduler;
 
     private final Map<UUID, UUID> currentIsland = new ConcurrentHashMap<>();
 
-    public IslandActivityListener(AdvancedSky plugin, ConfigHandler config, IslandSnapshot islandSnapshot, IslandActivityHandler islandActivityHandler, LevelUpdateScheduler levelUpdateScheduler) {
+    public IslandActivityListener(AdvancedSky plugin, ConfigHandler config, IslandCache islandCache, IslandActivityHandler islandActivityHandler, LevelUpdateScheduler levelUpdateScheduler) {
         this.plugin = plugin;
         this.config = config;
-        this.islandSnapshot = islandSnapshot;
+        this.islandCache = islandCache;
         this.islandActivityHandler = islandActivityHandler;
         this.levelUpdateScheduler = levelUpdateScheduler;
     }
@@ -98,6 +98,6 @@ public class IslandActivityListener implements Listener {
             return null;
         }
 
-        return islandSnapshot.getIslandUuidAt(location);
+        return islandCache.getIslandUuidAt(location);
     }
 }

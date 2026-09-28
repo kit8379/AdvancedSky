@@ -9,9 +9,9 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.model.Island;
-import org.me.advancedsky.snapshot.IslandSnapshot;
 
 import java.util.UUID;
 
@@ -19,12 +19,12 @@ public class IslandAccessListener implements Listener {
 
     private final AdvancedSky plugin;
     private final ConfigHandler config;
-    private final IslandSnapshot islandSnapshot;
+    private final IslandCache islandCache;
 
-    public IslandAccessListener(AdvancedSky plugin, ConfigHandler config, IslandSnapshot islandSnapshot) {
+    public IslandAccessListener(AdvancedSky plugin, ConfigHandler config, IslandCache islandCache) {
         this.plugin = plugin;
         this.config = config;
-        this.islandSnapshot = islandSnapshot;
+        this.islandCache = islandCache;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -48,11 +48,11 @@ public class IslandAccessListener implements Listener {
         }
         UUID playerUuid = player.getUniqueId();
 
-        Island island = islandSnapshot.getAt(location);
+        Island island = islandCache.getAt(location);
         if (island == null) {
             // The gap and free slots belong to no island (a first join lands on the world spawn,
-            // in the never-allocated slot 0); only an island whose snapshot is unavailable fails closed.
-            if (islandSnapshot.getIslandUuidAt(location) != null) {
+            // in the never-allocated slot 0); only an island whose cache entry is unavailable fails closed.
+            if (islandCache.getIslandUuidAt(location) != null) {
                 denyAccess(player, config.getIslandLockedMessage());
             }
             return;

@@ -22,7 +22,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-class DatabaseHandlerSnapshotTest {
+class DatabaseHandlerIslandsTest {
     private final UUID full = UUID.randomUUID();
     private final UUID bare = UUID.randomUUID();
     private final UUID elsewhere = UUID.randomUUID();
@@ -53,7 +53,7 @@ class DatabaseHandlerSnapshotTest {
         createTables.setAccessible(true);
         createTables.invoke(database);
 
-        // Server a: one island with everything a snapshot carries, one with nothing but its owner.
+        // Server a: one island with everything a cached island carries, one with nothing but its owner.
         sql("INSERT INTO test_islands (island_uuid, server) VALUES (?, 'a')", full);
         sql("UPDATE test_islands SET `lock` = TRUE WHERE island_uuid = ?", full);
         sql("INSERT INTO test_island_players (player_uuid, island_uuid, role) VALUES (?, ?, 'owner')", owner, full);
@@ -92,8 +92,8 @@ class DatabaseHandlerSnapshotTest {
     }
 
     @Test
-    void serverSnapshotsHoldExactlyThatServersIslandsWithEverySnapshotField() {
-        Map<UUID, Island> hosted = database.getIslandSnapshotsByServer("a");
+    void serverReadHoldsExactlyThatServersIslandsWithEveryField() {
+        Map<UUID, Island> hosted = database.getIslandCachesByServer("a");
         assertEquals(Set.of(full, bare), hosted.keySet());
 
         Island island = hosted.get(full);
@@ -124,16 +124,16 @@ class DatabaseHandlerSnapshotTest {
         assertEquals(1, ownerOnly.getSizeLevel());
         assertEquals(1, ownerOnly.getGeneratorLevel());
 
-        assertEquals(Map.of(), database.getIslandSnapshotsByServer("c"));
+        assertEquals(Map.of(), database.getIslandCachesByServer("c"));
     }
 
     @Test
-    void singleIslandSnapshotMatchesTheServerSnapshot() {
-        Map<UUID, Island> hosted = database.getIslandSnapshotsByServer("a");
+    void singleIslandReadMatchesTheServerRead() {
+        Map<UUID, Island> hosted = database.getIslandCachesByServer("a");
         for (UUID islandUuid : List.of(full, bare)) {
-            assertSameIsland(hosted.get(islandUuid), database.getIslandSnapshot(islandUuid));
+            assertSameIsland(hosted.get(islandUuid), database.getIslandCache(islandUuid));
         }
-        assertNull(database.getIslandSnapshot(UUID.randomUUID()));
+        assertNull(database.getIslandCache(UUID.randomUUID()));
     }
 
     private static void assertSameIsland(Island expected, Island actual) {

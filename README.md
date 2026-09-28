@@ -22,13 +22,13 @@ demand; AdvancedSky keeps every island of a server in one pre-loaded world, on a
   updating one column.
 - **The host does the work.** Every change to an island runs on the server that hosts it, in one
   serial chain per island: it writes MySQL, applies the change to its world and refreshes its
-  snapshot. Another server asks the host through a Redis Streams request and waits for the
+  island cache. Another server asks the host through a Redis Streams request and waits for the
   answer, so a failure on the host (including a typed one such as "already has an island")
   reaches the player.
 - **One pre-loaded island world per server.** Islands sit on a square spiral grid; the slot
-  number in MySQL maps to a position, so no coordinates are stored. Each island server keeps a
-  snapshot of all its islands, read in one pass at startup before anyone can join, for the
-  listeners to read.
+  number in MySQL maps to a position, so no coordinates are stored. Each island server keeps an
+  in-memory cache of all its islands, read in one pass at startup before anyone can join and
+  refreshed after every change it makes, for the listeners to read.
 - **Borders per player.** NewSky's per-world border becomes a border sent to each player around
   the island they stand on, and a move out of the island boundary is refused.
 - **The starter island is a world, not a file.** Every island server also loads a template world
@@ -45,7 +45,7 @@ demand; AdvancedSky keeps every island of a server in one pre-loaded world, on a
 1. Async: pick the listed island server with the fewest islands (B).
 2. If B is A, run the create here; otherwise send an `island.create` request to B and wait.
 3. On B: insert the island row (MySQL assigns the next slot) with the owner's `default` home,
-   load its snapshot, then paste the template one chunk at a time on the region threads that
+   add it to its island cache, then paste the template one chunk at a time on the region threads that
    own the chunks. If the paste fails, the area and the row are removed again and the failure
    is returned.
 4. Take the player to the island's `default` home, as `/island home` does.

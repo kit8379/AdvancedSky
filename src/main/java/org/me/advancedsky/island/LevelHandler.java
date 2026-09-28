@@ -2,12 +2,12 @@ package org.me.advancedsky.island;
 
 import org.bukkit.*;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.model.Island;
 import org.me.advancedsky.model.IslandTop;
-import org.me.advancedsky.snapshot.IslandSnapshot;
 import org.me.advancedsky.world.WorldHandler;
 
 import java.util.ArrayList;
@@ -25,18 +25,18 @@ public class LevelHandler {
     private final DatabaseHandler database;
     private final LimitHandler limitHandler;
     private final WorldHandler worldHandler;
-    private final IslandSnapshot islandSnapshot;
+    private final IslandCache islandCache;
     private final IslandGrid islandGrid;
 
     private volatile int[] pointsByMaterialOrdinal;
 
-    public LevelHandler(AdvancedSky plugin, ConfigHandler config, DatabaseHandler database, LimitHandler limitHandler, WorldHandler worldHandler, IslandSnapshot islandSnapshot, IslandGrid islandGrid) {
+    public LevelHandler(AdvancedSky plugin, ConfigHandler config, DatabaseHandler database, LimitHandler limitHandler, WorldHandler worldHandler, IslandCache islandCache, IslandGrid islandGrid) {
         this.plugin = plugin;
         this.config = config;
         this.database = database;
         this.limitHandler = limitHandler;
         this.worldHandler = worldHandler;
-        this.islandSnapshot = islandSnapshot;
+        this.islandCache = islandCache;
         this.islandGrid = islandGrid;
         startup();
     }
@@ -53,12 +53,12 @@ public class LevelHandler {
     }
 
     /**
-     * Scans the island's boundary for the island size its snapshot holds, on the region threads
-     * that own the chunks. Islands not hosted here, or whose snapshot is unavailable, keep their
+     * Scans the island's boundary for the island size the cache holds, on the region threads
+     * that own the chunks. Islands not hosted here, or whose cache entry is unavailable, keep their
      * stored level.
      */
     public CompletableFuture<Integer> calIslandLevel(UUID islandUuid) {
-        Island island = islandSnapshot.get(islandUuid);
+        Island island = islandCache.get(islandUuid);
 
         if (island == null) {
             return getIslandLevel(islandUuid).thenApply(cachedLevel -> {

@@ -19,22 +19,22 @@ import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.*;
 import org.bukkit.event.vehicle.VehicleDamageEvent;
 import org.bukkit.event.world.StructureGrowEvent;
+import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.model.Island;
-import org.me.advancedsky.snapshot.IslandSnapshot;
 
 import java.util.UUID;
 
 public class IslandProtectionListener implements Listener {
 
     private final ConfigHandler config;
-    private final IslandSnapshot islandSnapshot;
+    private final IslandCache islandCache;
     private final IslandGrid islandGrid;
 
-    public IslandProtectionListener(ConfigHandler config, IslandSnapshot islandSnapshot, IslandGrid islandGrid) {
+    public IslandProtectionListener(ConfigHandler config, IslandCache islandCache, IslandGrid islandGrid) {
         this.config = config;
-        this.islandSnapshot = islandSnapshot;
+        this.islandCache = islandCache;
         this.islandGrid = islandGrid;
     }
 
@@ -69,7 +69,7 @@ public class IslandProtectionListener implements Listener {
             return true;
         }
 
-        Island island = islandSnapshot.getAt(location);
+        Island island = islandCache.getAt(location);
         if (island == null) {
             return false;
         }
@@ -87,7 +87,7 @@ public class IslandProtectionListener implements Listener {
             return true;
         }
 
-        Island island = islandSnapshot.getAt(location);
+        Island island = islandCache.getAt(location);
         if (island == null) {
             return false;
         }
@@ -378,7 +378,7 @@ public class IslandProtectionListener implements Listener {
             return;
         }
 
-        Island island = islandSnapshot.getAt(to);
+        Island island = islandCache.getAt(to);
         if (!isInsideIslandBoundary(island, to)) {
             event.setCancelled(true);
             deny(player);

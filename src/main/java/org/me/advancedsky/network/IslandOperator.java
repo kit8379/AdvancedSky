@@ -4,12 +4,12 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.exceptions.*;
 import org.me.advancedsky.island.LimitHandler;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.model.Island;
-import org.me.advancedsky.snapshot.IslandSnapshot;
 import org.me.advancedsky.teleport.TeleportHandler;
 import org.me.advancedsky.util.LocationUtils;
 import org.me.advancedsky.world.WorldHandler;
@@ -25,7 +25,7 @@ import java.util.function.Supplier;
 /**
  * Executes island work on this server, the island's host. Every operation on an island runs in
  * that island's serial chain, so a delete can never interleave with a mutation or with the create
- * that is still pasting the same island. Mutations refresh the island's snapshot afterwards.
+ * that is still pasting the same island. Mutations refresh the island cache afterwards.
  */
 public class IslandOperator {
 
@@ -33,18 +33,18 @@ public class IslandOperator {
     private final DatabaseHandler database;
     private final WorldHandler worldHandler;
     private final TeleportHandler teleportHandler;
-    private final IslandSnapshot islandSnapshot;
+    private final IslandCache islandCache;
     private final LimitHandler limitHandler;
     private final String serverID;
 
     private final Map<UUID, CompletableFuture<Void>> chains = new ConcurrentHashMap<>();
 
-    public IslandOperator(AdvancedSky plugin, DatabaseHandler database, WorldHandler worldHandler, TeleportHandler teleportHandler, IslandSnapshot islandSnapshot, LimitHandler limitHandler, String serverID) {
+    public IslandOperator(AdvancedSky plugin, DatabaseHandler database, WorldHandler worldHandler, TeleportHandler teleportHandler, IslandCache islandCache, LimitHandler limitHandler, String serverID) {
         this.plugin = plugin;
         this.database = database;
         this.worldHandler = worldHandler;
         this.teleportHandler = teleportHandler;
-        this.islandSnapshot = islandSnapshot;
+        this.islandCache = islandCache;
         this.limitHandler = limitHandler;
         this.serverID = serverID;
     }
@@ -53,7 +53,7 @@ public class IslandOperator {
         return serialized(islandUuid, () -> {
             int slot = database.addIslandData(islandUuid, ownerUuid, serverID);
 
-            return islandSnapshot.load(islandUuid).thenCompose(v -> {
+            return islandCache.load(islandUuid).thenCompose(v -> {
                 return worldHandler.createIsland(slot);
             }).thenRunAsync(() -> {
                 plugin.debug("IslandOperator", "Created island " + islandUuid + " at slot " + slot + " on server: " + serverID);
@@ -72,7 +72,7 @@ public class IslandOperator {
         return serialized(islandUuid, () -> {
             int slot = getIslandSlot(islandUuid);
             database.deleteIsland(actor, islandUuid);
-            islandSnapshot.unload(islandUuid);
+            islandCache.unload(islandUuid);
             limitHandler.unload(islandUuid);
 
             return worldHandler.deleteIsland(slot).exceptionally(e -> {
@@ -130,14 +130,14 @@ public class IslandOperator {
     }
 
     public CompletableFuture<Void> addMember(Actor actor, UUID islandUuid, UUID playerUuid, String role) {
-        return updateSnapshot(islandUuid, () -> {
+        return updateCache(islandUuid, () -> {
             database.addIslandPlayer(actor, islandUuid, playerUuid, role);
             return null;
         });
     }
 
     public CompletableFuture<Void> removeMember(Actor actor, UUID islandUuid, UUID playerUuid) {
-        return updateSnapshot(islandUuid, () -> {
+        return updateCache(islandUuid, () -> {
             database.deleteIslandPlayer(actor, islandUuid, playerUuid);
             return null;
         }).thenCompose(v -> {
@@ -146,14 +146,14 @@ public class IslandOperator {
     }
 
     public CompletableFuture<Void> setOwner(Actor actor, UUID islandUuid, UUID newOwnerUuid) {
-        return updateSnapshot(islandUuid, () -> {
+        return updateCache(islandUuid, () -> {
             database.updateIslandOwner(actor, islandUuid, newOwnerUuid);
             return null;
         });
     }
 
     public CompletableFuture<Void> addBan(Actor actor, UUID islandUuid, UUID playerUuid) {
-        return updateSnapshot(islandUuid, () -> {
+        return updateCache(islandUuid, () -> {
             database.updateBanPlayer(actor, islandUuid, playerUuid);
             return null;
         }).thenCompose(v -> {
@@ -162,21 +162,21 @@ public class IslandOperator {
     }
 
     public CompletableFuture<Void> removeBan(Actor actor, UUID islandUuid, UUID playerUuid) {
-        return updateSnapshot(islandUuid, () -> {
+        return updateCache(islandUuid, () -> {
             database.deleteBanPlayer(actor, islandUuid, playerUuid);
             return null;
         });
     }
 
     public CompletableFuture<Void> addCoop(Actor actor, UUID islandUuid, UUID playerUuid) {
-        return updateSnapshot(islandUuid, () -> {
+        return updateCache(islandUuid, () -> {
             database.updateCoopPlayer(actor, islandUuid, playerUuid);
             return null;
         });
     }
 
     public CompletableFuture<Void> removeCoop(Actor actor, UUID islandUuid, UUID playerUuid) {
-        return updateSnapshot(islandUuid, () -> {
+        return updateCache(islandUuid, () -> {
             database.deleteCoopPlayer(actor, islandUuid, playerUuid);
             return null;
         }).thenCompose(v -> {
@@ -185,7 +185,7 @@ public class IslandOperator {
     }
 
     public CompletableFuture<Boolean> toggleIslandLock(Actor actor, UUID islandUuid) {
-        return updateSnapshot(islandUuid, () -> {
+        return updateCache(islandUuid, () -> {
             return database.toggleIslandLock(actor, islandUuid);
         }).thenCompose(locked -> {
             if (!locked) {
@@ -193,7 +193,7 @@ public class IslandOperator {
             }
 
             Set<UUID> allowed = new HashSet<>();
-            Island island = islandSnapshot.get(islandUuid);
+            Island island = islandCache.get(islandUuid);
             if (island != null) {
                 allowed.add(island.getOwner());
                 allowed.addAll(island.getMembers());
@@ -208,34 +208,34 @@ public class IslandOperator {
     }
 
     public CompletableFuture<Boolean> toggleIslandPvp(Actor actor, UUID islandUuid) {
-        return updateSnapshot(islandUuid, () -> {
+        return updateCache(islandUuid, () -> {
             return database.toggleIslandPvp(actor, islandUuid);
         });
     }
 
     public CompletableFuture<Void> setHome(Actor actor, UUID islandUuid, UUID playerUuid, String homeName, String homeLocation) {
-        return updateSnapshot(islandUuid, () -> {
+        return updateCache(islandUuid, () -> {
             database.updateHomePoint(actor, islandUuid, playerUuid, homeName, homeLocation);
             return null;
         });
     }
 
     public CompletableFuture<Void> deleteHome(UUID islandUuid, UUID playerUuid, String homeName) {
-        return updateSnapshot(islandUuid, () -> {
+        return updateCache(islandUuid, () -> {
             database.deleteHomePoint(islandUuid, playerUuid, homeName);
             return null;
         });
     }
 
     public CompletableFuture<Void> setWarp(Actor actor, UUID islandUuid, String warpName, String warpLocation) {
-        return updateSnapshot(islandUuid, () -> {
+        return updateCache(islandUuid, () -> {
             database.updateWarpPoint(actor, islandUuid, warpName, warpLocation);
             return null;
         });
     }
 
     public CompletableFuture<Void> deleteWarp(Actor actor, UUID islandUuid, String warpName) {
-        return updateSnapshot(islandUuid, () -> {
+        return updateCache(islandUuid, () -> {
             database.deleteWarpPoint(actor, islandUuid, warpName);
             return null;
         });
@@ -246,28 +246,28 @@ public class IslandOperator {
      * move; nothing else has to be pushed.
      */
     public CompletableFuture<Void> setUpgradeLevel(Actor actor, UUID islandUuid, String upgradeId, int expectedLevel, int newLevel) {
-        return updateSnapshot(islandUuid, () -> {
+        return updateCache(islandUuid, () -> {
             database.updateIslandUpgradeLevel(actor, islandUuid, upgradeId, expectedLevel, newLevel);
             return null;
         });
     }
 
     /**
-     * Runs the mutation in the island's chain and refreshes the snapshot afterwards, whether the
+     * Runs the mutation in the island's chain and refreshes the island cache afterwards, whether the
      * mutation succeeded or not.
      */
-    private <T> CompletableFuture<T> updateSnapshot(UUID islandUuid, Supplier<T> mutation) {
+    private <T> CompletableFuture<T> updateCache(UUID islandUuid, Supplier<T> mutation) {
         return serialized(islandUuid, () -> {
             try {
                 T result = mutation.get();
-                return islandSnapshot.reload(islandUuid).handle((v, reloadError) -> {
+                return islandCache.reload(islandUuid).handle((v, reloadError) -> {
                     if (reloadError != null) {
-                        plugin.severe("Island data saved but could not refresh the snapshot: " + islandUuid, reloadError);
+                        plugin.severe("Island data saved but could not refresh the island cache: " + islandUuid, reloadError);
                     }
                     return result;
                 });
             } catch (Throwable error) {
-                return islandSnapshot.reload(islandUuid).handle((v, reloadError) -> null).thenCompose(v -> CompletableFuture.failedFuture(error));
+                return islandCache.reload(islandUuid).handle((v, reloadError) -> null).thenCompose(v -> CompletableFuture.failedFuture(error));
             }
         });
     }
@@ -283,7 +283,7 @@ public class IslandOperator {
                 plugin.severe("Failed to cleanup database after island create failure: " + islandUuid, e);
             }
 
-            islandSnapshot.unload(islandUuid);
+            islandCache.unload(islandUuid);
         }, plugin.getBukkitAsyncExecutor());
     }
 

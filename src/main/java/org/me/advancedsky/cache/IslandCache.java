@@ -1,4 +1,4 @@
-package org.me.advancedsky.snapshot;
+package org.me.advancedsky.cache;
 
 import org.bukkit.Location;
 import org.me.advancedsky.AdvancedSky;
@@ -13,14 +13,15 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Per-server cache of the islands hosted here, read on every block break, PvP hit and move.
- * Islands are found by id or, for a location, by the grid slot whose area holds it.
+ * Every island hosted on this server, held for the server's whole run: loaded in one read at
+ * startup, reloaded by the host after each change it makes, and read on every block break, PvP
+ * hit and move. Islands are found by id or, for a location, by the grid slot whose area holds it.
  * <p>
- * A missing or failed (dirty) snapshot is unavailable so listeners fail closed. A reload in
- * flight keeps serving the previous snapshot: it is at most one mutation behind for one DB
+ * An island whose load failed (dirty) is unavailable so listeners fail closed. A reload in
+ * flight keeps serving the previous entry: it is at most one mutation behind for one DB
  * round trip, and blanking it would let the access listener lobby-bounce legitimate members.
  */
-public class IslandSnapshot {
+public class IslandCache {
 
     private final AdvancedSky plugin;
     private final DatabaseHandler database;
@@ -32,7 +33,7 @@ public class IslandSnapshot {
     private final Map<UUID, Long> loading = new ConcurrentHashMap<>();
     private final AtomicLong nextLoadGeneration = new AtomicLong();
 
-    public IslandSnapshot(AdvancedSky plugin, DatabaseHandler database, IslandGrid islandGrid) {
+    public IslandCache(AdvancedSky plugin, DatabaseHandler database, IslandGrid islandGrid) {
         this.plugin = plugin;
         this.database = database;
         this.islandGrid = islandGrid;
@@ -48,7 +49,7 @@ public class IslandSnapshot {
 
     /**
      * The island whose area holds the location, or null in the gap, on a free slot, for an
-     * island not hosted here, and while its snapshot is unavailable (see {@link #get}). The
+     * island not hosted here, and while its entry is unavailable (see {@link #get}). The
      * caller checks that the location is in the island world.
      */
     public Island getAt(Location location) {
@@ -57,7 +58,7 @@ public class IslandSnapshot {
     }
 
     /**
-     * The island hosted here whose area holds the location, even while its snapshot is
+     * The island hosted here whose area holds the location, even while its entry is
      * unavailable, as NewSky knows an island from its world's name alone. Null in the gap and on
      * free slots.
      */
@@ -68,10 +69,10 @@ public class IslandSnapshot {
 
     /**
      * Loads every island hosted on the server in one read. Called once at startup, before any
-     * other load, mutation or listener can touch the snapshot.
+     * other load, mutation or listener can touch the cache.
      */
     public void loadAll(String server) {
-        database.getIslandSnapshotsByServer(server).forEach((islandUuid, island) -> {
+        database.getIslandCachesByServer(server).forEach((islandUuid, island) -> {
             islands.put(islandUuid, island);
             islandsBySlot.put(island.getSlot(), islandUuid);
         });
@@ -82,7 +83,7 @@ public class IslandSnapshot {
         loading.put(islandUuid, generation);
 
         try {
-            Island island = database.getIslandSnapshot(islandUuid);
+            Island island = database.getIslandCache(islandUuid);
 
             if (!Long.valueOf(generation).equals(loading.get(islandUuid))) {
                 return CompletableFuture.completedFuture(null);
@@ -108,7 +109,7 @@ public class IslandSnapshot {
         } catch (Throwable error) {
             if (loading.remove(islandUuid, generation)) {
                 dirty.put(islandUuid, Boolean.TRUE);
-                plugin.severe("Failed to load island snapshot: " + islandUuid, error);
+                plugin.severe("Failed to load island into the cache: " + islandUuid, error);
             }
 
             return CompletableFuture.failedFuture(error);

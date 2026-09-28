@@ -18,10 +18,10 @@ import org.bukkit.event.entity.EntityPlaceEvent;
 import org.bukkit.event.entity.EntityTransformEvent;
 import org.bukkit.event.hanging.HangingPlaceEvent;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.island.LimitHandler;
 import org.me.advancedsky.model.Island;
-import org.me.advancedsky.snapshot.IslandSnapshot;
 
 import java.util.UUID;
 
@@ -35,13 +35,13 @@ public final class IslandLimitListener implements Listener {
     private final AdvancedSky plugin;
     private final ConfigHandler config;
     private final LimitHandler limitHandler;
-    private final IslandSnapshot islandSnapshot;
+    private final IslandCache islandCache;
 
-    public IslandLimitListener(AdvancedSky plugin, ConfigHandler config, LimitHandler limitHandler, IslandSnapshot islandSnapshot) {
+    public IslandLimitListener(AdvancedSky plugin, ConfigHandler config, LimitHandler limitHandler, IslandCache islandCache) {
         this.plugin = plugin;
         this.config = config;
         this.limitHandler = limitHandler;
-        this.islandSnapshot = islandSnapshot;
+        this.islandCache = islandCache;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -128,8 +128,8 @@ public final class IslandLimitListener implements Listener {
             return false;
         }
 
-        // Outside any island (gap, free slot) or while the snapshot is unavailable: fail closed.
-        Island island = islandSnapshot.getAt(location);
+        // Outside any island (gap, free slot) or while its cache entry is unavailable: fail closed.
+        Island island = islandCache.getAt(location);
         if (island != null && limitHandler.canSpawnEntity(island, location.getWorld(), type)) {
             return false;
         }
@@ -144,7 +144,7 @@ public final class IslandLimitListener implements Listener {
             return null;
         }
 
-        return islandSnapshot.getIslandUuidAt(location);
+        return islandCache.getIslandUuidAt(location);
     }
 
     private boolean isIslandWorld(World world) {

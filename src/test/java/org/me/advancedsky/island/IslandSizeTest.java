@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.exceptions.UpgradeLevelChangedException;
@@ -18,11 +19,12 @@ import org.me.advancedsky.listener.IslandProtectionListener;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.model.Island;
 import org.me.advancedsky.network.IslandOperator;
-import org.me.advancedsky.snapshot.IslandSnapshot;
 import org.me.advancedsky.thread.BukkitAsyncExecutor;
 import org.me.advancedsky.world.WorldHandler;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 import java.io.InputStreamReader;
 import java.lang.reflect.Field;
@@ -35,9 +37,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.function.Function;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
-
 class IslandSizeTest {
     private static final int[] SIZES = {75, 100, 125, 150, 175};
     private static final String ISLAND_WORLD = "islands";
@@ -49,7 +48,7 @@ class IslandSizeTest {
     private final AdvancedSky plugin = mock(AdvancedSky.class);
     private final ConfigHandler config = mock(ConfigHandler.class);
     private final DatabaseHandler database = mock(DatabaseHandler.class);
-    private final IslandSnapshot snapshots = mock(IslandSnapshot.class);
+    private final IslandCache cache = mock(IslandCache.class);
     private final World world = mock(World.class);
 
     @BeforeEach
@@ -91,12 +90,12 @@ class IslandSizeTest {
     void protectionUsesConfiguredWidthAroundTheIslandCentre(int level) {
         int size = SIZES[level - 1];
         Island island = island(level);
-        when(snapshots.getAt(any(Location.class))).thenAnswer(call -> {
+        when(cache.getAt(any(Location.class))).thenAnswer(call -> {
             Location location = call.getArgument(0);
             return grid.slotAt(location.getX(), location.getZ()) == SLOT ? island : null;
         });
 
-        IslandProtectionListener protection = new IslandProtectionListener(config, snapshots, grid);
+        IslandProtectionListener protection = new IslandProtectionListener(config, cache, grid);
         Player player = mock(Player.class);
         when(player.getUniqueId()).thenReturn(owner);
         Location center = grid.center(null, SLOT);
@@ -116,39 +115,39 @@ class IslandSizeTest {
     }
 
     @Test
-    void hostRefreshesTheSnapshotAfterPurchaseAndAdminDowngrade() {
-        IslandOperator operator = new IslandOperator(plugin, database, null, null, snapshots, null, "local");
-        when(snapshots.reload(islandId)).thenReturn(CompletableFuture.completedFuture(null));
+    void hostRefreshesTheCacheAfterPurchaseAndAdminDowngrade() {
+        IslandOperator operator = new IslandOperator(plugin, database, null, null, cache, null, "local");
+        when(cache.reload(islandId)).thenReturn(CompletableFuture.completedFuture(null));
         Actor buyer = new Actor.Player(owner);
         Actor admin = new Actor.Bypass("test");
 
         operator.setUpgradeLevel(buyer, islandId, "island-size", 1, 2).join();
         operator.setUpgradeLevel(admin, islandId, "island-size", 2, 1).join();
 
-        InOrder order = inOrder(database, snapshots);
+        InOrder order = inOrder(database, cache);
         order.verify(database).updateIslandUpgradeLevel(buyer, islandId, "island-size", 1, 2);
-        order.verify(snapshots).reload(islandId);
+        order.verify(cache).reload(islandId);
         order.verify(database).updateIslandUpgradeLevel(admin, islandId, "island-size", 2, 1);
-        order.verify(snapshots).reload(islandId);
+        order.verify(cache).reload(islandId);
     }
 
     @Test
-    void rejectedWriteStillRefreshesTheSnapshotAndKeepsTheCause() {
-        IslandOperator operator = new IslandOperator(plugin, database, null, null, snapshots, null, "local");
+    void rejectedWriteStillRefreshesTheCacheAndKeepsTheCause() {
+        IslandOperator operator = new IslandOperator(plugin, database, null, null, cache, null, "local");
         Actor actor = new Actor.Player(owner);
-        when(snapshots.reload(islandId)).thenReturn(CompletableFuture.completedFuture(null));
+        when(cache.reload(islandId)).thenReturn(CompletableFuture.completedFuture(null));
         doThrow(new UpgradeLevelChangedException()).when(database).updateIslandUpgradeLevel(actor, islandId, "island-size", 1, 2);
         CompletionException error = assertThrows(CompletionException.class, () -> operator.setUpgradeLevel(actor, islandId, "island-size", 1, 2).join());
         assertInstanceOf(UpgradeLevelChangedException.class, error.getCause());
-        verify(snapshots).reload(islandId);
+        verify(cache).reload(islandId);
     }
 
     @Test
-    void committedUpgradeIsNotRefundedIfSnapshotRefreshFails() {
-        IslandOperator operator = new IslandOperator(plugin, database, null, null, snapshots, null, "local");
-        when(snapshots.reload(islandId)).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("database unavailable")));
+    void committedUpgradeIsNotRefundedIfCacheRefreshFails() {
+        IslandOperator operator = new IslandOperator(plugin, database, null, null, cache, null, "local");
+        when(cache.reload(islandId)).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("database unavailable")));
         assertDoesNotThrow(() -> operator.setUpgradeLevel(new Actor.Player(owner), islandId, "island-size", 1, 2).join());
-        verify(plugin).severe(eq("Island data saved but could not refresh the snapshot: " + islandId), any(Throwable.class));
+        verify(plugin).severe(eq("Island data saved but could not refresh the island cache: " + islandId), any(Throwable.class));
     }
 
     @ParameterizedTest
@@ -156,7 +155,7 @@ class IslandSizeTest {
     @SuppressWarnings("unchecked")
     void levelScanCountsOnlyBlocksWithinTheUpgradedSize(int level) {
         int size = SIZES[level - 1];
-        when(snapshots.get(islandId)).thenReturn(island(level));
+        when(cache.get(islandId)).thenReturn(island(level));
         WorldHandler worlds = mock(WorldHandler.class);
         when(worlds.getWorld()).thenReturn(world);
         when(world.getMinHeight()).thenReturn(0);
@@ -173,7 +172,7 @@ class IslandSizeTest {
         });
         LimitHandler limits = mock(LimitHandler.class);
 
-        assertEquals(size * size, new LevelHandler(plugin, config, database, limits, worlds, snapshots, grid).calIslandLevel(islandId).join());
+        assertEquals(size * size, new LevelHandler(plugin, config, database, limits, worlds, cache, grid).calIslandLevel(islandId).join());
         verify(database).updateIslandLevel(islandId, size * size);
         ArgumentCaptor<int[]> counts = ArgumentCaptor.forClass(int[].class);
         verify(limits).reset(eq(islandId), counts.capture());

@@ -9,9 +9,9 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.model.Island;
-import org.me.advancedsky.snapshot.IslandSnapshot;
 import org.me.advancedsky.util.LocationUtils;
 
 import java.util.Set;
@@ -22,13 +22,13 @@ public class IslandRespawnListener implements Listener {
 
     private final AdvancedSky plugin;
     private final ConfigHandler config;
-    private final IslandSnapshot islandSnapshot;
+    private final IslandCache islandCache;
     private final Set<UUID> pendingLobby = ConcurrentHashMap.newKeySet();
 
-    public IslandRespawnListener(AdvancedSky plugin, ConfigHandler config, IslandSnapshot islandSnapshot) {
+    public IslandRespawnListener(AdvancedSky plugin, ConfigHandler config, IslandCache islandCache) {
         this.plugin = plugin;
         this.config = config;
-        this.islandSnapshot = islandSnapshot;
+        this.islandCache = islandCache;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -47,11 +47,11 @@ public class IslandRespawnListener implements Listener {
             return;
         }
 
-        Island island = islandSnapshot.getAt(deathLocation);
+        Island island = islandCache.getAt(deathLocation);
         if (island == null) {
             // Dying in the gap or on a free slot is dying on no island: vanilla respawn.
-            if (islandSnapshot.getIslandUuidAt(deathLocation) != null) {
-                plugin.severe("Cannot resolve respawn for " + playerUuid + ": island snapshot unavailable at " + deathLocation);
+            if (islandCache.getIslandUuidAt(deathLocation) != null) {
+                plugin.severe("Cannot resolve respawn for " + playerUuid + ": island cache entry unavailable at " + deathLocation);
             }
             return;
         }
