@@ -1,0 +1,21 @@
+# No color codes, no formatting, just plain text in this file.
+# Color codes and formatting will be handled in messages.yml.
+# The permission nodes are the default permission nodes for the commands and the name that use in plugins.yml.
+# If you want to change the permission nodes, you need to manually add them to your permissions plugin.
+commands:
+  player:
+    create:
+      aliases: []
+      permission: 'advancedsky.island.player.create'
+      syntax: ''
+      description: 'Create a new island'
+    delete:
+      aliases: []
+      permission: 'advancedsky.island.player.delete'
+      syntax: ''
+      description: 'Delete your island'
+    help:
+      aliases: []
+      permission: 'advancedsky.island.player.help'
+      syntax: '[page]'
+      description: 'Show available island commands'

@@ -6,9 +6,6 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.concurrent.Executor;
 
-/**
- * Runs blocking work (MySQL, Redis) on Paper's async pool. Available on both Paper and Folia.
- */
 public class BukkitAsyncExecutor implements Executor {
 
     private final Plugin plugin;
@@ -19,7 +16,9 @@ public class BukkitAsyncExecutor implements Executor {
 
     @Override
     public void execute(@NotNull Runnable command) {
-        // runNow hands off immediately; the legacy runTaskAsynchronously waits for the next tick.
+        // runNow hands off to Paper's async pool immediately. The legacy runTaskAsynchronously
+        // is tick-driven: it waits for the next main-thread heartbeat, so every hop through this
+        // executor would cost up to a tick of latency.
         Bukkit.getAsyncScheduler().runNow(plugin, task -> command.run());
     }
 }

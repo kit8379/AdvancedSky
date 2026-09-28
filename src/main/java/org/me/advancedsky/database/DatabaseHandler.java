@@ -2,39 +2,49 @@ package org.me.advancedsky.database;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.config.ConfigHandler;
-import org.me.advancedsky.exceptions.IslandAlreadyExistException;
-import org.me.advancedsky.exceptions.IslandGridFullException;
-import org.me.advancedsky.island.IslandGrid;
-import org.me.advancedsky.model.Island;
+import org.me.advancedsky.exceptions.*;
+import org.me.advancedsky.grid.IslandGrid;
+import org.me.advancedsky.model.Actor;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.SQLIntegrityConstraintViolationException;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.sql.*;
+import java.util.*;
 
-/**
- * Blocking MySQL access. Every method here is expected to run on an async thread.
- */
 public class DatabaseHandler {
 
-    private static final int SLOT_ALLOCATION_ATTEMPTS = 5;
-
+    private final AdvancedSky plugin;
     private final HikariDataSource dataSource;
-    private final String islandsTable;
+    private final String prefix;
 
-    public DatabaseHandler(ConfigHandler config) {
-        this.islandsTable = config.getMySQLTablePrefix() + "islands";
+    public DatabaseHandler(AdvancedSky plugin, ConfigHandler config) {
+        this.plugin = plugin;
+        this.prefix = config.getMySQLTablePrefix();
+
+        String host = config.getMySQLHost();
+        int port = config.getMySQLPort();
+        String database = config.getMySQLDB();
+        String username = config.getMySQLUsername();
+        String password = config.getMySQLPassword();
+        boolean useSsl = config.getMySQLUseSSL();
+        String properties = config.getMySQLProperties();
 
         HikariConfig hikariConfig = new HikariConfig();
-        hikariConfig.setJdbcUrl("jdbc:mysql://" + config.getMySQLHost() + ":" + config.getMySQLPort() + "/" + config.getMySQLDatabase() + config.getMySQLProperties());
-        hikariConfig.setUsername(config.getMySQLUsername());
-        hikariConfig.setPassword(config.getMySQLPassword());
+        hikariConfig.setJdbcUrl("jdbc:mysql://" + host + ":" + port + "/" + database + "?useSSL=" + useSsl + "&" + properties);
+        hikariConfig.setUsername(username);
+        hikariConfig.setPassword(password);
+
+        hikariConfig.addDataSourceProperty("cachePrepStmts", "true");
+        hikariConfig.addDataSourceProperty("prepStmtCacheSize", "250");
+        hikariConfig.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
+        hikariConfig.addDataSourceProperty("useServerPrepStmts", "true");
+        hikariConfig.addDataSourceProperty("useLocalSessionState", "true");
+        hikariConfig.addDataSourceProperty("rewriteBatchedStatements", "true");
+        hikariConfig.addDataSourceProperty("cacheResultSetMetadata", "true");
+        hikariConfig.addDataSourceProperty("cacheServerConfiguration", "true");
+        hikariConfig.addDataSourceProperty("elideSetAutoCommits", "true");
+        hikariConfig.addDataSourceProperty("maintainTimeStats", "false");
+
         this.dataSource = new HikariDataSource(hikariConfig);
 
         createTables();
@@ -44,124 +54,296 @@ public class DatabaseHandler {
         dataSource.close();
     }
 
+    private <T> T withConnection(ConnectionFunction<T> work) {
+        try (Connection connection = dataSource.getConnection()) {
+            return work.apply(connection);
+        } catch (SQLException e) {
+            plugin.severe("Database connection operation failed.", e);
+            throw new RuntimeException(e);
+        }
+    }
+
+    private <T> T inTransaction(ConnectionFunction<T> work) {
+        try (Connection connection = dataSource.getConnection()) {
+            connection.setAutoCommit(false);
+
+            try {
+                T result = work.apply(connection);
+                connection.commit();
+                return result;
+            } catch (SQLException | RuntimeException e) {
+                try {
+                    connection.rollback();
+                } catch (SQLException rollbackError) {
+                    e.addSuppressed(rollbackError);
+                }
+
+                if (e instanceof SQLIntegrityConstraintViolationException) {
+                    throw new ConstraintViolationException(e);
+                }
+
+                if (e instanceof SQLException) {
+                    plugin.severe("Database transaction failed.", e);
+                    throw new RuntimeException(e);
+                }
+
+                throw (RuntimeException) e;
+            }
+        } catch (SQLException e) {
+            plugin.severe("Database transaction connection failed.", e);
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void executeUpdate(Connection connection, String query, PreparedStatementConsumer consumer) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(query)) {
+            consumer.use(statement);
+            statement.executeUpdate();
+        }
+    }
+
+    private void executeUpdate(String query, PreparedStatementConsumer consumer) {
+        try (Connection connection = dataSource.getConnection()) {
+            executeUpdate(connection, query, consumer);
+        } catch (SQLIntegrityConstraintViolationException e) {
+            throw new ConstraintViolationException(e);
+        } catch (SQLException e) {
+            plugin.severe("Database Update failed: " + query, e);
+            throw new RuntimeException(e);
+        }
+    }
+
+    private <T> T executeQuery(Connection connection, String query, PreparedStatementConsumer consumer, ResultFunction<T> function) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(query)) {
+            consumer.use(statement);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return function.apply(resultSet);
+            }
+        }
+    }
+
+    private <T> T executeQuery(String query, PreparedStatementConsumer consumer, ResultFunction<T> function) {
+        try (Connection connection = dataSource.getConnection()) {
+            return executeQuery(connection, query, consumer, function);
+        } catch (SQLException e) {
+            plugin.severe("Database Query failed: " + query, e);
+            throw new RuntimeException(e);
+        }
+    }
+
+    // ================================================================================================================
+    // Table creation
+    // ================================================================================================================
+
     private void createTables() {
-        // One island per owner. Slots are unique network-wide, not per server, so an island keeps the
-        // same coordinates on every server and can later be moved by moving its region file.
-        execute("CREATE TABLE IF NOT EXISTS " + islandsTable + " (" +
-                "island_uuid CHAR(36) NOT NULL, " +
-                "owner_uuid CHAR(36) NOT NULL, " +
-                "server VARCHAR(64) NOT NULL, " +
-                "slot INT NOT NULL, " +
-                "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, " +
-                "PRIMARY KEY (island_uuid), " +
-                "UNIQUE KEY uk_owner (owner_uuid), " +
-                "UNIQUE KEY uk_slot (slot))", statement -> {
+        // server: the island server hosting the island for its whole life.
+        // slot: the island's position on the grid, the same on every server. AUTO_INCREMENT never hands
+        // out a value twice, so a deleted island's area is never reused while it may still be clearing.
+        executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "islands (" + "island_uuid CHAR(36) NOT NULL," + "server VARCHAR(64) NOT NULL," + "slot INT NOT NULL AUTO_INCREMENT," + "PRIMARY KEY (island_uuid)," + "UNIQUE KEY uq_islands_slot (slot)," + "KEY idx_islands_server (server)" + ") ENGINE=InnoDB;", stmt -> {
+        });
+
+        executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "island_players (" + "player_uuid CHAR(36) NOT NULL," + "island_uuid CHAR(36) NOT NULL," + "role VARCHAR(56) NOT NULL," + "PRIMARY KEY (player_uuid, island_uuid)," + "UNIQUE KEY uq_island_players_player_uuid (player_uuid)," + "KEY idx_island_players_island_uuid (island_uuid)," + "KEY idx_island_players_island_role (island_uuid, role)," + "CONSTRAINT fk_island_players_island " + "FOREIGN KEY (island_uuid) REFERENCES " + prefix + "islands(island_uuid) " + "ON DELETE CASCADE" + ") ENGINE=InnoDB;", stmt -> {
         });
     }
 
-    public Optional<Island> findIsland(UUID islandUuid) {
-        return query("SELECT island_uuid, owner_uuid, server, slot FROM " + islandsTable + " WHERE island_uuid = ?", statement -> statement.setString(1, islandUuid.toString()), resultSet -> resultSet.next() ? Optional.of(mapIsland(resultSet)) : Optional.empty());
+    // ================================================================================================================
+    // Targeted reads
+    // ================================================================================================================
+
+    public Optional<UUID> getIslandOwner(UUID islandUuid) {
+        return withConnection(connection -> getIslandOwner(connection, islandUuid));
     }
 
-    public Optional<Island> findIslandByOwner(UUID ownerUuid) {
-        return query("SELECT island_uuid, owner_uuid, server, slot FROM " + islandsTable + " WHERE owner_uuid = ?", statement -> statement.setString(1, ownerUuid.toString()), resultSet -> resultSet.next() ? Optional.of(mapIsland(resultSet)) : Optional.empty());
+    public Optional<UUID> getIslandUuid(UUID playerUuid) {
+        String sql = "SELECT island_uuid FROM " + prefix + "island_players WHERE player_uuid = ? LIMIT 1";
+
+        return executeQuery(sql, stmt -> stmt.setString(1, playerUuid.toString()), rs -> {
+            if (!rs.next()) {
+                return Optional.empty();
+            }
+
+            return Optional.of(parseRequiredUuid(rs.getString("island_uuid"), "island_players.island_uuid"));
+        });
+    }
+
+    public Optional<String> getIslandServer(UUID islandUuid) {
+        return executeQuery("SELECT server FROM " + prefix + "islands WHERE island_uuid = ? LIMIT 1", stmt -> stmt.setString(1, islandUuid.toString()), rs -> rs.next() ? Optional.of(rs.getString("server")) : Optional.empty());
+    }
+
+    public Optional<Integer> getIslandSlot(UUID islandUuid) {
+        return executeQuery("SELECT slot FROM " + prefix + "islands WHERE island_uuid = ? LIMIT 1", stmt -> stmt.setString(1, islandUuid.toString()), rs -> rs.next() ? Optional.of(rs.getInt("slot")) : Optional.empty());
     }
 
     /**
      * Number of islands per server. Servers without islands are absent from the map.
      */
-    public Map<String, Integer> countIslandsByServer() {
-        return query("SELECT server, COUNT(*) AS island_count FROM " + islandsTable + " GROUP BY server", statement -> {
-        }, resultSet -> {
-            Map<String, Integer> counts = new HashMap<>();
-            while (resultSet.next()) {
-                counts.put(resultSet.getString("server"), resultSet.getInt("island_count"));
+    public Map<String, Integer> getIslandCountByServer() {
+        return executeQuery("SELECT server, COUNT(*) AS island_count FROM " + prefix + "islands GROUP BY server", stmt -> {
+        }, rs -> {
+            Map<String, Integer> result = new HashMap<>();
+            while (rs.next()) {
+                result.put(rs.getString("server"), rs.getInt("island_count"));
             }
-            return counts;
+            return result;
         });
+    }
+
+    // ================================================================================================================
+    // Writes (transaction-protected where multi-statement)
+    // ================================================================================================================
+
+    /**
+     * Stores a new island hosted on the given server and returns the grid slot it was given.
+     */
+    public int addIslandData(UUID islandUuid, UUID ownerUuid, String server) {
+        try {
+            return inTransaction(connection -> {
+                if (getPlayerIsland(connection, ownerUuid).isPresent()) {
+                    throw new IslandAlreadyExistException();
+                }
+
+                executeUpdate(connection, "INSERT INTO " + prefix + "islands (island_uuid, server) VALUES (?, ?);", stmt -> {
+                    stmt.setString(1, islandUuid.toString());
+                    stmt.setString(2, server);
+                });
+
+                int slot = executeQuery(connection, "SELECT slot FROM " + prefix + "islands WHERE island_uuid = ?", stmt -> {
+                    stmt.setString(1, islandUuid.toString());
+                }, rs -> {
+                    rs.next();
+                    return rs.getInt("slot");
+                });
+
+                if (slot > IslandGrid.MAX_SLOT) {
+                    throw new IslandGridFullException();
+                }
+
+                executeUpdate(connection, "INSERT INTO " + prefix + "island_players (player_uuid, island_uuid, role) VALUES (?, ?, ?);", stmt -> {
+                    stmt.setString(1, ownerUuid.toString());
+                    stmt.setString(2, islandUuid.toString());
+                    stmt.setString(3, "owner");
+                });
+
+                return slot;
+            });
+        } catch (ConstraintViolationException e) {
+            throw new IslandAlreadyExistException();
+        }
+    }
+
+    public void deleteIsland(Actor actor, UUID islandUuid) {
+        inTransaction(connection -> {
+            lockIsland(connection, islandUuid);
+            requireRole(actor, connection, islandUuid);
+
+            executeUpdate(connection, "DELETE FROM " + prefix + "islands WHERE island_uuid = ?;", stmt -> {
+                stmt.setString(1, islandUuid.toString());
+            });
+
+            return null;
+        });
+    }
+
+    // ================================================================================================================
+    // Helpers
+    // ================================================================================================================
+
+    private UUID parseRequiredUuid(String value, String fieldName) {
+        if (value == null || value.isEmpty()) {
+            throw new IllegalStateException("Missing UUID value in DatabaseHandler for field: " + fieldName);
+        }
+
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("Invalid UUID value in DatabaseHandler for field " + fieldName + ": " + value, e);
+        }
+    }
+
+    private void lockIsland(Connection connection, UUID islandUuid) throws SQLException {
+        boolean exists = executeQuery(connection, "SELECT 1 FROM " + prefix + "islands WHERE island_uuid = ? FOR UPDATE", stmt -> {
+            stmt.setString(1, islandUuid.toString());
+        }, ResultSet::next);
+
+        if (!exists) {
+            throw new IslandDoesNotExistException();
+        }
     }
 
     /**
-     * Creates the island record for the owner on the given server, taking the next slot after the
-     * highest one in use anywhere in the network.
-     *
-     * @throws IslandAlreadyExistException  if the owner already has an island
-     * @throws IslandGridFullException     if the grid has no slot left, see {@link IslandGrid#MAX_SLOT}
+     * Enforces the island role an operation demands. Only players are subject to role rules;
+     * Bypass actors skip them by construction. The required role is fixed by the calling
+     * operation and never comes from outside, so a caller cannot lower its own bar.
      */
-    public Island insertIsland(UUID ownerUuid, String server) {
-        String sql = "INSERT INTO " + islandsTable + " (island_uuid, owner_uuid, server, slot) VALUES (?, ?, ?, ?)";
-
-        for (int attempt = 1; attempt <= SLOT_ALLOCATION_ATTEMPTS; attempt++) {
-            int slot = nextSlot();
-            if (slot > IslandGrid.MAX_SLOT) {
-                throw new IslandGridFullException();
-            }
-
-            Island island = new Island(UUID.randomUUID(), ownerUuid, server, slot);
-
-            try (Connection connection = dataSource.getConnection(); PreparedStatement statement = connection.prepareStatement(sql)) {
-                statement.setString(1, island.islandUuid().toString());
-                statement.setString(2, island.ownerUuid().toString());
-                statement.setString(3, island.server());
-                statement.setInt(4, island.slot());
-                statement.executeUpdate();
-                return island;
-            } catch (SQLIntegrityConstraintViolationException e) {
-                if (findIslandByOwner(ownerUuid).isPresent()) {
-                    throw new IslandAlreadyExistException();
-                }
-                // Another server took the same slot at the same moment; try again with a fresh one.
-            } catch (SQLException e) {
-                throw new IllegalStateException("Failed to insert island for owner " + ownerUuid, e);
-            }
+    private void requireRole(Actor actor, Connection connection, UUID islandUuid) throws SQLException {
+        if (!(actor instanceof Actor.Player(UUID uuid))) {
+            return;
         }
 
-        throw new IllegalStateException("Could not allocate an island slot on " + server + " after " + SLOT_ALLOCATION_ATTEMPTS + " attempts");
+        String role = getIslandRole(connection, islandUuid, uuid).orElseThrow(IslandDoesNotExistException::new);
+
+        if (!"owner".equalsIgnoreCase(role)) {
+            throw new NotIslandOwnerException();
+        }
     }
 
-    public void deleteIsland(UUID islandUuid) {
-        execute("DELETE FROM " + islandsTable + " WHERE island_uuid = ?", statement -> statement.setString(1, islandUuid.toString()));
-    }
-
-    private int nextSlot() {
-        return query("SELECT COALESCE(MAX(slot) + 1, 0) FROM " + islandsTable, statement -> {
-        }, resultSet -> {
-            resultSet.next();
-            return resultSet.getInt(1);
+    private Optional<String> getIslandRole(Connection connection, UUID islandUuid, UUID playerUuid) throws SQLException {
+        return executeQuery(connection, "SELECT role FROM " + prefix + "island_players WHERE island_uuid = ? AND player_uuid = ? LIMIT 1", stmt -> {
+            stmt.setString(1, islandUuid.toString());
+            stmt.setString(2, playerUuid.toString());
+        }, rs -> {
+            if (!rs.next()) {
+                return Optional.empty();
+            }
+            return Optional.ofNullable(rs.getString("role"));
         });
     }
 
-    private void execute(String sql, StatementBinder binder) {
-        try (Connection connection = dataSource.getConnection(); PreparedStatement statement = connection.prepareStatement(sql)) {
-            binder.bind(statement);
-            statement.executeUpdate();
-        } catch (SQLException e) {
-            throw new IllegalStateException("Database update failed: " + sql, e);
-        }
-    }
-
-    private <T> T query(String sql, StatementBinder binder, ResultMapper<T> mapper) {
-        try (Connection connection = dataSource.getConnection(); PreparedStatement statement = connection.prepareStatement(sql)) {
-            binder.bind(statement);
-            try (ResultSet resultSet = statement.executeQuery()) {
-                return mapper.map(resultSet);
+    private Optional<UUID> getIslandOwner(Connection connection, UUID islandUuid) throws SQLException {
+        return executeQuery(connection, "SELECT player_uuid FROM " + prefix + "island_players WHERE island_uuid = ? AND role = ? LIMIT 1", stmt -> {
+            stmt.setString(1, islandUuid.toString());
+            stmt.setString(2, "owner");
+        }, rs -> {
+            if (!rs.next()) {
+                return Optional.empty();
             }
-        } catch (SQLException e) {
-            throw new IllegalStateException("Database query failed: " + sql, e);
+            return Optional.of(parseRequiredUuid(rs.getString("player_uuid"), "island_players.player_uuid"));
+        });
+    }
+
+    private Optional<UUID> getPlayerIsland(Connection connection, UUID playerUuid) throws SQLException {
+        return executeQuery(connection, "SELECT island_uuid FROM " + prefix + "island_players WHERE player_uuid = ? LIMIT 1", stmt -> {
+            stmt.setString(1, playerUuid.toString());
+        }, rs -> {
+            if (!rs.next()) {
+                return Optional.empty();
+            }
+            return Optional.of(parseRequiredUuid(rs.getString("island_uuid"), "island_players.island_uuid"));
+        });
+    }
+
+    private static final class ConstraintViolationException extends RuntimeException {
+        ConstraintViolationException(Throwable cause) {
+            super(cause);
         }
     }
 
-    private static Island mapIsland(ResultSet resultSet) throws SQLException {
-        return new Island(UUID.fromString(resultSet.getString("island_uuid")), UUID.fromString(resultSet.getString("owner_uuid")), resultSet.getString("server"), resultSet.getInt("slot"));
+    // ================================================================================================================
+    // Functional interfaces
+    // ================================================================================================================
+
+    @FunctionalInterface
+    public interface ResultFunction<T> {
+        T apply(ResultSet resultSet) throws SQLException;
     }
 
     @FunctionalInterface
-    private interface StatementBinder {
-        void bind(PreparedStatement statement) throws SQLException;
+    public interface PreparedStatementConsumer {
+        void use(PreparedStatement statement) throws SQLException;
     }
 
     @FunctionalInterface
-    private interface ResultMapper<T> {
-        T map(ResultSet resultSet) throws SQLException;
+    public interface ConnectionFunction<T> {
+        T apply(Connection connection) throws SQLException;
     }
 }

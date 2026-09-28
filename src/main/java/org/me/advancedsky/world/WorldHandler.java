@@ -1,4 +1,4 @@
-package org.me.advancedsky.island;
+package org.me.advancedsky.world;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
@@ -11,27 +11,26 @@ import org.bukkit.block.BlockState;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.util.BlockVector;
-import org.bukkit.util.Vector;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.config.ConfigHandler;
+import org.me.advancedsky.grid.IslandGrid;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 /**
- * Applies island changes to this server's island world. Only called for islands hosted here,
- * either directly or through a cross-server message.
+ * Applies island changes to this server's island world. Only called by {@code IslandOperator} for
+ * islands hosted here.
  * <p>
  * Creating an island copies the template built in the template world onto the island centre;
  * deleting clears every block and non-player entity in the island's area. All block work runs on
  * the region scheduler of the chunk it touches, so it is safe on Folia and on Paper alike.
  */
-public class IslandWorldHandler {
+public class WorldHandler {
 
     /**
      * Chunks loaded and processed at the same time while clearing an island area.
@@ -45,63 +44,31 @@ public class IslandWorldHandler {
     private final BlockVector templateAnchor;
     private final BlockVector templateMin;
     private final BlockVector templateMax;
-    private final Vector spawnOffset;
-    private final float spawnYaw;
-    private final float spawnPitch;
-    private final Map<Integer, CompletableFuture<Void>> buildsInProgress = new ConcurrentHashMap<>();
 
-    /**
-     * @param hostsIslands whether this server is an island server; only then are the island and template worlds required
-     */
-    public IslandWorldHandler(AdvancedSky plugin, ConfigHandler config, IslandGrid grid, boolean hostsIslands) {
+    public WorldHandler(AdvancedSky plugin, ConfigHandler config, IslandGrid grid) {
         this.plugin = plugin;
         this.grid = grid;
-        this.spawnOffset = config.getIslandSpawnOffset();
-        this.spawnYaw = config.getIslandSpawnYaw();
-        this.spawnPitch = config.getIslandSpawnPitch();
-        this.templateAnchor = config.getTemplateAnchor();
+        this.templateAnchor = new BlockVector(config.getTemplateAnchorX(), config.getTemplateAnchorY(), config.getTemplateAnchorZ());
 
         // Either corner order is accepted, as with a WorldEdit selection.
-        BlockVector a = config.getTemplateMin();
-        BlockVector b = config.getTemplateMax();
-        this.templateMin = new BlockVector(Math.min(a.getBlockX(), b.getBlockX()), Math.min(a.getBlockY(), b.getBlockY()), Math.min(a.getBlockZ(), b.getBlockZ()));
-        this.templateMax = new BlockVector(Math.max(a.getBlockX(), b.getBlockX()), Math.max(a.getBlockY(), b.getBlockY()), Math.max(a.getBlockZ(), b.getBlockZ()));
+        this.templateMin = new BlockVector(Math.min(config.getTemplateMinX(), config.getTemplateMaxX()), Math.min(config.getTemplateMinY(), config.getTemplateMaxY()), Math.min(config.getTemplateMinZ(), config.getTemplateMaxZ()));
+        this.templateMax = new BlockVector(Math.max(config.getTemplateMinX(), config.getTemplateMaxX()), Math.max(config.getTemplateMinY(), config.getTemplateMaxY()), Math.max(config.getTemplateMinZ(), config.getTemplateMaxZ()));
 
-        if (hostsIslands) {
+        if (config.isLobbyOnly()) {
+            this.world = null;
+            this.templateWorld = null;
+        } else {
             // Worlds are all loaded before plugins enable; on Folia none can be added later.
             this.world = requireLoadedWorld(config.getIslandWorldName(), "island world");
             this.templateWorld = requireLoadedWorld(config.getTemplateWorldName(), "template world");
-        } else {
-            this.world = null;
-            this.templateWorld = null;
         }
-    }
-
-    /**
-     * Where a player arrives on the island: the configured offset from its centre block.
-     */
-    public Location spawn(int slot) {
-        Location center = grid.center(requireWorld(), slot);
-        return new Location(world, center.getX() + spawnOffset.getX(), center.getY() + spawnOffset.getY(), center.getZ() + spawnOffset.getZ(), spawnYaw, spawnPitch);
     }
 
     /**
      * Copies the template onto the island. Completes once every block has been placed.
      */
     public CompletableFuture<Void> createIsland(int slot) {
-        CompletableFuture<Void> build = pasteTemplate(grid.center(requireWorld(), slot));
-        buildsInProgress.put(slot, build);
-        build.whenComplete((v, ex) -> buildsInProgress.remove(slot));
-        return build;
-    }
-
-    /**
-     * Completes once a build of this island still in progress has finished, or at once if there is
-     * none. Never fails: a failed build is reported where it was started.
-     */
-    public CompletableFuture<Void> awaitBuild(int slot) {
-        CompletableFuture<Void> build = buildsInProgress.get(slot);
-        return build == null ? CompletableFuture.completedFuture(null) : build.exceptionally(ex -> null);
+        return pasteTemplate(grid.center(requireWorld(), slot));
     }
 
     /**

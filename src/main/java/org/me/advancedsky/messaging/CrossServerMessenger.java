@@ -1,121 +1,282 @@
 package org.me.advancedsky.messaging;
 
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import org.bukkit.Bukkit;
+import org.json.JSONObject;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.redis.RedisHandler;
-import redis.clients.jedis.JedisPubSub;
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.StreamEntryID;
+import redis.clients.jedis.params.XAddParams;
+import redis.clients.jedis.params.XReadParams;
+import redis.clients.jedis.resps.StreamEntry;
 
-import java.util.Map;
+import java.lang.reflect.Constructor;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
+import java.util.concurrent.TimeUnit;
 
-/**
- * Fire-and-forget messaging between servers over Redis pub/sub. Every server listens on its own
- * channel; a message names an action and carries a JSON payload.
- * <p>
- * MySQL is the source of truth. A message only asks the receiving server to apply an already
- * committed change to its world, so losing one leaves the data consistent.
- * <p>
- * Handlers run on the subscriber thread: they must schedule work, never block on it.
- */
 public final class CrossServerMessenger {
 
-    private static final String CHANNEL_PREFIX = "server:";
-    private static final String FIELD_ACTION = "action";
-    private static final long RECONNECT_DELAY_MILLIS = 1000L;
+    private static final String FIELD_MESSAGE = "message";
+    private static final long REQUEST_TIMEOUT_SECONDS = 30L;
+    private static final long MAX_MESSAGE_AGE_MILLIS = REQUEST_TIMEOUT_SECONDS * 1000L;
+    private static final int INBOX_MAX_LEN = 1000;
+    private static final int READ_BLOCK_MILLIS = 1000;
+    private static final int READ_COUNT = 10;
 
     private final AdvancedSky plugin;
     private final RedisHandler redisHandler;
-    private final String channel;
-    private final Map<String, Consumer<JsonObject>> handlers = new ConcurrentHashMap<>();
-    private final JedisPubSub subscription = new JedisPubSub() {
-        @Override
-        public void onMessage(String channel, String message) {
-            dispatch(message);
-        }
-    };
+    private final String serverID;
+    private final Map<String, CrossServerMessageHandler> handlers = new ConcurrentHashMap<>();
+    private final Map<String, CompletableFuture<JSONObject>> pendingRequests = new ConcurrentHashMap<>();
 
     private volatile boolean running;
-    private Thread subscriberThread;
 
-    public CrossServerMessenger(AdvancedSky plugin, RedisHandler redisHandler, String serverName) {
-        this.plugin = plugin;
-        this.redisHandler = redisHandler;
-        this.channel = channelOf(serverName);
+    public CrossServerMessenger(AdvancedSky plugin, RedisHandler redisHandler, String serverID) {
+        this.plugin = Objects.requireNonNull(plugin, "plugin");
+        this.redisHandler = Objects.requireNonNull(redisHandler, "redisHandler");
+        this.serverID = Objects.requireNonNull(serverID, "serverID");
     }
 
-    public void register(String action, Consumer<JsonObject> handler) {
-        handlers.put(action, handler);
+    public void register(String action, CrossServerMessageHandler handler) {
+        handlers.put(Objects.requireNonNull(action, "action"), Objects.requireNonNull(handler, "handler"));
     }
 
-    public void send(String targetServer, String action, JsonObject payload) {
-        payload.addProperty(FIELD_ACTION, action);
-        redisHandler.getClient().publish(channelOf(targetServer), payload.toString());
-        plugin.debug("CrossServerMessenger", "Sent to " + targetServer + ": " + payload);
+    public CompletableFuture<JSONObject> request(String targetServer, String action, JSONObject payload) {
+        CrossServerMessage message = CrossServerMessage.request(serverID, targetServer, action, payload);
+        CompletableFuture<JSONObject> future = new CompletableFuture<>();
+
+        pendingRequests.put(message.getMessageId(), future);
+        sendAsyncIfNeeded(message).whenComplete((ignored, throwable) -> {
+            if (throwable != null) {
+                pendingRequests.remove(message.getMessageId());
+                future.completeExceptionally(throwable);
+            }
+        });
+
+        future.orTimeout(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS).whenComplete((result, throwable) -> pendingRequests.remove(message.getMessageId()));
+        return future;
+    }
+
+    public CompletableFuture<Void> requestVoid(String targetServer, String action, JSONObject payload) {
+        return request(targetServer, action, payload).thenApply(result -> null);
     }
 
     public void start() {
+        if (running) {
+            return;
+        }
+
+        // Entries from before this restart are poison: their requesters have long timed
+        // out, and replaying a stale island.load would double-load the world.
+        try (Jedis jedis = redisHandler.getJedis()) {
+            jedis.del(inboxKey(serverID));
+        }
+
         running = true;
-        subscriberThread = new Thread(this::subscribeLoop, "AdvancedSky-Redis-Subscriber");
-        subscriberThread.setDaemon(true);
-        subscriberThread.start();
+        CompletableFuture.runAsync(this::consumeLoop, plugin.getBukkitAsyncExecutor());
+        plugin.debug("CrossServerMessenger", "Started Redis Stream consumer for " + serverID);
     }
 
     public void stop() {
         running = false;
-        if (subscription.isSubscribed()) {
-            subscription.unsubscribe();
-        }
-        if (subscriberThread != null) {
-            try {
-                subscriberThread.join(RECONNECT_DELAY_MILLIS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
+        pendingRequests.forEach((id, future) -> future.completeExceptionally(new IllegalStateException("Cross-server messenger stopped")));
+        pendingRequests.clear();
     }
 
-    private void subscribeLoop() {
-        while (running) {
-            // subscribe() holds one pooled connection and blocks until unsubscribed or the connection drops.
-            try {
-                plugin.debug("CrossServerMessenger", "Subscribed to " + channel);
-                redisHandler.getClient().subscribe(subscription, channel);
+    private void consumeLoop() {
+        // Stream ids only grow, so reading onward from the last id seen never repeats an
+        // entry and never misses one within this run; start() dropped everything older.
+        StreamEntryID cursor = new StreamEntryID(0, 0);
+
+        while (running && plugin.isEnabled()) {
+            try (Jedis jedis = redisHandler.getJedis()) {
+                List<Map.Entry<String, List<StreamEntry>>> streams = jedis.xread(XReadParams.xReadParams().block(READ_BLOCK_MILLIS).count(READ_COUNT), Collections.singletonMap(inboxKey(serverID), cursor));
+                if (streams == null) {
+                    continue;
+                }
+
+                for (Map.Entry<String, List<StreamEntry>> stream : streams) {
+                    for (StreamEntry entry : stream.getValue()) {
+                        cursor = entry.getID();
+                        processEntry(entry);
+                    }
+                }
             } catch (Exception e) {
                 if (running) {
-                    plugin.severe("Lost Redis subscription on " + channel + ", retrying in " + RECONNECT_DELAY_MILLIS + "ms", e);
-                    sleepBeforeReconnect();
+                    plugin.severe("CrossServerMessenger failed while reading Redis Stream", e);
+                    sleepQuietly(1000L);
                 }
             }
         }
     }
 
-    private void dispatch(String raw) {
+    private void processEntry(StreamEntry entry) {
         try {
-            JsonObject message = JsonParser.parseString(raw).getAsJsonObject();
-            String action = message.get(FIELD_ACTION).getAsString();
-
-            Consumer<JsonObject> handler = handlers.get(action);
-            if (handler == null) {
-                plugin.warning("No handler registered for cross-server action '" + action + "'");
+            String raw = entry.getFields().get(FIELD_MESSAGE);
+            if (raw == null || raw.isEmpty()) {
+                deleteEntry(entry.getID());
                 return;
             }
 
-            plugin.debug("CrossServerMessenger", "Received: " + raw);
-            handler.accept(message);
+            CrossServerMessage message = CrossServerMessage.fromJson(raw);
+            if (!serverID.equals(message.getTarget())) {
+                plugin.warning("Dropping cross-server message targeted to " + message.getTarget() + " from inbox " + serverID);
+                deleteEntry(entry.getID());
+                return;
+            }
+
+            long age = System.currentTimeMillis() - message.getTimestamp();
+            if (age > MAX_MESSAGE_AGE_MILLIS) {
+                plugin.warning("Dropping stale cross-server " + message.getType() + " " + message.getAction() + " aged " + age + "ms from " + message.getSource());
+                deleteEntry(entry.getID());
+                return;
+            }
+
+            if (CrossServerMessage.TYPE_RESPONSE.equals(message.getType())) {
+                handleResponse(message);
+                deleteEntry(entry.getID());
+                return;
+            }
+
+            if (CrossServerMessage.TYPE_REQUEST.equals(message.getType())) {
+                handleRequest(entry.getID(), message);
+                return;
+            }
+
+            plugin.warning("Dropping unknown cross-server message type: " + message.getType());
+            deleteEntry(entry.getID());
         } catch (Exception e) {
-            plugin.severe("Failed to handle cross-server message: " + raw, e);
+            plugin.severe("Failed to process cross-server stream entry " + entry.getID(), e);
+            deleteEntry(entry.getID());
         }
     }
 
-    private String channelOf(String server) {
-        return redisHandler.key(CHANNEL_PREFIX + server);
+    private void handleRequest(StreamEntryID entryId, CrossServerMessage message) {
+        CrossServerMessageHandler handler = handlers.get(message.getAction());
+        if (handler == null) {
+            sendAndDeleteAsync(entryId, CrossServerMessage.failedResponse(message, "No handler registered for action: " + message.getAction()));
+            return;
+        }
+
+        // Run the handler off the consumer thread: its blocking work (database reads,
+        // slime world IO) must not stall the other inbound messages, including the
+        // responses this server is itself waiting on.
+        CompletableFuture.supplyAsync(() -> handler.handle(message.getPayload()), plugin.getBukkitAsyncExecutor()).thenCompose(future -> future).whenCompleteAsync((payload, throwable) -> {
+            CrossServerMessage response;
+            if (throwable == null) {
+                response = CrossServerMessage.successResponse(message, payload == null ? new JSONObject() : payload);
+            } else {
+                response = CrossServerMessage.failedResponse(message, throwable);
+            }
+
+            sendAndDelete(entryId, response);
+        }, plugin.getBukkitAsyncExecutor());
     }
 
-    private void sleepBeforeReconnect() {
+    private void handleResponse(CrossServerMessage message) {
+        CompletableFuture<JSONObject> future = pendingRequests.remove(message.getCorrelationId());
+        if (future == null) {
+            plugin.debug("CrossServerMessenger", "No pending request for response " + message.getCorrelationId());
+            return;
+        }
+
+        CompletableFuture.runAsync(() -> {
+            if (CrossServerMessage.STATUS_SUCCESS.equals(message.getStatus())) {
+                future.complete(message.getPayload());
+            } else {
+                future.completeExceptionally(new CompletionException(restoreRemoteException(message)));
+            }
+        }, plugin.getBukkitAsyncExecutor());
+    }
+
+    private Throwable restoreRemoteException(CrossServerMessage message) {
+        String errorType = message.getErrorType();
+        String errorMessage = message.getErrorMessage() == null ? "Remote request failed" : message.getErrorMessage();
+
+        if (errorType == null || errorType.isEmpty()) {
+            return new IllegalStateException(errorMessage);
+        }
+
         try {
-            Thread.sleep(RECONNECT_DELAY_MILLIS);
+            Class<?> clazz = Class.forName(errorType);
+            if (!RuntimeException.class.isAssignableFrom(clazz)) {
+                return new IllegalStateException(errorMessage);
+            }
+
+            return instantiateRemoteException(clazz.asSubclass(RuntimeException.class), errorMessage);
+        } catch (Exception e) {
+            plugin.severe("Failed to restore remote exception type: " + errorType, e);
+            return new IllegalStateException(errorMessage);
+        }
+    }
+
+    private RuntimeException instantiateRemoteException(Class<? extends RuntimeException> clazz, String errorMessage) throws Exception {
+        try {
+            Constructor<? extends RuntimeException> constructor = clazz.getDeclaredConstructor();
+            constructor.setAccessible(true);
+            return constructor.newInstance();
+        } catch (NoSuchMethodException ignored) {
+            Constructor<? extends RuntimeException> constructor = clazz.getDeclaredConstructor(String.class);
+            constructor.setAccessible(true);
+            return constructor.newInstance(errorMessage);
+        }
+    }
+
+    private void sendAndDelete(StreamEntryID entryId, CrossServerMessage response) {
+        try {
+            send(response);
+        } catch (Exception e) {
+            plugin.severe("Failed to send cross-server response for " + response.getCorrelationId(), e);
+        } finally {
+            deleteEntry(entryId);
+        }
+    }
+
+    private void sendAndDeleteAsync(StreamEntryID entryId, CrossServerMessage response) {
+        CompletableFuture.runAsync(() -> sendAndDelete(entryId, response), plugin.getBukkitAsyncExecutor());
+    }
+
+    private CompletableFuture<Void> sendAsyncIfNeeded(CrossServerMessage message) {
+        if (Bukkit.isPrimaryThread()) {
+            return CompletableFuture.runAsync(() -> send(message), plugin.getBukkitAsyncExecutor());
+        }
+
+        try {
+            send(message);
+            return CompletableFuture.completedFuture(null);
+        } catch (Exception e) {
+            return CompletableFuture.failedFuture(e);
+        }
+    }
+
+    private void send(CrossServerMessage message) {
+        try (Jedis jedis = redisHandler.getJedis()) {
+            // MAXLEN bounds the inbox of a server that never comes back to consume it.
+            jedis.xadd(inboxKey(message.getTarget()), XAddParams.xAddParams().maxLen(INBOX_MAX_LEN).approximateTrimming(), Map.of(FIELD_MESSAGE, message.toJson()));
+            plugin.debug("CrossServerMessenger", "Sent " + message.getType() + " " + message.getAction() + " to " + message.getTarget());
+        }
+    }
+
+    private void deleteEntry(StreamEntryID entryId) {
+        // Hygiene only: the consumer never rereads an entry, so one left behind merely sits
+        // in the inbox until MAXLEN trims it.
+        try (Jedis jedis = redisHandler.getJedis()) {
+            jedis.xdel(inboxKey(serverID), entryId);
+        } catch (Exception e) {
+            plugin.severe("Failed to delete cross-server stream entry " + entryId, e);
+        }
+    }
+
+    private String inboxKey(String serverName) {
+        return redisHandler.getKeys().messagingInbox(serverName);
+    }
+
+    private void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

@@ -4,16 +4,54 @@ messages:
   # System
   # ================================================================================================================
 
-  only-player-can-run-command: "<red>Only players can run this command!"
   unknown-exception: "<red>An unknown error occurred while processing your request. Please try again later or contact the administrator."
 
   # ================================================================================================================
-  # Island
+  # Permissions / Sender
   # ================================================================================================================
 
-  island-created: "<green>Your island has been created!"
-  island-deleted: "<green>Your island has been deleted."
-  already-has-island: "<red>You already have an island!"
-  no-island: "<red>You do not have an island!"
+  only-player-can-run-command: "<red>Only players can run this command!"
+  no-permission-command: "<red>You don't have permission to use this command."
+
+  # ================================================================================================================
+  # Island - Existence / Ownership / State
+  # ================================================================================================================
+
+  player-no-island: "<red>You don't have an island yet!"
+  player-already-has-island: "<red>You already own an island!"
+
   island-grid-full: "<red>The network cannot host any more islands. Please contact an administrator."
-  sending-to-server: "<gray>Sending you to <aqua>{server}<gray>..."
+
+  # ================================================================================================================
+  # Island - Access Control / Membership
+  # ================================================================================================================
+
+  player-delete-not-owner: "<red>Only the island owner can delete the island!"
+
+  # ================================================================================================================
+  # Island - Create / Delete
+  # ================================================================================================================
+
+  player-create-island-success: "<green>Island created successfully!"
+  player-delete-first-warning: "<red>Are you sure you want to delete your island? This action is irreversible!"
+  player-delete-final-warning: |
+    <red>This is your final warning!
+    <gray>Your island, items, and progress will be removed.
+    <gray>This action cannot be undone.
+    <red>Type <aqua>/is delete <red>to permanently delete your island!
+  player-delete-island-success: "<green>Your island has been deleted!"
+
+  # ================================================================================================================
+  # Help
+  # ================================================================================================================
+
+  player-help-header: "<aqua>⎯⎯⎯ <#FFD700>Help Page <aqua>⎯⎯⎯"
+  player-help-entry: "<hover:show_text:'<gray>Click to execute'><click:suggest_command:'/is {command} '><#00FFAA>▸ <white>/is {command} <#AAAAAA>{syntax} <#808080>{description}</click></hover>"
+  player-help-footer: "<aqua>⎯⎯⎯ <hover:show_text:'<gray>Previous page'><click:run_command:'/is help {prev}'><#AAAAAA>[«]</click></hover> (Page {page} / {total}) <hover:show_text:'<gray>Next page'><click:run_command:'/is help {next}'><#AAAAAA>[»]</click></hover> ⎯⎯⎯"
+
+  # ================================================================================================================
+  # Command Usage / Unknown Command
+  # ================================================================================================================
+
+  player-usage-command: "<red>Correct usage: <aqua>/is {command} {syntax}"
+  player-unknown-sub-command: "<red>Unknown command. Type <aqua>/is help <red>to view available commands."

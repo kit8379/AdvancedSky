@@ -1,0 +1,132 @@
+package org.me.advancedsky.command.player;
+
+import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
+import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.api.AdvancedSkyAPI;
+import org.me.advancedsky.command.SubCommand;
+import org.me.advancedsky.config.ConfigHandler;
+import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.NotIslandOwnerException;
+
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+
+public class PlayerDeleteIslandCommand implements SubCommand {
+
+    private static final long CONFIRM_TIMEOUT_MS = 15_000L;
+
+    private final AdvancedSky plugin;
+    private final AdvancedSkyAPI api;
+    private final ConfigHandler config;
+
+    private final Map<UUID, Integer> confirmStage = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> lastConfirmTime = new ConcurrentHashMap<>();
+
+    public PlayerDeleteIslandCommand(AdvancedSky plugin, AdvancedSkyAPI api, ConfigHandler config) {
+        this.plugin = plugin;
+        this.api = api;
+        this.config = config;
+    }
+
+    @Override
+    public String getName() {
+        return "delete";
+    }
+
+    @Override
+    public String[] getAliases() {
+        return config.getPlayerDeleteAliases();
+    }
+
+    @Override
+    public String getPermission() {
+        return config.getPlayerDeletePermission();
+    }
+
+    @Override
+    public String getSyntax() {
+        return config.getPlayerDeleteSyntax();
+    }
+
+    @Override
+    public String getDescription() {
+        return config.getPlayerDeleteDescription();
+    }
+
+    @Override
+    public boolean execute(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(config.getOnlyPlayerCanRunCommandMessage());
+            return true;
+        }
+
+        UUID playerUuid = player.getUniqueId();
+        long now = System.currentTimeMillis();
+
+        Long last = lastConfirmTime.get(playerUuid);
+        if (last != null && now - last > CONFIRM_TIMEOUT_MS) {
+            reset(playerUuid);
+        }
+
+        api.getIslandUuid(playerUuid).thenCompose(islandUuid -> {
+            // Advisory pre-check only, so a non-owner is refused before walking through both confirm
+            // stages. The enforced check lives in the delete transaction (NotIslandOwnerException).
+            return api.getIslandOwner(islandUuid).thenCompose(ownerUuid -> {
+                if (!ownerUuid.equals(playerUuid)) {
+                    player.sendMessage(config.getPlayerDeleteNotOwnerMessage());
+                    reset(playerUuid);
+                    return CompletableFuture.completedFuture(null);
+                }
+
+                int stage = confirmStage.getOrDefault(playerUuid, 0);
+
+                if (stage == 0) {
+                    confirmStage.put(playerUuid, 1);
+                    lastConfirmTime.put(playerUuid, now);
+                    player.sendMessage(config.getPlayerDeleteFirstWarningMessage());
+                    return CompletableFuture.completedFuture(null);
+                }
+
+                if (stage == 1) {
+                    confirmStage.put(playerUuid, 2);
+                    lastConfirmTime.put(playerUuid, now);
+                    player.sendMessage(config.getPlayerDeleteFinalWarningMessage());
+                    return CompletableFuture.completedFuture(null);
+                }
+
+                if (stage == 2) {
+                    reset(playerUuid);
+
+                    return api.player(playerUuid).deleteIsland().thenRun(() -> {
+                        player.sendMessage(config.getPlayerDeleteSuccessMessage());
+                    });
+                }
+
+                return CompletableFuture.completedFuture(null);
+            });
+        }).exceptionally(ex -> {
+            Throwable cause = ex.getCause();
+            if (cause instanceof IslandDoesNotExistException) {
+                player.sendMessage(config.getPlayerNoIslandMessage());
+                reset(playerUuid);
+            } else if (cause instanceof NotIslandOwnerException) {
+                player.sendMessage(config.getPlayerDeleteNotOwnerMessage());
+                reset(playerUuid);
+            } else {
+                player.sendMessage(config.getUnknownExceptionMessage());
+                plugin.severe("Error deleting island for player " + player.getName(), ex);
+            }
+            return null;
+        });
+
+        return true;
+    }
+
+    private void reset(UUID uuid) {
+        confirmStage.remove(uuid);
+        lastConfirmTime.remove(uuid);
+    }
+}

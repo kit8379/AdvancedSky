@@ -1,4 +1,4 @@
-package org.me.advancedsky.island;
+package org.me.advancedsky.grid;
 
 import org.bukkit.Location;
 import org.bukkit.World;
