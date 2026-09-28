@@ -29,6 +29,22 @@ public class CoreHandler {
         return CompletableFuture.completedFuture(null).thenComposeAsync(v -> islandDistributor.deleteIsland(actor, islandUuid), plugin.getBukkitAsyncExecutor());
     }
 
+    public CompletableFuture<Boolean> toggleIslandLock(Actor actor, UUID islandUuid) {
+        return CompletableFuture.completedFuture(null).thenComposeAsync(v -> islandDistributor.toggleIslandLock(actor, islandUuid), plugin.getBukkitAsyncExecutor());
+    }
+
+    public CompletableFuture<Boolean> toggleIslandPvp(Actor actor, UUID islandUuid) {
+        return CompletableFuture.completedFuture(null).thenComposeAsync(v -> islandDistributor.toggleIslandPvp(actor, islandUuid), plugin.getBukkitAsyncExecutor());
+    }
+
+    public CompletableFuture<Boolean> isIslandLock(UUID islandUuid) {
+        return CompletableFuture.supplyAsync(() -> database.isIslandLock(islandUuid), plugin.getBukkitAsyncExecutor());
+    }
+
+    public CompletableFuture<Boolean> isIslandPvp(UUID islandUuid) {
+        return CompletableFuture.supplyAsync(() -> database.isIslandPvp(islandUuid), plugin.getBukkitAsyncExecutor());
+    }
+
     public CompletableFuture<UUID> getIslandUuid(UUID playerUuid) {
         return CompletableFuture.supplyAsync(() -> database.getIslandUuid(playerUuid).orElseThrow(IslandDoesNotExistException::new), plugin.getBukkitAsyncExecutor());
     }

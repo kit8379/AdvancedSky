@@ -121,6 +121,10 @@ island:
       y: 160
       z: 32
 
+  # How long an island stays empty (seconds) before its level updates and block limit counts
+  # stop; the next player to arrive starts them again.
+  island-unload-interval-seconds: 300
+
   # Where a new island's default home is, relative to its centre block.
   spawn:
     x: 0.5

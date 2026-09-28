@@ -1,42 +1,62 @@
 package org.me.advancedsky.api;
 
 import net.kyori.adventure.text.Component;
-import org.me.advancedsky.island.CoreHandler;
-import org.me.advancedsky.island.HomeHandler;
-import org.me.advancedsky.island.LobbyHandler;
-import org.me.advancedsky.island.PlayerHandler;
+import org.bukkit.command.CommandSender;
+import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.island.*;
 import org.me.advancedsky.message.PlayerMessageHandler;
+import org.me.advancedsky.model.Invitation;
+import org.me.advancedsky.model.IslandTop;
+import org.me.advancedsky.model.Upgrade;
+import org.me.advancedsky.uuid.UuidHandler;
 
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
 /**
  * The plugin's public surface. One rule, no exceptions:
  * <ul>
- *   <li><b>Writes go through {@link #player(UUID)}</b>. The player handle acts as that player
- *       only, on that player's own island only - anything else is unrepresentable, not merely
- *       checked.</li>
+ *   <li><b>Writes go through {@link #player(UUID)} or {@link #admin(CommandSender)}</b>. The
+ *       player handle acts as that player only, on that player's own island only - anything else
+ *       is unrepresentable, not merely checked. The admin handle acts on arbitrary targets and
+ *       carries the sender's name into logs and cross-server payloads.</li>
  *   <li><b>Reads live on this class</b> - island state is not secret, and a read changes
  *       nothing.</li>
  * </ul>
- * Internal machinery does not pass through this API: it calls its handler directly. What you see
- * here is exactly the surface commands and other plugins are meant to use.
+ * Internal machinery (quit cleanup, schedulers, join listeners) does not pass through this API:
+ * it calls its handler directly. What you see here is exactly the surface commands and other
+ * plugins are meant to use.
  */
 public class AdvancedSkyAPI {
 
+    private final AdvancedSky plugin;
     private final CoreHandler coreHandler;
     private final PlayerHandler playerHandler;
     private final HomeHandler homeHandler;
+    private final WarpHandler warpHandler;
+    private final LevelHandler levelHandler;
+    private final BanHandler banHandler;
+    private final CoopHandler coopHandler;
     private final LobbyHandler lobbyHandler;
     private final PlayerMessageHandler playerMessageHandler;
+    private final BiomeHandler biomeHandler;
+    private final UuidHandler uuidHandler;
+    private final UpgradeHandler upgradeHandler;
 
-    public AdvancedSkyAPI(CoreHandler coreHandler, PlayerHandler playerHandler, HomeHandler homeHandler, LobbyHandler lobbyHandler, PlayerMessageHandler playerMessageHandler) {
+    public AdvancedSkyAPI(AdvancedSky plugin, CoreHandler coreHandler, PlayerHandler playerHandler, HomeHandler homeHandler, WarpHandler warpHandler, LevelHandler levelHandler, BanHandler banHandler, CoopHandler coopHandler, LobbyHandler lobbyHandler, PlayerMessageHandler playerMessageHandler, UuidHandler uuidHandler, BiomeHandler biomeHandler, UpgradeHandler upgradeHandler) {
+        this.plugin = plugin;
         this.coreHandler = coreHandler;
         this.playerHandler = playerHandler;
         this.homeHandler = homeHandler;
+        this.warpHandler = warpHandler;
+        this.levelHandler = levelHandler;
+        this.banHandler = banHandler;
+        this.coopHandler = coopHandler;
         this.lobbyHandler = lobbyHandler;
         this.playerMessageHandler = playerMessageHandler;
+        this.uuidHandler = uuidHandler;
+        this.biomeHandler = biomeHandler;
+        this.upgradeHandler = upgradeHandler;
     }
 
     // ================================================================================================================
@@ -46,7 +66,13 @@ public class AdvancedSkyAPI {
     /** Act as this player: own identity, own island, player rules apply. */
     @SuppressWarnings("unused")
     public PlayerActions player(UUID playerUuid) {
-        return new PlayerActions(playerUuid, coreHandler, homeHandler);
+        return new PlayerActions(playerUuid, coreHandler, playerHandler, homeHandler, warpHandler, banHandler, coopHandler, biomeHandler, upgradeHandler);
+    }
+
+    /** Act as an operator: arbitrary targets, no player rules, the sender's name goes to logs. */
+    @SuppressWarnings("unused")
+    public AdminActions admin(CommandSender sender) {
+        return new AdminActions(sender.getName(), coreHandler, playerHandler, homeHandler, warpHandler, banHandler, coopHandler, biomeHandler, upgradeHandler);
     }
 
     // ================================================================================================================
@@ -64,8 +90,109 @@ public class AdvancedSkyAPI {
     }
 
     @SuppressWarnings("unused")
+    public CompletableFuture<Set<UUID>> getIslandMembers(UUID islandUuid) {
+        return playerHandler.getIslandMembers(islandUuid);
+    }
+
+    @SuppressWarnings("unused")
+    public CompletableFuture<Set<UUID>> getIslandPlayers(UUID islandUuid) {
+        return playerHandler.getIslandPlayers(islandUuid);
+    }
+
+    @SuppressWarnings("unused")
+    public CompletableFuture<Optional<Invitation>> getInvite(UUID playerUuid) {
+        return playerHandler.getPendingInvite(playerUuid);
+    }
+
+    @SuppressWarnings("unused")
+    public CompletableFuture<Boolean> isIslandLock(UUID islandUuid) {
+        return coreHandler.isIslandLock(islandUuid);
+    }
+
+    @SuppressWarnings("unused")
+    public CompletableFuture<Boolean> isIslandPvp(UUID islandUuid) {
+        return coreHandler.isIslandPvp(islandUuid);
+    }
+
+    @SuppressWarnings("unused")
     public CompletableFuture<Set<String>> getHomeNames(UUID playerUuid) {
         return homeHandler.getHomeNames(playerUuid);
+    }
+
+    @SuppressWarnings("unused")
+    public CompletableFuture<Set<String>> getWarpNames(UUID islandUuid) {
+        return warpHandler.getWarpNames(islandUuid);
+    }
+
+    @SuppressWarnings("unused")
+    public CompletableFuture<Boolean> isPlayerBanned(UUID islandUuid, UUID playerUuid) {
+        return banHandler.isPlayerBanned(islandUuid, playerUuid);
+    }
+
+    @SuppressWarnings("unused")
+    public CompletableFuture<Set<UUID>> getIslandBans(UUID islandUuid) {
+        return banHandler.getBannedPlayers(islandUuid);
+    }
+
+    @SuppressWarnings("unused")
+    public CompletableFuture<Boolean> isPlayerCooped(UUID islandUuid, UUID playerUuid) {
+        return coopHandler.isPlayerCooped(islandUuid, playerUuid);
+    }
+
+    @SuppressWarnings("unused")
+    public CompletableFuture<Set<UUID>> getIslandCoops(UUID islandUuid) {
+        return coopHandler.getCoopedPlayers(islandUuid);
+    }
+
+    @SuppressWarnings("unused")
+    public CompletableFuture<Integer> getIslandLevel(UUID islandUuid) {
+        return levelHandler.getIslandLevel(islandUuid);
+    }
+
+    @SuppressWarnings("unused")
+    public CompletableFuture<List<IslandTop>> getTopIslandLevels(int limit) {
+        return levelHandler.getTopIslandLevels(limit);
+    }
+
+    @SuppressWarnings("unused")
+    public CompletableFuture<Long> getIslandRank(UUID islandUuid) {
+        return levelHandler.getIslandRank(islandUuid);
+    }
+
+    @SuppressWarnings("unused")
+    public CompletableFuture<Integer> getUpgradeLevel(UUID islandUuid, String upgradeId) {
+        return upgradeHandler.getUpgradeLevel(islandUuid, upgradeId);
+    }
+
+    /** The upgrade's state on that island next to the requirements as they apply to this player. */
+    @SuppressWarnings("unused")
+    public CompletableFuture<Upgrade> getUpgradeDetails(UUID islandUuid, UUID playerUuid, String upgradeId) {
+        return upgradeHandler.getUpgradeDetails(islandUuid, playerUuid, upgradeId);
+    }
+
+    @SuppressWarnings("unused")
+    public CompletableFuture<Optional<UUID>> getPlayerUuid(String name) {
+        return uuidHandler.getPlayerUuid(name);
+    }
+
+    @SuppressWarnings("unused")
+    public CompletableFuture<Optional<String>> getPlayerName(UUID uuid) {
+        return uuidHandler.getPlayerName(uuid);
+    }
+
+    @SuppressWarnings("unused")
+    public CompletableFuture<Map<UUID, String>> getPlayerNames(Collection<UUID> uuids) {
+        return uuidHandler.getPlayerNames(uuids);
+    }
+
+    @SuppressWarnings("unused")
+    public CompletableFuture<Set<UUID>> getOnlinePlayersUUIDs() {
+        return plugin.getOnlinePlayersUUIDs();
+    }
+
+    @SuppressWarnings("unused")
+    public CompletableFuture<Set<String>> getOnlinePlayersNames() {
+        return plugin.getOnlinePlayersNames();
     }
 
     // ================================================================================================================

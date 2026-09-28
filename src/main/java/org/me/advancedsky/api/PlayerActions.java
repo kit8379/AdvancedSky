@@ -1,9 +1,10 @@
 package org.me.advancedsky.api;
 
-import org.me.advancedsky.island.CoreHandler;
-import org.me.advancedsky.island.HomeHandler;
+import org.me.advancedsky.island.*;
 import org.me.advancedsky.model.Actor;
+import org.me.advancedsky.model.Invitation;
 
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -15,21 +16,33 @@ import java.util.concurrent.CompletableFuture;
  * operations always target <b>their own island</b> - resolved internally, because a player has
  * exactly one. Operator-only operations simply do not exist on this handle.
  * <p>
- * Island roles (OWNER for delete) are still enforced where they must be: inside the write
- * transaction, under the island row lock.
+ * Island roles (OWNER for delete/transfer, MEMBER for the rest) are still enforced where they
+ * must be: inside the write transaction, under the island row lock.
  */
 public final class PlayerActions {
 
     private final UUID playerUuid;
     private final Actor actor;
     private final CoreHandler coreHandler;
+    private final PlayerHandler playerHandler;
     private final HomeHandler homeHandler;
+    private final WarpHandler warpHandler;
+    private final BanHandler banHandler;
+    private final CoopHandler coopHandler;
+    private final BiomeHandler biomeHandler;
+    private final UpgradeHandler upgradeHandler;
 
-    PlayerActions(UUID playerUuid, CoreHandler coreHandler, HomeHandler homeHandler) {
+    PlayerActions(UUID playerUuid, CoreHandler coreHandler, PlayerHandler playerHandler, HomeHandler homeHandler, WarpHandler warpHandler, BanHandler banHandler, CoopHandler coopHandler, BiomeHandler biomeHandler, UpgradeHandler upgradeHandler) {
         this.playerUuid = playerUuid;
         this.actor = new Actor.Player(playerUuid);
         this.coreHandler = coreHandler;
+        this.playerHandler = playerHandler;
         this.homeHandler = homeHandler;
+        this.warpHandler = warpHandler;
+        this.banHandler = banHandler;
+        this.coopHandler = coopHandler;
+        this.biomeHandler = biomeHandler;
+        this.upgradeHandler = upgradeHandler;
     }
 
     /**
@@ -55,6 +68,104 @@ public final class PlayerActions {
         return ownIsland().thenCompose(islandUuid -> coreHandler.deleteIsland(actor, islandUuid));
     }
 
+    /**
+     * Leave the island. Owners cannot leave (CannotRemoveOwnerException); they transfer or delete.
+     */
+    public CompletableFuture<Void> leave() {
+        return ownIsland().thenCompose(islandUuid -> playerHandler.removeMember(actor, islandUuid, playerUuid));
+    }
+
+    // ---- membership and trust ---------------------------------------------------------------
+
+    public CompletableFuture<Void> invite(UUID inviteeUuid, int ttlSeconds) {
+        return ownIsland().thenCompose(islandUuid -> {
+            return playerHandler.addPendingInvite(inviteeUuid, islandUuid, playerUuid, ttlSeconds);
+        });
+    }
+
+    /**
+     * Redeems this player's pending invitation and joins the island it names. Empty when no
+     * invitation was pending; the returned invitation carries the island and inviter for the
+     * caller's messaging.
+     */
+    public CompletableFuture<Optional<Invitation>> acceptInvite() {
+        return playerHandler.getPendingInvite(playerUuid).thenCompose(invite -> {
+            if (invite.isEmpty()) {
+                return CompletableFuture.completedFuture(Optional.empty());
+            }
+
+            Invitation pending = invite.get();
+            return playerHandler.removePendingInvite(playerUuid).thenCompose(v -> playerHandler.addMember(actor, pending.getIslandUuid(), playerUuid, "member")).thenApply(v -> Optional.of(pending));
+        });
+    }
+
+    public CompletableFuture<Void> rejectInvite() {
+        return playerHandler.removePendingInvite(playerUuid);
+    }
+
+    /**
+     * MEMBER, enforced in the delete transaction.
+     */
+    public CompletableFuture<Void> removeMember(UUID memberUuid) {
+        return ownIsland().thenCompose(islandUuid -> playerHandler.removeMember(actor, islandUuid, memberUuid));
+    }
+
+    /**
+     * OWNER, enforced in the transfer transaction.
+     */
+    public CompletableFuture<Void> setOwner(UUID newOwnerUuid) {
+        return ownIsland().thenCompose(islandUuid -> playerHandler.setOwner(actor, islandUuid, newOwnerUuid));
+    }
+
+    /**
+     * MEMBER, enforced in the ban transaction.
+     */
+    public CompletableFuture<Void> banPlayer(UUID targetUuid) {
+        return ownIsland().thenCompose(islandUuid -> banHandler.banPlayer(actor, islandUuid, targetUuid));
+    }
+
+    /**
+     * MEMBER, enforced in the unban transaction.
+     */
+    public CompletableFuture<Void> unbanPlayer(UUID targetUuid) {
+        return ownIsland().thenCompose(islandUuid -> banHandler.unbanPlayer(actor, islandUuid, targetUuid));
+    }
+
+    /**
+     * MEMBER, enforced in the coop transaction.
+     */
+    public CompletableFuture<Void> addCoop(UUID targetUuid) {
+        return ownIsland().thenCompose(islandUuid -> coopHandler.coopPlayer(actor, islandUuid, targetUuid));
+    }
+
+    /**
+     * MEMBER, enforced in the uncoop transaction.
+     */
+    public CompletableFuture<Void> removeCoop(UUID targetUuid) {
+        return ownIsland().thenCompose(islandUuid -> coopHandler.unCoopPlayer(actor, islandUuid, targetUuid));
+    }
+
+    /**
+     * MEMBER, re-checked on the island's host at the moment of the kick.
+     */
+    public CompletableFuture<Void> expelPlayer(UUID targetUuid) {
+        return ownIsland().thenCompose(islandUuid -> playerHandler.expelPlayer(actor, islandUuid, targetUuid));
+    }
+
+    /**
+     * MEMBER, enforced in the toggle transaction.
+     */
+    public CompletableFuture<Boolean> toggleLock() {
+        return ownIsland().thenCompose(islandUuid -> coreHandler.toggleIslandLock(actor, islandUuid));
+    }
+
+    /**
+     * MEMBER, enforced in the toggle transaction.
+     */
+    public CompletableFuture<Boolean> togglePvp() {
+        return ownIsland().thenCompose(islandUuid -> coreHandler.toggleIslandPvp(actor, islandUuid));
+    }
+
     // ---- homes and warps --------------------------------------------------------------------
 
     public CompletableFuture<Void> setHome(String homeName, String worldName, double x, double y, double z, float yaw, float pitch) {
@@ -67,5 +178,39 @@ public final class PlayerActions {
 
     public CompletableFuture<Void> home(String homeName) {
         return homeHandler.home(playerUuid, homeName, playerUuid);
+    }
+
+    public CompletableFuture<Void> setWarp(String warpName, String worldName, double x, double y, double z, float yaw, float pitch) {
+        return ownIsland().thenCompose(islandUuid -> warpHandler.setWarp(actor, islandUuid, warpName, worldName, x, y, z, yaw, pitch));
+    }
+
+    public CompletableFuture<Void> deleteWarp(String warpName) {
+        return ownIsland().thenCompose(islandUuid -> warpHandler.delWarp(actor, islandUuid, warpName));
+    }
+
+    /**
+     * Visit the specified island's shared warp as this player.
+     */
+    public CompletableFuture<Void> warp(UUID islandUuid, String warpName) {
+        return warpHandler.warp(islandUuid, warpName, playerUuid);
+    }
+
+    // ---- world ------------------------------------------------------------------------------
+
+    /**
+     * Re-biome a chunk of this player's own island world; any other world is refused.
+     */
+    public CompletableFuture<Void> applyBiome(String worldName, int chunkX, int chunkZ, String biomeName) {
+        return biomeHandler.applyPlayerChunkBiome(playerUuid, worldName, chunkX, chunkZ, biomeName);
+    }
+
+    // ---- upgrades ---------------------------------------------------------------------------
+
+    /**
+     * MEMBER, enforced in the level write. Paid from this player's own balance; completes with
+     * the level bought.
+     */
+    public CompletableFuture<Integer> buyUpgrade(String upgradeId) {
+        return ownIsland().thenCompose(islandUuid -> upgradeHandler.buyUpgrade(actor, islandUuid, playerUuid, upgradeId));
     }
 }

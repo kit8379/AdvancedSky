@@ -2,17 +2,17 @@ package org.me.advancedsky.database;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import org.bukkit.Location;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.*;
+import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.model.Island;
 import org.me.advancedsky.model.IslandTop;
 
 import java.sql.*;
 import java.util.*;
-import org.bukkit.Location;
-import org.me.advancedsky.grid.IslandGrid;
 
 public class DatabaseHandler {
 

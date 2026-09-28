@@ -1,5 +1,7 @@
 package org.me.advancedsky.cluster;
 
+import java.util.UUID;
+
 /**
  * Central definition of every Redis key used by the cluster layer.
  * Keeps key schemas in one place instead of scattering string literals across stores.
@@ -8,6 +10,7 @@ public final class ClusterKeys {
 
     private static final String ONLINE_PLAYERS = "online:players";
     private static final String ONLINE_PLAYER_SERVERS = "online:player_servers";
+    private static final String INVITATION_PREFIX = "invitation:island:";
 
     private final String prefix;
 
@@ -25,5 +28,9 @@ public final class ClusterKeys {
 
     public String onlinePlayerServers() {
         return prefix + ONLINE_PLAYER_SERVERS;
+    }
+
+    public String invitation(UUID inviteeUuid) {
+        return prefix + INVITATION_PREFIX + inviteeUuid;
     }
 }

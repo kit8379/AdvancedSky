@@ -68,12 +68,66 @@ public final class IslandGrid {
      * same area a delete clears.
      */
     public boolean isInArea(int slot, double x, double z) {
-        int[] cell = spiralCell(slot);
-        int centerX = cell[0] * SPACING + CENTER_OFFSET;
-        int centerZ = cell[1] * SPACING + CENTER_OFFSET;
+        return slotAt(x, z) == slot;
+    }
+
+    /**
+     * Slot whose island area holds the block column at x, z, or -1 in the gap between areas and
+     * beyond the last ring. Says nothing about whether an island occupies the slot.
+     */
+    public int slotAt(double x, double z) {
         int blockX = (int) Math.floor(x);
         int blockZ = (int) Math.floor(z);
-        return blockX >= centerX - AREA_RADIUS && blockX < centerX + AREA_RADIUS && blockZ >= centerZ - AREA_RADIUS && blockZ < centerZ + AREA_RADIUS;
+
+        // Each area starts on its cell's grid line: [cell * SPACING, cell * SPACING + 2 * AREA_RADIUS).
+        if (Math.floorMod(blockX, SPACING) >= 2 * AREA_RADIUS || Math.floorMod(blockZ, SPACING) >= 2 * AREA_RADIUS) {
+            return -1;
+        }
+
+        int cellX = Math.floorDiv(blockX, SPACING);
+        int cellZ = Math.floorDiv(blockZ, SPACING);
+        if (Math.max(Math.abs(cellX), Math.abs(cellZ)) > MAX_RING) {
+            return -1;
+        }
+
+        return spiralIndex(cellX, cellZ);
+    }
+
+    /**
+     * Whether the block column lies inside the island boundary of the given size, as NewSky lays
+     * it out around an island world's origin: from -size/2 to size - size/2 - 1 of the centre.
+     */
+    public boolean isInsideIsland(int slot, int size, int blockX, int blockZ) {
+        int[] cell = spiralCell(slot);
+        int x = blockX - (cell[0] * SPACING + CENTER_OFFSET);
+        int z = blockZ - (cell[1] * SPACING + CENTER_OFFSET);
+        int half = size / 2;
+        int max = size - half - 1;
+        return x >= -half && x <= max && z >= -half && z <= max;
+    }
+
+    /**
+     * Index of cell {x, z} on the square spiral, the inverse of {@link #spiralCell(int)}.
+     */
+    static int spiralIndex(int x, int z) {
+        int ring = Math.max(Math.abs(x), Math.abs(z));
+        if (ring == 0) {
+            return 0;
+        }
+
+        int ringStart = (2 * ring - 1) * (2 * ring - 1);
+        int sideLength = 2 * ring;
+
+        if (x == ring && z > -ring) {
+            return ringStart + (z + ring - 1);                     // right edge, top to bottom
+        }
+        if (z == ring) {
+            return ringStart + sideLength + (ring - 1 - x);        // bottom edge, right to left
+        }
+        if (x == -ring) {
+            return ringStart + 2 * sideLength + (ring - 1 - z);    // left edge, bottom to top
+        }
+        return ringStart + 3 * sideLength + (x + ring - 1);        // top edge, left to right
     }
 
     /**

@@ -28,8 +28,21 @@ public class IslandDistributor {
     public static final String ACTION_ISLAND_CREATE = "island.create";
     public static final String ACTION_ISLAND_DELETE = "island.delete";
     public static final String ACTION_ISLAND_TELEPORT_PREPARE = "island.teleport.prepare";
+    public static final String ACTION_ISLAND_MEMBER_ADD = "island.member.add";
+    public static final String ACTION_ISLAND_MEMBER_REMOVE = "island.member.remove";
+    public static final String ACTION_ISLAND_OWNER_SET = "island.owner.set";
+    public static final String ACTION_ISLAND_BAN_ADD = "island.ban.add";
+    public static final String ACTION_ISLAND_BAN_REMOVE = "island.ban.remove";
+    public static final String ACTION_ISLAND_COOP_ADD = "island.coop.add";
+    public static final String ACTION_ISLAND_COOP_REMOVE = "island.coop.remove";
+    public static final String ACTION_ISLAND_LOCK_TOGGLE = "island.lock.toggle";
+    public static final String ACTION_ISLAND_PVP_TOGGLE = "island.pvp.toggle";
+    public static final String ACTION_ISLAND_EXPEL = "island.expel";
     public static final String ACTION_ISLAND_HOME_SET = "island.home.set";
     public static final String ACTION_ISLAND_HOME_DELETE = "island.home.delete";
+    public static final String ACTION_ISLAND_WARP_SET = "island.warp.set";
+    public static final String ACTION_ISLAND_WARP_DELETE = "island.warp.delete";
+    public static final String ACTION_ISLAND_UPGRADE_SET = "island.upgrade.set";
     public static final String ACTION_PLAYER_CONNECT = "player.connect";
 
     private static final Function<JSONObject, Void> VOID = response -> null;
@@ -132,6 +145,63 @@ public class IslandDistributor {
     // Island mutations
     // =====================================================================================
 
+    public CompletableFuture<Void> addMember(Actor actor, UUID islandUuid, UUID playerUuid, String role) {
+        JSONObject payload = islandActorPayload(actor, islandUuid);
+        payload.put("playerUuid", playerUuid.toString());
+        payload.put("role", role);
+        return onIsland(islandUuid, ACTION_ISLAND_MEMBER_ADD, payload, () -> islandOperator.addMember(actor, islandUuid, playerUuid, role), VOID);
+    }
+
+    public CompletableFuture<Void> removeMember(Actor actor, UUID islandUuid, UUID playerUuid) {
+        JSONObject payload = islandActorPayload(actor, islandUuid);
+        payload.put("playerUuid", playerUuid.toString());
+        return onIsland(islandUuid, ACTION_ISLAND_MEMBER_REMOVE, payload, () -> islandOperator.removeMember(actor, islandUuid, playerUuid), VOID);
+    }
+
+    public CompletableFuture<Void> setOwner(Actor actor, UUID islandUuid, UUID newOwnerUuid) {
+        JSONObject payload = islandActorPayload(actor, islandUuid);
+        payload.put("newOwnerUuid", newOwnerUuid.toString());
+        return onIsland(islandUuid, ACTION_ISLAND_OWNER_SET, payload, () -> islandOperator.setOwner(actor, islandUuid, newOwnerUuid), VOID);
+    }
+
+    public CompletableFuture<Void> addBan(Actor actor, UUID islandUuid, UUID playerUuid) {
+        JSONObject payload = islandActorPayload(actor, islandUuid);
+        payload.put("playerUuid", playerUuid.toString());
+        return onIsland(islandUuid, ACTION_ISLAND_BAN_ADD, payload, () -> islandOperator.addBan(actor, islandUuid, playerUuid), VOID);
+    }
+
+    public CompletableFuture<Void> removeBan(Actor actor, UUID islandUuid, UUID playerUuid) {
+        JSONObject payload = islandActorPayload(actor, islandUuid);
+        payload.put("playerUuid", playerUuid.toString());
+        return onIsland(islandUuid, ACTION_ISLAND_BAN_REMOVE, payload, () -> islandOperator.removeBan(actor, islandUuid, playerUuid), VOID);
+    }
+
+    public CompletableFuture<Void> addCoop(Actor actor, UUID islandUuid, UUID playerUuid) {
+        JSONObject payload = islandActorPayload(actor, islandUuid);
+        payload.put("playerUuid", playerUuid.toString());
+        return onIsland(islandUuid, ACTION_ISLAND_COOP_ADD, payload, () -> islandOperator.addCoop(actor, islandUuid, playerUuid), VOID);
+    }
+
+    public CompletableFuture<Void> removeCoop(Actor actor, UUID islandUuid, UUID playerUuid) {
+        JSONObject payload = islandActorPayload(actor, islandUuid);
+        payload.put("playerUuid", playerUuid.toString());
+        return onIsland(islandUuid, ACTION_ISLAND_COOP_REMOVE, payload, () -> islandOperator.removeCoop(actor, islandUuid, playerUuid), VOID);
+    }
+
+    public CompletableFuture<Boolean> toggleIslandLock(Actor actor, UUID islandUuid) {
+        return onIsland(islandUuid, ACTION_ISLAND_LOCK_TOGGLE, islandActorPayload(actor, islandUuid), () -> islandOperator.toggleIslandLock(actor, islandUuid), resp -> resp.getBoolean("locked"));
+    }
+
+    public CompletableFuture<Boolean> toggleIslandPvp(Actor actor, UUID islandUuid) {
+        return onIsland(islandUuid, ACTION_ISLAND_PVP_TOGGLE, islandActorPayload(actor, islandUuid), () -> islandOperator.toggleIslandPvp(actor, islandUuid), resp -> resp.getBoolean("pvp"));
+    }
+
+    public CompletableFuture<Void> expelPlayer(Actor actor, UUID islandUuid, UUID playerUuid) {
+        JSONObject payload = islandActorPayload(actor, islandUuid);
+        payload.put("playerUuid", playerUuid.toString());
+        return onIsland(islandUuid, ACTION_ISLAND_EXPEL, payload, () -> islandOperator.expelPlayer(actor, islandUuid, playerUuid), VOID);
+    }
+
     public CompletableFuture<Void> setHome(Actor actor, UUID islandUuid, UUID playerUuid, String homeName, String homeLocation) {
         JSONObject payload = islandActorPayload(actor, islandUuid);
         payload.put("playerUuid", playerUuid.toString());
@@ -146,6 +216,27 @@ public class IslandDistributor {
         payload.put("playerUuid", playerUuid.toString());
         payload.put("homeName", homeName);
         return onIsland(islandUuid, ACTION_ISLAND_HOME_DELETE, payload, () -> islandOperator.deleteHome(islandUuid, playerUuid, homeName), VOID);
+    }
+
+    public CompletableFuture<Void> setWarp(Actor actor, UUID islandUuid, String warpName, String warpLocation) {
+        JSONObject payload = islandActorPayload(actor, islandUuid);
+        payload.put("warpName", warpName);
+        payload.put("warpLocation", warpLocation);
+        return onIsland(islandUuid, ACTION_ISLAND_WARP_SET, payload, () -> islandOperator.setWarp(actor, islandUuid, warpName, warpLocation), VOID);
+    }
+
+    public CompletableFuture<Void> deleteWarp(Actor actor, UUID islandUuid, String warpName) {
+        JSONObject payload = islandActorPayload(actor, islandUuid);
+        payload.put("warpName", warpName);
+        return onIsland(islandUuid, ACTION_ISLAND_WARP_DELETE, payload, () -> islandOperator.deleteWarp(actor, islandUuid, warpName), VOID);
+    }
+
+    public CompletableFuture<Void> setUpgradeLevel(Actor actor, UUID islandUuid, String upgradeId, int expectedLevel, int newLevel) {
+        JSONObject payload = islandActorPayload(actor, islandUuid);
+        payload.put("upgradeId", upgradeId);
+        payload.put("expectedLevel", expectedLevel);
+        payload.put("newLevel", newLevel);
+        return onIsland(islandUuid, ACTION_ISLAND_UPGRADE_SET, payload, () -> islandOperator.setUpgradeLevel(actor, islandUuid, upgradeId, expectedLevel, newLevel), VOID);
     }
 
     // =====================================================================================

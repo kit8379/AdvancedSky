@@ -19,8 +19,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 /**
  * Applies island changes to this server's island world. Only called by {@code IslandOperator} for
@@ -65,6 +67,13 @@ public class WorldHandler {
     }
 
     /**
+     * The island world. Only on island servers.
+     */
+    public World getWorld() {
+        return requireWorld();
+    }
+
+    /**
      * Copies the template onto the island. Completes once every block has been placed.
      */
     public CompletableFuture<Void> createIsland(int slot) {
@@ -77,6 +86,48 @@ public class WorldHandler {
      * delete does not create them.
      */
     public CompletableFuture<Void> deleteIsland(int slot) {
+        List<ChunkPos> chunks = areaChunks(slot);
+        return removePlayersFromIsland(chunks, player -> true).thenCompose(v -> clearInBatches(chunks, 0));
+    }
+
+    /**
+     * Sends the player to the lobby if they stand in the island's area here. Completes with
+     * whether they did.
+     */
+    public CompletableFuture<Boolean> removePlayerFromIsland(int slot, UUID playerUuid) {
+        return CompletableFuture.supplyAsync(() -> Bukkit.getPlayer(playerUuid), plugin.getGlobalRegionExecutor()).thenCompose(player -> {
+            if (player == null) {
+                return CompletableFuture.completedFuture(false);
+            }
+
+            // The location is read on the thread that owns the player.
+            CompletableFuture<Boolean> removed = new CompletableFuture<>();
+            boolean scheduled = player.getScheduler().run(plugin, task -> {
+                Location location = player.getLocation();
+                if (!location.getWorld().equals(world) || !grid.isInArea(slot, location.getX(), location.getZ())) {
+                    removed.complete(false);
+                    return;
+                }
+
+                sendToLobby(player);
+                removed.complete(true);
+            }, () -> removed.complete(false)) != null;
+
+            if (!scheduled) {
+                removed.complete(false);
+            }
+            return removed;
+        });
+    }
+
+    /**
+     * Sends every player in the island's area for whom the predicate holds to the lobby.
+     */
+    public CompletableFuture<Void> removePlayersFromIsland(int slot, Predicate<Player> shouldRemove) {
+        return removePlayersFromIsland(areaChunks(slot), shouldRemove);
+    }
+
+    private List<ChunkPos> areaChunks(int slot) {
         Location center = grid.center(requireWorld(), slot);
         int minChunkX = (center.getBlockX() - IslandGrid.AREA_RADIUS) >> 4;
         int minChunkZ = (center.getBlockZ() - IslandGrid.AREA_RADIUS) >> 4;
@@ -89,7 +140,7 @@ public class WorldHandler {
                 chunks.add(new ChunkPos(cx, cz));
             }
         }
-        return removePlayersFromIsland(chunks).thenCompose(v -> clearInBatches(chunks, 0));
+        return chunks;
     }
 
     // ===================================================================
@@ -155,7 +206,7 @@ public class WorldHandler {
      * Players can only stand in loaded chunks, so only those are looked at, each on the thread
      * that owns it.
      */
-    private CompletableFuture<Void> removePlayersFromIsland(List<ChunkPos> chunks) {
+    private CompletableFuture<Void> removePlayersFromIsland(List<ChunkPos> chunks, Predicate<Player> shouldRemove) {
         List<CompletableFuture<Void>> checks = new ArrayList<>();
         for (ChunkPos pos : chunks) {
             CompletableFuture<Void> checked = new CompletableFuture<>();
@@ -163,11 +214,8 @@ public class WorldHandler {
                 try {
                     if (world.isChunkLoaded(pos.x(), pos.z())) {
                         for (Entity entity : world.getChunkAt(pos.x(), pos.z()).getEntities()) {
-                            if (entity instanceof Player player) {
-                                plugin.getApi().lobby(player.getUniqueId()).exceptionally(e -> {
-                                    plugin.severe("Failed to send player " + player.getUniqueId() + " to the lobby off a deleted island", e);
-                                    return null;
-                                });
+                            if (entity instanceof Player player && shouldRemove.test(player)) {
+                                sendToLobby(player);
                                 plugin.debug("WorldHandler", "Removed player " + player.getUniqueId() + " from island area at chunk " + pos);
                             }
                         }
@@ -239,7 +287,7 @@ public class WorldHandler {
      * Loads the chunk (generating it only if asked) and runs the action on the thread that owns
      * it. A chunk that does not exist and is not to be generated is skipped.
      */
-    private CompletableFuture<Void> onChunk(World target, int chunkX, int chunkZ, boolean generate, Function<Chunk, CompletableFuture<Void>> action) {
+    public CompletableFuture<Void> onChunk(World target, int chunkX, int chunkZ, boolean generate, Function<Chunk, CompletableFuture<Void>> action) {
         return target.getChunkAtAsync(chunkX, chunkZ, generate).thenCompose(chunk -> {
             if (chunk == null) {
                 return CompletableFuture.completedFuture(null);
@@ -260,6 +308,13 @@ public class WorldHandler {
                 }
             });
             return done;
+        });
+    }
+
+    private void sendToLobby(Player player) {
+        plugin.getApi().lobby(player.getUniqueId()).exceptionally(e -> {
+            plugin.severe("Failed to send player " + player.getUniqueId() + " to the lobby off an island", e);
+            return null;
         });
     }
 
