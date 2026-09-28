@@ -1,0 +1,120 @@
+package org.me.advancedsky.command.player;
+
+import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
+import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.api.AdvancedSkyAPI;
+import org.me.advancedsky.command.AsyncTabComplete;
+import org.me.advancedsky.command.SubCommand;
+import org.me.advancedsky.config.ConfigHandler;
+import org.me.advancedsky.exceptions.InvitedAlreadyException;
+import org.me.advancedsky.exceptions.IslandAlreadyExistException;
+import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.IslandPlayerAlreadyExistsException;
+import org.me.advancedsky.exceptions.PlayerNotOnlineException;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+
+/**
+ * /is invite <player>
+ */
+public class PlayerInviteCommand implements SubCommand, AsyncTabComplete {
+    private final AdvancedSky plugin;
+    private final AdvancedSkyAPI api;
+    private final ConfigHandler config;
+
+    public PlayerInviteCommand(AdvancedSky plugin, AdvancedSkyAPI api, ConfigHandler config) {
+        this.plugin = plugin;
+        this.api = api;
+        this.config = config;
+    }
+
+    @Override
+    public String getName() {
+        return "invite";
+    }
+
+    @Override
+    public String[] getAliases() {
+        return config.getPlayerInviteAliases();
+    }
+
+    @Override
+    public String getPermission() {
+        return config.getPlayerInvitePermission();
+    }
+
+    @Override
+    public String getSyntax() {
+        return config.getPlayerInviteSyntax();
+    }
+
+    @Override
+    public String getDescription() {
+        return config.getPlayerInviteDescription();
+    }
+
+    @Override
+    public boolean execute(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(config.getOnlyPlayerCanRunCommandMessage());
+            return true;
+        }
+
+        if (args.length < 2) {
+            return false;
+        }
+
+        String targetPlayerName = args[1];
+        UUID playerUuid = player.getUniqueId();
+
+        api.getPlayerUuid(targetPlayerName).thenCompose(targetUuidOpt -> {
+            if (targetUuidOpt.isEmpty()) {
+                player.sendMessage(config.getUnknownPlayerMessage(targetPlayerName));
+                return CompletableFuture.completedFuture(null);
+            }
+
+            UUID targetPlayerUuid = targetUuidOpt.get();
+
+            return api.player(playerUuid).invite(targetPlayerUuid, 600).thenRun(() -> {
+                player.sendMessage(config.getPlayerInviteSentMessage(targetPlayerName));
+                api.sendPlayerMessage(targetPlayerUuid, config.getPlayerInviteReceiveMessage(player.getName()));
+            });
+        }).exceptionally(ex -> {
+            Throwable cause = ex.getCause();
+            if (cause instanceof IslandDoesNotExistException) {
+                player.sendMessage(config.getPlayerNoIslandMessage());
+            } else if (cause instanceof PlayerNotOnlineException) {
+                player.sendMessage(config.getPlayerNotOnlineMessage(targetPlayerName));
+            } else if (cause instanceof InvitedAlreadyException) {
+                player.sendMessage(config.getPlayerAlreadyInvitedMessage(targetPlayerName));
+            } else if (cause instanceof IslandAlreadyExistException) {
+                player.sendMessage(config.getAlreadyHasIslandMessage(targetPlayerName));
+            } else if (cause instanceof IslandPlayerAlreadyExistsException) {
+                player.sendMessage(config.getIslandMemberExistsMessage(targetPlayerName));
+            } else {
+                player.sendMessage(config.getUnknownExceptionMessage());
+                plugin.severe("Error inviting player " + targetPlayerName + " to island of " + player.getName(), ex);
+            }
+            return null;
+        });
+
+        return true;
+    }
+
+    @Override
+    public CompletableFuture<List<String>> tabCompleteAsync(CommandSender sender, String label, String[] args) {
+        if (args.length != 2) {
+            return CompletableFuture.completedFuture(Collections.emptyList());
+        }
+
+        String prefix = args[1].toLowerCase(Locale.ROOT);
+
+        return api.getOnlinePlayersNames().thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList())).exceptionally(ex -> Collections.emptyList());
+    }
+}

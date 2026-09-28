@@ -1,6 +1,7 @@
 package org.me.advancedsky.api;
 
 import net.kyori.adventure.text.Component;
+import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.island.*;
@@ -82,6 +83,15 @@ public class AdvancedSkyAPI {
     @SuppressWarnings("unused")
     public CompletableFuture<UUID> getIslandUuid(UUID playerUuid) {
         return coreHandler.getIslandUuid(playerUuid);
+    }
+
+    /**
+     * The island whose area holds the location, among the islands hosted on this server; null
+     * anywhere else.
+     */
+    @SuppressWarnings("unused")
+    public UUID getIslandUuidAt(Location location) {
+        return coreHandler.getIslandUuidAt(location);
     }
 
     @SuppressWarnings("unused")

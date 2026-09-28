@@ -26,9 +26,33 @@ public class IslandPlayerCommand implements CommandExecutor, AsyncCommandTabRout
 
         subCommands.add(new PlayerCreateIslandCommand(plugin, api, config));
         subCommands.add(new PlayerDeleteIslandCommand(plugin, api, config));
+        subCommands.add(new PlayerInviteCommand(plugin, api, config));
+        subCommands.add(new PlayerAcceptInviteCommand(plugin, api, config));
+        subCommands.add(new PlayerRejectInviteCommand(plugin, api, config));
+        subCommands.add(new PlayerRemoveMemberCommand(plugin, api, config));
         subCommands.add(new PlayerHomeCommand(plugin, api, config));
         subCommands.add(new PlayerSetHomeCommand(plugin, api, config));
         subCommands.add(new PlayerDelHomeCommand(plugin, api, config));
+        subCommands.add(new PlayerWarpCommand(plugin, api, config));
+        subCommands.add(new PlayerSetWarpCommand(plugin, api, config));
+        subCommands.add(new PlayerDelWarpCommand(plugin, api, config));
+        subCommands.add(new PlayerSetOwnerCommand(plugin, api, config));
+        subCommands.add(new PlayerLeaveCommand(plugin, api, config));
+        subCommands.add(new PlayerLevelCommand(plugin, api, config));
+        subCommands.add(new PlayerUpgradeCommand(plugin, api, config));
+        subCommands.add(new PlayerValueCommand(config));
+        subCommands.add(new PlayerLockCommand(plugin, api, config));
+        subCommands.add(new PlayerPvpCommand(plugin, api, config));
+        subCommands.add(new PlayerTopCommand(plugin, api, config));
+        subCommands.add(new PlayerInfoCommand(plugin, api, config));
+        subCommands.add(new PlayerExpelCommand(plugin, api, config));
+        subCommands.add(new PlayerBanCommand(plugin, api, config));
+        subCommands.add(new PlayerUnbanCommand(plugin, api, config));
+        subCommands.add(new PlayerBanListCommand(plugin, api, config));
+        subCommands.add(new PlayerCoopCommand(plugin, api, config));
+        subCommands.add(new PlayerUncoopCommand(plugin, api, config));
+        subCommands.add(new PlayerCoopListCommand(plugin, api, config));
+        subCommands.add(new PlayerBiomeCommand(plugin, api, config));
         subCommands.add(new PlayerLobbyCommand(plugin, api, config));
         subCommands.add(new PlayerHelpCommand(config, subCommands));
 

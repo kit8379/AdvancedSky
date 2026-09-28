@@ -1,0 +1,121 @@
+package org.me.advancedsky.command.player;
+
+import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
+import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.api.AdvancedSkyAPI;
+import org.me.advancedsky.command.AsyncTabComplete;
+import org.me.advancedsky.command.SubCommand;
+import org.me.advancedsky.config.ConfigHandler;
+import org.me.advancedsky.exceptions.CannotCoopIslandPlayerException;
+import org.me.advancedsky.exceptions.CoopLimitReachedException;
+import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.PlayerAlreadyCoopedException;
+import org.me.advancedsky.exceptions.PlayerNotOnlineException;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+
+/**
+ * /is coop <player>
+ */
+public class PlayerCoopCommand implements SubCommand, AsyncTabComplete {
+    private final AdvancedSky plugin;
+    private final AdvancedSkyAPI api;
+    private final ConfigHandler config;
+
+    public PlayerCoopCommand(AdvancedSky plugin, AdvancedSkyAPI api, ConfigHandler config) {
+        this.plugin = plugin;
+        this.api = api;
+        this.config = config;
+    }
+
+    @Override
+    public String getName() {
+        return "coop";
+    }
+
+    @Override
+    public String[] getAliases() {
+        return config.getPlayerCoopAliases();
+    }
+
+    @Override
+    public String getPermission() {
+        return config.getPlayerCoopPermission();
+    }
+
+    @Override
+    public String getSyntax() {
+        return config.getPlayerCoopSyntax();
+    }
+
+    @Override
+    public String getDescription() {
+        return config.getPlayerCoopDescription();
+    }
+
+    @Override
+    public boolean execute(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(config.getOnlyPlayerCanRunCommandMessage());
+            return true;
+        }
+
+        if (args.length < 2) {
+            return false;
+        }
+
+        String targetPlayerName = args[1];
+        UUID playerUuid = player.getUniqueId();
+
+        api.getPlayerUuid(targetPlayerName).thenCompose(targetUuidOpt -> {
+            if (targetUuidOpt.isEmpty()) {
+                player.sendMessage(config.getUnknownPlayerMessage(targetPlayerName));
+                return CompletableFuture.completedFuture(null);
+            }
+
+            UUID targetUuid = targetUuidOpt.get();
+
+            return api.player(playerUuid).addCoop(targetUuid).thenRun(() -> {
+                player.sendMessage(config.getPlayerCoopSuccessMessage(targetPlayerName));
+                api.sendPlayerMessage(targetUuid, config.getWasCoopedToIslandMessage(player.getName()));
+            });
+        }).exceptionally(ex -> {
+            Throwable cause = ex.getCause();
+            if (cause instanceof IslandDoesNotExistException) {
+                player.sendMessage(config.getPlayerNoIslandMessage());
+            } else if (cause instanceof PlayerNotOnlineException) {
+                player.sendMessage(config.getPlayerNotOnlineMessage(targetPlayerName));
+            } else if (cause instanceof PlayerAlreadyCoopedException) {
+                player.sendMessage(config.getPlayerAlreadyCoopedMessage(targetPlayerName));
+            } else if (cause instanceof CannotCoopIslandPlayerException) {
+                player.sendMessage(config.getPlayerCannotCoopIslandPlayerMessage());
+            } else if (cause instanceof CoopLimitReachedException) {
+                player.sendMessage(config.getPlayerCoopLimitReachedMessage(cause.getMessage()));
+            } else {
+                player.sendMessage(config.getUnknownExceptionMessage());
+                plugin.severe("Error cooping player " + targetPlayerName + " for " + player.getName(), ex);
+            }
+
+            return null;
+        });
+
+        return true;
+    }
+
+    @Override
+    public CompletableFuture<List<String>> tabCompleteAsync(CommandSender sender, String label, String[] args) {
+        if (args.length != 2) {
+            return CompletableFuture.completedFuture(Collections.emptyList());
+        }
+
+        String prefix = args[1].toLowerCase(Locale.ROOT);
+
+        return api.getOnlinePlayersNames().thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList())).exceptionally(ex -> Collections.emptyList());
+    }
+}

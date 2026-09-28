@@ -1,0 +1,80 @@
+package org.me.advancedsky.command.player;
+
+import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
+import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.api.AdvancedSkyAPI;
+import org.me.advancedsky.command.SubCommand;
+import org.me.advancedsky.config.ConfigHandler;
+import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+
+import java.util.UUID;
+
+/**
+ * /is lock
+ */
+public class PlayerLockCommand implements SubCommand {
+    private final AdvancedSky plugin;
+    private final AdvancedSkyAPI api;
+    private final ConfigHandler config;
+
+    public PlayerLockCommand(AdvancedSky plugin, AdvancedSkyAPI api, ConfigHandler config) {
+        this.plugin = plugin;
+        this.api = api;
+        this.config = config;
+    }
+
+    @Override
+    public String getName() {
+        return "lock";
+    }
+
+    @Override
+    public String[] getAliases() {
+        return config.getPlayerLockAliases();
+    }
+
+    @Override
+    public String getPermission() {
+        return config.getPlayerLockPermission();
+    }
+
+    @Override
+    public String getSyntax() {
+        return config.getPlayerLockSyntax();
+    }
+
+    @Override
+    public String getDescription() {
+        return config.getPlayerLockDescription();
+    }
+
+    @Override
+    public boolean execute(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(config.getOnlyPlayerCanRunCommandMessage());
+            return true;
+        }
+
+        UUID playerUuid = player.getUniqueId();
+
+        api.player(playerUuid).toggleLock().thenAccept(isLocked -> {
+            if (isLocked) {
+                player.sendMessage(config.getPlayerLockSuccessMessage());
+            } else {
+                player.sendMessage(config.getPlayerUnLockSuccessMessage());
+            }
+        }).exceptionally(ex -> {
+            Throwable cause = ex.getCause();
+            if (cause instanceof IslandDoesNotExistException) {
+                player.sendMessage(config.getPlayerNoIslandMessage());
+            } else {
+                player.sendMessage(config.getUnknownExceptionMessage());
+                plugin.severe("Error toggling island lock status for player " + player.getName(), ex);
+            }
+            return null;
+        });
+
+        return true;
+    }
+}

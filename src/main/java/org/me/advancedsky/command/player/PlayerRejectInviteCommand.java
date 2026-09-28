@@ -1,0 +1,83 @@
+package org.me.advancedsky.command.player;
+
+import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
+import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.api.AdvancedSkyAPI;
+import org.me.advancedsky.command.SubCommand;
+import org.me.advancedsky.config.ConfigHandler;
+import org.me.advancedsky.model.Invitation;
+
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+
+/**
+ * /is reject
+ */
+public class PlayerRejectInviteCommand implements SubCommand {
+    private final AdvancedSky plugin;
+    private final AdvancedSkyAPI api;
+    private final ConfigHandler config;
+
+    public PlayerRejectInviteCommand(AdvancedSky plugin, AdvancedSkyAPI api, ConfigHandler config) {
+        this.plugin = plugin;
+        this.api = api;
+        this.config = config;
+    }
+
+    @Override
+    public String getName() {
+        return "reject";
+    }
+
+    @Override
+    public String[] getAliases() {
+        return config.getPlayerRejectAliases();
+    }
+
+    @Override
+    public String getPermission() {
+        return config.getPlayerRejectPermission();
+    }
+
+    @Override
+    public String getSyntax() {
+        return config.getPlayerRejectSyntax();
+    }
+
+    @Override
+    public String getDescription() {
+        return config.getPlayerRejectDescription();
+    }
+
+    @Override
+    public boolean execute(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(config.getOnlyPlayerCanRunCommandMessage());
+            return true;
+        }
+
+        UUID playerUuid = player.getUniqueId();
+
+        api.getInvite(playerUuid).thenCompose(optionalInvite -> {
+            if (optionalInvite.isEmpty()) {
+                player.sendMessage(config.getPlayerNoPendingInviteMessage());
+                return CompletableFuture.completedFuture(null);
+            }
+
+            Invitation invite = optionalInvite.get();
+            UUID inviterUuid = invite.getInviterUuid();
+
+            return api.player(playerUuid).rejectInvite().thenRun(() -> {
+                player.sendMessage(config.getPlayerInviteRejectedMessage());
+                api.sendPlayerMessage(inviterUuid, config.getPlayerInviteRejectedNotifyMessage(player.getName()));
+            });
+        }).exceptionally(ex -> {
+            player.sendMessage(config.getUnknownExceptionMessage());
+            plugin.severe("Error rejecting invite for player " + player.getName(), ex);
+            return null;
+        });
+
+        return true;
+    }
+}

@@ -135,7 +135,7 @@ public class AdvancedSky extends JavaPlugin {
             info("Player message handler loaded");
 
             info("Starting main handlers for the plugin");
-            CoreHandler coreHandler = new CoreHandler(this, databaseHandler, islandDistributor);
+            CoreHandler coreHandler = new CoreHandler(this, config, databaseHandler, islandDistributor, islandSnapshot);
             PlayerHandler playerHandler = new PlayerHandler(this, databaseHandler, islandDistributor, invitationStore, onlinePlayerRegistry);
             HomeHandler homeHandler = new HomeHandler(this, config, databaseHandler, islandDistributor, onlinePlayerRegistry, islandGrid);
             WarpHandler warpHandler = new WarpHandler(this, config, databaseHandler, islandDistributor, onlinePlayerRegistry, islandGrid);

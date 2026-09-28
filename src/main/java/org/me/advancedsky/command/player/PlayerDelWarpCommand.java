@@ -1,0 +1,100 @@
+package org.me.advancedsky.command.player;
+
+import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
+import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.api.AdvancedSkyAPI;
+import org.me.advancedsky.command.AsyncTabComplete;
+import org.me.advancedsky.command.SubCommand;
+import org.me.advancedsky.config.ConfigHandler;
+import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.WarpDoesNotExistException;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+
+/**
+ * /is delwarp <warpName>
+ */
+public class PlayerDelWarpCommand implements SubCommand, AsyncTabComplete {
+    private final AdvancedSky plugin;
+    private final AdvancedSkyAPI api;
+    private final ConfigHandler config;
+
+    public PlayerDelWarpCommand(AdvancedSky plugin, AdvancedSkyAPI api, ConfigHandler config) {
+        this.plugin = plugin;
+        this.api = api;
+        this.config = config;
+    }
+
+    @Override
+    public String getName() {
+        return "delwarp";
+    }
+
+    @Override
+    public String[] getAliases() {
+        return config.getPlayerDelWarpAliases();
+    }
+
+    @Override
+    public String getPermission() {
+        return config.getPlayerDelWarpPermission();
+    }
+
+    @Override
+    public String getSyntax() {
+        return config.getPlayerDelWarpSyntax();
+    }
+
+    @Override
+    public String getDescription() {
+        return config.getPlayerDelWarpDescription();
+    }
+
+    @Override
+    public boolean execute(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(config.getOnlyPlayerCanRunCommandMessage());
+            return true;
+        }
+
+        if (args.length < 2) {
+            return false;
+        }
+
+        String warpName = args[1];
+        UUID playerUuid = player.getUniqueId();
+
+        api.player(playerUuid).deleteWarp(warpName).thenRun(() -> player.sendMessage(config.getPlayerDelWarpSuccessMessage(warpName))).exceptionally(ex -> {
+            Throwable cause = ex.getCause();
+            if (cause instanceof IslandDoesNotExistException) {
+                player.sendMessage(config.getPlayerNoIslandMessage());
+            } else if (cause instanceof WarpDoesNotExistException) {
+                player.sendMessage(config.getPlayerNoWarpMessage(warpName));
+            } else {
+                player.sendMessage(config.getUnknownExceptionMessage());
+                plugin.severe("Error deleting warp for player " + player.getName(), ex);
+            }
+            return null;
+        });
+
+        return true;
+    }
+
+    @Override
+    public CompletableFuture<List<String>> tabCompleteAsync(CommandSender sender, String label, String[] args) {
+        if (args.length != 2 || !(sender instanceof Player player)) {
+            return CompletableFuture.completedFuture(Collections.emptyList());
+        }
+
+        String prefix = args[1].toLowerCase(Locale.ROOT);
+        UUID playerUuid = player.getUniqueId();
+
+        return api.getIslandUuid(playerUuid).thenCompose(api::getWarpNames).thenApply(warpNames -> warpNames.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList())).exceptionally(ex -> Collections.emptyList());
+    }
+}
