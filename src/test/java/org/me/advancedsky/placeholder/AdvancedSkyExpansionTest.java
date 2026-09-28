@@ -1,0 +1,368 @@
+package org.me.advancedsky.placeholder;
+
+import io.papermc.paper.threadedregions.scheduler.AsyncScheduler;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
+import org.bukkit.Bukkit;
+import org.bukkit.OfflinePlayer;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.api.AdvancedSkyAPI;
+import org.me.advancedsky.config.ConfigHandler;
+import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.model.IslandTop;
+import org.mockito.MockedStatic;
+
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+class AdvancedSkyExpansionTest {
+    private AdvancedSky plugin;
+    private ConfigHandler config;
+    private AdvancedSkyAPI api;
+    private AdvancedSkyExpansion expansion;
+    private OfflinePlayer player;
+    private final AtomicLong clock = new AtomicLong();
+    private final UUID playerId = UUID.randomUUID();
+    private final UUID islandId = UUID.randomUUID();
+    private final UUID ownerId = UUID.randomUUID();
+    private final UUID coopId = UUID.randomUUID();
+    private final UUID bannedId = UUID.randomUUID();
+
+    @BeforeEach
+    void setUp() {
+        plugin = mock(AdvancedSky.class);
+        config = mock(ConfigHandler.class);
+        api = mock(AdvancedSkyAPI.class);
+        AsyncScheduler scheduler = mock(AsyncScheduler.class);
+        when(scheduler.runAtFixedRate(eq(plugin), any(), eq(60L), eq(60L), eq(TimeUnit.SECONDS)))
+                .thenReturn(mock(ScheduledTask.class));
+        try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
+            bukkit.when(Bukkit::getAsyncScheduler).thenReturn(scheduler);
+            expansion = new AdvancedSkyExpansion(plugin, config, api, clock::get);
+        }
+        player = player(playerId);
+        when(api.getIslandUuid(playerId)).thenReturn(CompletableFuture.completedFuture(islandId));
+        when(api.getIslandOwner(islandId)).thenReturn(CompletableFuture.completedFuture(ownerId));
+        when(api.getIslandMembers(islandId)).thenReturn(CompletableFuture.completedFuture(Set.of(playerId)));
+        when(api.getIslandCoops(islandId)).thenReturn(CompletableFuture.completedFuture(Set.of(coopId)));
+        when(api.getIslandBans(islandId)).thenReturn(CompletableFuture.completedFuture(Set.of(bannedId)));
+        when(api.getIslandLevel(islandId)).thenReturn(CompletableFuture.completedFuture(42));
+        when(api.isIslandLock(islandId)).thenReturn(CompletableFuture.completedFuture(true));
+        when(api.isIslandPvp(islandId)).thenReturn(CompletableFuture.completedFuture(false));
+        when(api.getPlayerNames(anyCollection())).thenReturn(CompletableFuture.completedFuture(
+                Map.of(ownerId, "Owner", playerId, "Member", coopId, "Coop")));
+    }
+
+    @Test
+    void returnsAllPlayerFieldsWithCorrectMembership() {
+        Map<String, String> expected = Map.ofEntries(
+                Map.entry("island_level", "42"), Map.entry("island_members", "1"),
+                Map.entry("island_uuid", islandId.toString()), Map.entry("island_owner", "Owner"),
+                Map.entry("island_role", "member"),
+                Map.entry("island_owner_uuid", ownerId.toString()), Map.entry("island_lock", "true"),
+                Map.entry("island_pvp", "false"), Map.entry("island_players", "2"),
+                Map.entry("island_coops", "1"), Map.entry("island_bans", "1"));
+        expected.forEach((key, value) -> assertEquals(value, expansion.onRequest(player, key), key));
+        assertEquals("42", expansion.onRequest(player, "ISLAND_LEVEL"));
+        verify(api, times(1)).getIslandUuid(playerId);
+        verify(api).getPlayerNames(Set.of(ownerId));
+        verify(api, times(1)).getPlayerNames(anyCollection());
+        verify(api, never()).getIslandRank(any());
+        verify(api, never()).getTopIslandLevels(anyInt());
+    }
+
+    @Test
+    void handlesSoloOwner() {
+        when(api.getIslandOwner(islandId)).thenReturn(CompletableFuture.completedFuture(playerId));
+        when(api.getIslandMembers(islandId)).thenReturn(CompletableFuture.completedFuture(Set.of()));
+        assertEquals("owner", expansion.onRequest(player, "island_role"));
+        assertEquals("0", expansion.onRequest(player, "island_members"));
+        assertEquals("1", expansion.onRequest(player, "island_players"));
+    }
+
+    @Test
+    void missingIslandReturnsZeroFalseNoneAndEmptyText() {
+        when(api.getIslandUuid(playerId)).thenReturn(CompletableFuture.failedFuture(new IslandDoesNotExistException()));
+        for (String key : List.of("island_level", "island_members", "island_players", "island_coops",
+                "island_bans", "island_rank")) {
+            assertEquals("0", expansion.onRequest(player, key), key);
+        }
+        for (String key : List.of("island_lock", "island_pvp")) {
+            assertEquals("false", expansion.onRequest(player, key), key);
+        }
+        assertEquals("none", expansion.onRequest(player, "island_role"));
+        for (String key : List.of("island_owner", "island_owner_uuid", "island_uuid")) {
+            assertEquals("", expansion.onRequest(player, key), key);
+        }
+        verify(plugin, never()).severe(anyString(), any(Throwable.class));
+    }
+
+    @Test
+    void invalidNamesAndNullPlayersDoNotQueryPlayerData() {
+        for (String key : List.of("unknown", "top_0_owner", "top_-1_level", "top_01_owner",
+                "top_2147483648_owner", "top_1_invalid", "top_1_level_extra", "island_online",
+                "player_homes", "player_homes_list", "player_warps", "player_warps_list",
+                "has_island", "island_members_list", "island_coops_list", "island_bans_list")) {
+            assertNull(expansion.onRequest(player, key), key);
+        }
+        assertEquals("", expansion.onRequest(null, "island_level"));
+        verify(api, never()).getIslandUuid(any());
+        verify(api, never()).getTopIslandLevels(anyInt());
+    }
+
+    @Test
+    void concurrentRequestsDoNotBlockOrDuplicateAnInFlightLoad() throws Exception {
+        CompletableFuture<UUID> loading = new CompletableFuture<>();
+        when(api.getIslandUuid(playerId)).thenReturn(loading);
+        List<CompletableFuture<Void>> requests = new ArrayList<>();
+        for (int i = 0; i < 20; i++) {
+            requests.add(CompletableFuture.runAsync(() ->
+                    assertEquals("", expansion.onRequest(player, "island_members"))));
+        }
+        CompletableFuture.allOf(requests.toArray(CompletableFuture[]::new)).get(3, TimeUnit.SECONDS);
+        verify(api, times(1)).getIslandUuid(playerId);
+        loading.complete(islandId);
+        assertEquals("1", expansion.onRequest(player, "island_members"));
+    }
+
+    @Test
+    void rankLoadsSeparatelyWithoutFetchingOtherIslandDetails() {
+        when(api.getIslandRank(islandId)).thenReturn(CompletableFuture.completedFuture(123L));
+        assertEquals("123", expansion.onRequest(player, "island_rank"));
+        assertEquals("123", expansion.onRequest(player, "island_rank"));
+        verify(api, times(1)).getIslandRank(islandId);
+        verify(api, never()).getIslandOwner(any());
+    }
+
+    @Test
+    void leaderboardWorksWithoutPlayerAndSharesRowsAndFields() {
+        IslandTop first = new IslandTop(islandId, ownerId, 42, Set.of(playerId));
+        IslandTop second = new IslandTop(UUID.randomUUID(), bannedId, 0, Set.of());
+        when(api.getTopIslandLevels(2)).thenReturn(CompletableFuture.completedFuture(List.of(first, second)));
+        assertEquals("0", expansion.onRequest(null, "top_2_level"));
+        assertEquals(bannedId.toString(), expansion.onRequest(null, "top_2_owner"));
+        assertEquals("Owner", expansion.onRequest(player, "top_1_owner"));
+        assertEquals("1", expansion.onRequest(null, "top_1_members"));
+        assertEquals(islandId.toString(), expansion.onRequest(null, "top_1_uuid"));
+        verify(api, times(1)).getTopIslandLevels(2);
+        verify(api, never()).getIslandUuid(any());
+
+        when(api.getTopIslandLevels(10)).thenReturn(CompletableFuture.completedFuture(List.of(first, second)));
+        assertEquals("", expansion.onRequest(null, "top_10_level"));
+        assertEquals("", expansion.onRequest(null, "top_10_owner"));
+        verify(api, times(1)).getTopIslandLevels(10);
+    }
+
+    @Test
+    void leaderboardExpandsAfterPendingLoadWithoutDuplicatingRequests() {
+        CompletableFuture<List<IslandTop>> loading = new CompletableFuture<>();
+        when(api.getTopIslandLevels(1)).thenReturn(loading);
+        when(api.getTopIslandLevels(10)).thenReturn(CompletableFuture.completedFuture(List.of()));
+        assertEquals("", expansion.onRequest(null, "top_1_level"));
+        assertEquals("", expansion.onRequest(null, "top_10_owner"));
+        verify(api, never()).getTopIslandLevels(10);
+        loading.complete(List.of());
+        assertEquals("", expansion.onRequest(null, "top_10_level"));
+        verify(api, times(1)).getTopIslandLevels(1);
+        verify(api, times(1)).getTopIslandLevels(10);
+    }
+
+    @Test
+    void databaseFailuresAreLoggedAndDoNotPretendThePlayerHasNoIsland() {
+        RuntimeException failure = new RuntimeException("database unavailable");
+        when(api.getIslandUuid(playerId)).thenReturn(CompletableFuture.failedFuture(failure));
+        assertEquals("", expansion.onRequest(player, "island_level"));
+        verify(plugin).severe("Failed to load placeholder data for " + playerId, failure);
+        when(api.getTopIslandLevels(1)).thenReturn(CompletableFuture.failedFuture(failure));
+        assertEquals("", expansion.onRequest(null, "top_1_level"));
+        verify(plugin).severe(eq("Failed to load leaderboard placeholders"),
+                argThat(error -> error == failure || error.getCause() == failure));
+    }
+
+    @Test
+    void refreshServesPreviousValuesThenClearsDeletedIslandAndLeaderboard() {
+        when(api.getTopIslandLevels(1)).thenReturn(CompletableFuture.completedFuture(
+                List.of(new IslandTop(islandId, ownerId, 42, Set.of(playerId)))));
+        assertEquals("42", expansion.onRequest(player, "island_level"));
+        assertEquals("42", expansion.onRequest(null, "top_1_level"));
+        clock.addAndGet(TimeUnit.SECONDS.toNanos(30));
+        CompletableFuture<UUID> refresh = new CompletableFuture<>();
+        CompletableFuture<List<IslandTop>> topRefresh = new CompletableFuture<>();
+        when(api.getIslandUuid(playerId)).thenReturn(refresh);
+        when(api.getTopIslandLevels(1)).thenReturn(topRefresh);
+        assertEquals("42", expansion.onRequest(player, "island_level"));
+        assertEquals("42", expansion.onRequest(null, "top_1_level"));
+        refresh.completeExceptionally(new IslandDoesNotExistException());
+        topRefresh.complete(List.of());
+        assertEquals("0", expansion.onRequest(player, "island_level"));
+        assertEquals("false", expansion.onRequest(player, "island_lock"));
+        assertEquals("", expansion.onRequest(null, "top_1_level"));
+    }
+
+    @Test
+    void levelRequestsOnlyLoadMembershipAndSharedLevel() {
+        OfflinePlayer other = player(UUID.randomUUID());
+        when(api.getIslandUuid(other.getUniqueId())).thenReturn(CompletableFuture.completedFuture(islandId));
+        assertEquals("42", expansion.onRequest(player, "island_level"));
+        assertEquals("42", expansion.onRequest(other, "island_level"));
+        assertEquals("42", expansion.onRequest(player, "island_level"));
+        verify(api).getIslandUuid(playerId);
+        verify(api).getIslandUuid(other.getUniqueId());
+        verify(api, times(1)).getIslandLevel(islandId);
+        verifyNoMoreInteractions(api);
+    }
+
+    @Test
+    void hundredPlayersOnTwentyIslandsUse120QueriesPerLevelRefresh() {
+        reset(api);
+        Map<UUID, UUID> memberships = new HashMap<>();
+        List<OfflinePlayer> players = new ArrayList<>();
+        for (int island = 0; island < 20; island++) {
+            UUID id = UUID.randomUUID();
+            for (int member = 0; member < 5; member++) {
+                UUID playerUuid = UUID.randomUUID();
+                memberships.put(playerUuid, id);
+                players.add(player(playerUuid));
+            }
+        }
+        when(api.getIslandUuid(any())).thenAnswer(call -> CompletableFuture.completedFuture(memberships.get(call.getArgument(0))));
+        when(api.getIslandLevel(any())).thenReturn(CompletableFuture.completedFuture(42));
+        for (int second = 0; second < 30; second++) {
+            players.forEach(online -> assertEquals("42", expansion.onRequest(online, "island_level")));
+            clock.addAndGet(TimeUnit.SECONDS.toNanos(1));
+        }
+        verify(api, times(100)).getIslandUuid(any());
+        verify(api, times(20)).getIslandLevel(any());
+        verifyNoMoreInteractions(api);
+        players.forEach(online -> assertEquals("42", expansion.onRequest(online, "island_level")));
+        verify(api, times(200)).getIslandUuid(any());
+        verify(api, times(40)).getIslandLevel(any());
+        verifyNoMoreInteractions(api);
+    }
+
+    @Test
+    void countsShareTheMembershipSourceWithoutResolvingNames() {
+        assertEquals("1", expansion.onRequest(player, "island_members"));
+        assertEquals("2", expansion.onRequest(player, "island_players"));
+        verify(api).getIslandUuid(playerId);
+        verify(api).getIslandMembers(islandId);
+        verifyNoMoreInteractions(api);
+    }
+
+    @Test
+    void movingToAnotherIslandDoesNotReuseOldIslandData() {
+        UUID nextIsland = UUID.randomUUID();
+        assertEquals("42", expansion.onRequest(player, "island_level"));
+        clock.addAndGet(TimeUnit.SECONDS.toNanos(30));
+        when(api.getIslandUuid(playerId)).thenReturn(CompletableFuture.completedFuture(nextIsland));
+        when(api.getIslandLevel(nextIsland)).thenReturn(CompletableFuture.completedFuture(7));
+        assertEquals("7", expansion.onRequest(player, "island_level"));
+    }
+
+    @Test
+    void rankIsSharedByIslandAndRankAndTopRefreshAfterThirtySeconds() {
+        OfflinePlayer other = player(UUID.randomUUID());
+        when(api.getIslandUuid(other.getUniqueId())).thenReturn(CompletableFuture.completedFuture(islandId));
+        when(api.getIslandRank(islandId)).thenReturn(CompletableFuture.completedFuture(1L));
+        when(api.getTopIslandLevels(1)).thenReturn(CompletableFuture.completedFuture(
+                List.of(new IslandTop(islandId, ownerId, 42, Set.of(playerId)))));
+        assertEquals("1", expansion.onRequest(player, "island_rank"));
+        assertEquals("1", expansion.onRequest(other, "island_rank"));
+        assertEquals("42", expansion.onRequest(player, "island_level"));
+        assertEquals("42", expansion.onRequest(null, "top_1_level"));
+
+        clock.addAndGet(TimeUnit.SECONDS.toNanos(5));
+        when(api.getIslandLevel(islandId)).thenReturn(CompletableFuture.completedFuture(43));
+        when(api.getIslandRank(islandId)).thenReturn(CompletableFuture.completedFuture(2L));
+        when(api.getTopIslandLevels(1)).thenReturn(CompletableFuture.completedFuture(List.of()));
+        assertEquals("42", expansion.onRequest(player, "island_level"));
+        assertEquals("1", expansion.onRequest(player, "island_rank"));
+        assertEquals("42", expansion.onRequest(null, "top_1_level"));
+        clock.addAndGet(TimeUnit.SECONDS.toNanos(24));
+        assertEquals("1", expansion.onRequest(other, "island_rank"));
+        assertEquals("42", expansion.onRequest(null, "top_1_level"));
+        verify(api, times(1)).getIslandRank(islandId);
+        verify(api, times(1)).getTopIslandLevels(1);
+
+        clock.addAndGet(TimeUnit.SECONDS.toNanos(1));
+        assertEquals("43", expansion.onRequest(player, "island_level"));
+        assertEquals("2", expansion.onRequest(other, "island_rank"));
+        assertEquals("", expansion.onRequest(null, "top_1_level"));
+        verify(api, times(2)).getIslandRank(islandId);
+        verify(api, times(2)).getTopIslandLevels(1);
+    }
+
+    @Test
+    void aSharedPendingLevelLoadDoesNotDuplicateOrBlock() throws Exception {
+        CompletableFuture<Integer> loading = new CompletableFuture<>();
+        when(api.getIslandLevel(islandId)).thenReturn(loading);
+        List<OfflinePlayer> players = new ArrayList<>();
+        List<CompletableFuture<Void>> requests = new ArrayList<>();
+        for (int i = 0; i < 20; i++) {
+            UUID id = UUID.randomUUID();
+            when(api.getIslandUuid(id)).thenReturn(CompletableFuture.completedFuture(islandId));
+            players.add(player(id));
+        }
+        for (OfflinePlayer other : players) {
+            requests.add(CompletableFuture.runAsync(() -> assertEquals("", expansion.onRequest(other, "island_level"))));
+        }
+        CompletableFuture.allOf(requests.toArray(CompletableFuture[]::new)).get(3, TimeUnit.SECONDS);
+        verify(api, times(1)).getIslandLevel(islandId);
+        loading.complete(42);
+        assertEquals("42", expansion.onRequest(player, "island_level"));
+    }
+
+    @Test
+    void upgradeFieldsDeriveFromOneCachedLevelAndTheConfig() {
+        stubIslandSizeUpgrade();
+        when(api.getUpgradeLevel(islandId, "island-size")).thenReturn(CompletableFuture.completedFuture(2));
+        Map<String, String> expected = Map.of("upgrade_island-size_level", "2", "upgrade_island-size_value", "100",
+                "upgrade_island-size_max", "5", "upgrade_island-size_maxed", "false", "upgrade_island-size_next_price", "180000",
+                "upgrade_island-size_next_require_level", "450", "upgrade_island-size_next_value", "125");
+        expected.forEach((key, value) -> assertEquals(value, expansion.onRequest(player, key), key));
+        verify(api, times(1)).getUpgradeLevel(islandId, "island-size");
+    }
+
+    @Test
+    void maxedUpgradeHasNoNextFields() {
+        stubIslandSizeUpgrade();
+        when(api.getUpgradeLevel(islandId, "island-size")).thenReturn(CompletableFuture.completedFuture(5));
+        assertEquals("true", expansion.onRequest(player, "upgrade_island-size_maxed"));
+        for (String field : List.of("next_price", "next_require_level", "next_value")) {
+            assertEquals("", expansion.onRequest(player, "upgrade_island-size_" + field), field);
+        }
+    }
+
+    @Test
+    void upgradeMaxNeedsNoIslandAndUnknownUpgradesAreNotPlaceholders() {
+        stubIslandSizeUpgrade();
+        assertEquals("5", expansion.onRequest(null, "upgrade_island-size_max"));
+        assertEquals("", expansion.onRequest(null, "upgrade_island-size_level"));
+        when(api.getIslandUuid(playerId)).thenReturn(CompletableFuture.failedFuture(new IslandDoesNotExistException()));
+        assertEquals("", expansion.onRequest(player, "upgrade_island-size_level"));
+        assertNull(expansion.onRequest(player, "upgrade_jetpack_level"));
+        assertNull(expansion.onRequest(player, "upgrade_island-size_price"));
+        verify(api, never()).getUpgradeLevel(any(), anyString());
+    }
+
+    private void stubIslandSizeUpgrade() {
+        when(config.isUpgrade("island-size")).thenReturn(true);
+        when(config.getUpgradeLevels("island-size")).thenReturn(List.of(1, 2, 3, 4, 5));
+        when(config.getUpgradeValue("island-size", 2)).thenReturn("100");
+        when(config.getUpgradeValue("island-size", 3)).thenReturn("125");
+        when(config.getUpgradePrice("island-size", 3)).thenReturn(180000.0);
+        when(config.getUpgradeRequireLevel("island-size", 3)).thenReturn(450);
+    }
+
+    private OfflinePlayer player(UUID uuid) {
+        OfflinePlayer result = mock(OfflinePlayer.class);
+        when(result.getUniqueId()).thenReturn(uuid);
+        return result;
+    }
+}
