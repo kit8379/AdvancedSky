@@ -14,6 +14,81 @@ commands:
       permission: 'advancedsky.island.player.delete'
       syntax: ''
       description: 'Delete your island'
+    setowner:
+      aliases: []
+      permission: 'advancedsky.island.player.setowner'
+      syntax: '<player>'
+      description: 'Set a new owner for your island'
+    leave:
+      aliases: []
+      permission: 'advancedsky.island.player.leave'
+      syntax: ''
+      description: 'Leave your island'
+    invite:
+      aliases: []
+      permission: 'advancedsky.island.player.invite'
+      syntax: '<player>'
+      description: 'Invite a player to join your island'
+    accept:
+      aliases: []
+      permission: 'advancedsky.island.player.accept'
+      syntax: ''
+      description: 'Accept a pending island invitation'
+    reject:
+      aliases: []
+      permission: 'advancedsky.island.player.reject'
+      syntax: ''
+      description: 'Reject a pending island invitation'
+    removemember:
+      aliases: []
+      permission: 'advancedsky.island.player.removemember'
+      syntax: '<player>'
+      description: 'Remove a member from your island'
+    expel:
+      aliases: []
+      permission: 'advancedsky.island.player.expel'
+      syntax: '<player>'
+      description: 'Expel a player from your island'
+    coop:
+      aliases: []
+      permission: 'advancedsky.island.player.coop'
+      syntax: '<player>'
+      description: 'Set a player as your island co-op partner'
+    uncoop:
+      aliases: []
+      permission: 'advancedsky.island.player.uncoop'
+      syntax: '<player>'
+      description: 'Remove a co-op partner from your island'
+    cooplist:
+      aliases: []
+      permission: 'advancedsky.island.player.cooplist'
+      syntax: ''
+      description: 'Show the list of your island’s co-op members'
+    ban:
+      aliases: []
+      permission: 'advancedsky.island.player.ban'
+      syntax: '<player>'
+      description: 'Ban a player from your island'
+    unban:
+      aliases: []
+      permission: 'advancedsky.island.player.unban'
+      syntax: '<player>'
+      description: 'Unban a player from your island'
+    banlist:
+      aliases: []
+      permission: 'advancedsky.island.player.banlist'
+      syntax: ''
+      description: 'Show the list of players banned from your island'
+    lock:
+      aliases: []
+      permission: 'advancedsky.island.player.lock'
+      syntax: ''
+      description: 'Toggle your island lock state'
+    pvp:
+      aliases: []
+      permission: 'advancedsky.island.player.pvp'
+      syntax: ''
+      description: 'Toggle PvP state on your island'
     sethome:
       aliases: []
       permission: 'advancedsky.island.player.sethome'
@@ -30,6 +105,51 @@ commands:
       permission: 'advancedsky.island.player.home'
       syntax: '[homeName]'
       description: 'Teleport to your island home'
+    setwarp:
+      aliases: []
+      permission: 'advancedsky.island.player.setwarp'
+      syntax: '[warpName]'
+      description: 'Set a new warp for your island'
+    delwarp:
+      aliases: []
+      permission: 'advancedsky.island.player.delwarp'
+      syntax: '<warpName>'
+      description: 'Delete an existing warp on your island'
+    warp:
+      aliases: []
+      permission: 'advancedsky.island.player.warp'
+      syntax: '<player> [warpName]'
+      description: 'Teleport to another player''s island warp'
+    info:
+      aliases: []
+      permission: 'advancedsky.island.player.info'
+      syntax: '[player]'
+      description: 'Show island information'
+    level:
+      aliases: []
+      permission: 'advancedsky.island.player.level'
+      syntax: ''
+      description: 'Show your island level'
+    top:
+      aliases: []
+      permission: 'advancedsky.island.player.top'
+      syntax: ''
+      description: 'Show top islands ranked by level'
+    value:
+      aliases: []
+      permission: 'advancedsky.island.player.value'
+      syntax: ''
+      description: 'Show the value of the block in your hand'
+    upgrade:
+      aliases: []
+      permission: 'advancedsky.island.player.upgrade'
+      syntax: '<upgradeId> [buy]'
+      description: 'View or buy an island upgrade'
+    biome:
+      aliases: []
+      permission: 'advancedsky.island.player.biome'
+      syntax: '<biome>'
+      description: 'Change the biome of the chunk you are standing in'
     lobby:
       aliases: []
       permission: 'advancedsky.island.player.lobby'
@@ -40,3 +160,110 @@ commands:
       permission: 'advancedsky.island.player.help'
       syntax: '[page]'
       description: 'Show available island commands'
+  admin:
+    create:
+      aliases: []
+      permission: 'advancedsky.island.admin.create'
+      syntax: '<player>'
+      description: 'Create an island for a player'
+    delete:
+      aliases: []
+      permission: 'advancedsky.island.admin.delete'
+      syntax: '<player>'
+      description: 'Delete a player''s island'
+    addmember:
+      aliases: []
+      permission: 'advancedsky.island.admin.addmember'
+      syntax: '<member> <owner>'
+      description: 'Force-add a member to another player''s island'
+    removemember:
+      aliases: []
+      permission: 'advancedsky.island.admin.removemember'
+      syntax: '<member> <owner>'
+      description: 'Force-remove a member from another player''s island'
+    coop:
+      aliases: []
+      permission: 'advancedsky.island.admin.coop'
+      syntax: '<owner> <player>'
+      description: 'Add a co-op partner to another player''s island'
+    uncoop:
+      aliases: []
+      permission: 'advancedsky.island.admin.uncoop'
+      syntax: '<owner> <player>'
+      description: 'Remove a co-op partner from another player''s island'
+    ban:
+      aliases: []
+      permission: 'advancedsky.island.admin.ban'
+      syntax: '<owner> <player>'
+      description: 'Ban a player from another player''s island'
+    unban:
+      aliases: []
+      permission: 'advancedsky.island.admin.unban'
+      syntax: '<owner> <player>'
+      description: 'Unban a player from another player''s island'
+    lock:
+      aliases: []
+      permission: 'advancedsky.island.admin.lock'
+      syntax: '<player>'
+      description: 'Toggle lock state of another player''s island'
+    pvp:
+      aliases: []
+      permission: 'advancedsky.island.admin.pvp'
+      syntax: '<player>'
+      description: 'Toggle PvP state of another player''s island'
+    sethome:
+      aliases: []
+      permission: 'advancedsky.island.admin.sethome'
+      syntax: '<player> <home>'
+      description: 'Set a home on another player''s island at your location'
+    delhome:
+      aliases: []
+      permission: 'advancedsky.island.admin.delhome'
+      syntax: '<player> <home>'
+      description: 'Delete a home from another player''s island'
+    home:
+      aliases:
+        - 'go'
+      permission: 'advancedsky.island.admin.home'
+      syntax: '<player> [home] [target]'
+      description: 'Teleport a player to another player''s home'
+    setwarp:
+      aliases: []
+      permission: 'advancedsky.island.admin.setwarp'
+      syntax: '<player> <warp>'
+      description: 'Set a warp on another player''s island at your location'
+    delwarp:
+      aliases: []
+      permission: 'advancedsky.island.admin.delwarp'
+      syntax: '<player> <warp>'
+      description: 'Delete a warp from another player''s island'
+    warp:
+      aliases: []
+      permission: 'advancedsky.island.admin.warp'
+      syntax: '<player> [warp] [target]'
+      description: 'Teleport a player to another player''s island warp'
+    upgrade:
+      aliases: []
+      permission: 'advancedsky.island.admin.upgrade'
+      syntax: '<player> <upgradeId> [set <level>]'
+      description: 'View or set a player''s island upgrade level'
+    biome:
+      aliases: [ ]
+      permission: 'advancedsky.island.admin.biome'
+      syntax: '<biome>'
+      description: 'Change the biome of the chunk you are standing in'
+    lobby:
+      aliases: []
+      permission: 'advancedsky.island.admin.lobby'
+      syntax: '<player>'
+      description: 'Teleport a player to the lobby'
+    reload:
+      aliases: []
+      permission: 'advancedsky.island.admin.reload'
+      syntax: ''
+      description: 'Reload plugin configuration files'
+    help:
+      aliases: []
+      permission: 'advancedsky.island.admin.help'
+      syntax: '[page]'
+      description: 'Show available admin commands'

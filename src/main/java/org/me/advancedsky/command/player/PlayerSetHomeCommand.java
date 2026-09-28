@@ -8,6 +8,7 @@ import org.me.advancedsky.api.AdvancedSkyAPI;
 import org.me.advancedsky.command.AsyncTabComplete;
 import org.me.advancedsky.command.SubCommand;
 import org.me.advancedsky.config.ConfigHandler;
+import org.me.advancedsky.exceptions.HomeLimitReachedException;
 import org.me.advancedsky.exceptions.HomeNameNotLegalException;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.exceptions.LocationNotInIslandException;
@@ -86,6 +87,8 @@ public class PlayerSetHomeCommand implements SubCommand, AsyncTabComplete {
                 player.sendMessage(config.getPlayerMustInIslandSetHomeMessage());
             } else if (cause instanceof HomeNameNotLegalException) {
                 player.sendMessage(config.getHomeNameNotLegalMessage());
+            } else if (cause instanceof HomeLimitReachedException) {
+                player.sendMessage(config.getPlayerHomeLimitReachedMessage(cause.getMessage()));
             } else {
                 player.sendMessage(config.getUnknownExceptionMessage());
                 plugin.severe("Error setting home for player " + player.getName(), ex);

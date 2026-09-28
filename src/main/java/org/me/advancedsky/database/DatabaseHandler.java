@@ -2,15 +2,17 @@ package org.me.advancedsky.database;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import org.bukkit.Location;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.*;
-import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.model.Actor;
+import org.me.advancedsky.model.Island;
+import org.me.advancedsky.model.IslandTop;
 
 import java.sql.*;
 import java.util.*;
+import org.bukkit.Location;
+import org.me.advancedsky.grid.IslandGrid;
 
 public class DatabaseHandler {
 
@@ -144,7 +146,7 @@ public class DatabaseHandler {
         // server: the island server hosting the island for its whole life.
         // slot: the island's position on the grid, the same on every server. AUTO_INCREMENT never hands
         // out a value twice, so a deleted island's area is never reused while it may still be clearing.
-        executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "islands (" + "island_uuid CHAR(36) NOT NULL," + "server VARCHAR(64) NOT NULL," + "slot INT NOT NULL AUTO_INCREMENT," + "PRIMARY KEY (island_uuid)," + "UNIQUE KEY uq_islands_slot (slot)," + "KEY idx_islands_server (server)" + ") ENGINE=InnoDB;", stmt -> {
+        executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "islands (" + "island_uuid CHAR(36) NOT NULL," + "server VARCHAR(64) NOT NULL," + "slot INT NOT NULL AUTO_INCREMENT," + "`lock` BOOLEAN NOT NULL DEFAULT FALSE," + "pvp BOOLEAN NOT NULL DEFAULT FALSE," + "PRIMARY KEY (island_uuid)," + "UNIQUE KEY uq_islands_slot (slot)," + "KEY idx_islands_server (server)" + ") ENGINE=InnoDB;", stmt -> {
         });
 
         executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "island_players (" + "player_uuid CHAR(36) NOT NULL," + "island_uuid CHAR(36) NOT NULL," + "role VARCHAR(56) NOT NULL," + "PRIMARY KEY (player_uuid, island_uuid)," + "UNIQUE KEY uq_island_players_player_uuid (player_uuid)," + "KEY idx_island_players_island_uuid (island_uuid)," + "KEY idx_island_players_island_role (island_uuid, role)," + "CONSTRAINT fk_island_players_island " + "FOREIGN KEY (island_uuid) REFERENCES " + prefix + "islands(island_uuid) " + "ON DELETE CASCADE" + ") ENGINE=InnoDB;", stmt -> {
@@ -152,14 +154,72 @@ public class DatabaseHandler {
 
         executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "island_homes (" + "player_uuid CHAR(36) NOT NULL," + "home_name VARCHAR(32) NOT NULL," + "home_location VARCHAR(256)," + "island_uuid CHAR(36) NOT NULL," + "PRIMARY KEY (player_uuid, island_uuid, home_name)," + "KEY idx_island_homes_island (island_uuid)," + "KEY idx_island_homes_island_player (island_uuid, player_uuid)," + "CONSTRAINT fk_island_homes_island " + "FOREIGN KEY (island_uuid) REFERENCES " + prefix + "islands(island_uuid) " + "ON DELETE CASCADE," + "CONSTRAINT fk_island_homes_player_membership " + "FOREIGN KEY (player_uuid, island_uuid) REFERENCES " + prefix + "island_players(player_uuid, island_uuid) " + "ON DELETE CASCADE" + ") ENGINE=InnoDB;", stmt -> {
         });
+
+        executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "island_warps (" + "island_uuid CHAR(36) NOT NULL," + "warp_name VARCHAR(32) NOT NULL," + "warp_location VARCHAR(256)," + "PRIMARY KEY (island_uuid, warp_name)," + "CONSTRAINT fk_island_warps_island " + "FOREIGN KEY (island_uuid) REFERENCES " + prefix + "islands(island_uuid) " + "ON DELETE CASCADE" + ") ENGINE=InnoDB;", stmt -> {
+        });
+
+        executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "island_bans (" + "island_uuid CHAR(36) NOT NULL," + "banned_player CHAR(36) NOT NULL," + "PRIMARY KEY (island_uuid, banned_player)," + "CONSTRAINT fk_island_bans_island " + "FOREIGN KEY (island_uuid) REFERENCES " + prefix + "islands(island_uuid) " + "ON DELETE CASCADE" + ") ENGINE=InnoDB;", stmt -> {
+        });
+
+        executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "island_coops (" + "island_uuid CHAR(36) NOT NULL," + "cooped_player CHAR(36) NOT NULL," + "PRIMARY KEY (island_uuid, cooped_player)," + "KEY idx_island_coops_cooped_player (cooped_player, island_uuid)," + "CONSTRAINT fk_island_coops_island " + "FOREIGN KEY (island_uuid) REFERENCES " + prefix + "islands(island_uuid) " + "ON DELETE CASCADE" + ") ENGINE=InnoDB;", stmt -> {
+        });
+
+        executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "island_levels (" + "island_uuid CHAR(36) NOT NULL," + "level INT NOT NULL," + "PRIMARY KEY (island_uuid)," + "CONSTRAINT fk_island_levels_island " + "FOREIGN KEY (island_uuid) REFERENCES " + prefix + "islands(island_uuid) " + "ON DELETE CASCADE" + ") ENGINE=InnoDB;", stmt -> {
+        });
+
+        executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "island_upgrades (" + "island_uuid CHAR(36) NOT NULL," + "upgrade_id VARCHAR(32) NOT NULL," + "level INT NOT NULL," + "PRIMARY KEY (island_uuid, upgrade_id)," + "CONSTRAINT fk_island_upgrades_island " + "FOREIGN KEY (island_uuid) REFERENCES " + prefix + "islands(island_uuid) " + "ON DELETE CASCADE" + ") ENGINE=InnoDB;", stmt -> {
+        });
+
+        executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "player_uuid (" + "uuid CHAR(36) NOT NULL," + "name VARCHAR(16) NOT NULL," + "name_lower VARCHAR(16) NOT NULL," + "PRIMARY KEY (uuid)," + "KEY idx_player_uuid_name (name)," + "KEY idx_player_uuid_name_lower (name_lower)" + ") ENGINE=InnoDB;", stmt -> {
+        });
     }
 
     // ================================================================================================================
     // Targeted reads
     // ================================================================================================================
 
+    public boolean isIslandLock(UUID islandUuid) {
+        return executeQuery("SELECT `lock` FROM " + prefix + "islands WHERE island_uuid = ? LIMIT 1", stmt -> stmt.setString(1, islandUuid.toString()), rs -> rs.next() && rs.getBoolean("lock"));
+    }
+
+    public boolean isIslandPvp(UUID islandUuid) {
+        return executeQuery("SELECT pvp FROM " + prefix + "islands WHERE island_uuid = ? LIMIT 1", stmt -> stmt.setString(1, islandUuid.toString()), rs -> rs.next() && rs.getBoolean("pvp"));
+    }
+
+    public int getIslandLevel(UUID islandUuid) {
+        return executeQuery("SELECT level FROM " + prefix + "island_levels WHERE island_uuid = ? LIMIT 1", stmt -> stmt.setString(1, islandUuid.toString()), rs -> rs.next() ? rs.getInt("level") : 0);
+    }
+
+    /**
+     * An island with no stored level for this upgrade is at the lowest configured one.
+     */
+    public int getIslandUpgradeLevel(UUID islandUuid, String upgradeId) {
+        return withConnection(connection -> getIslandUpgradeLevel(connection, islandUuid, upgradeId));
+    }
+
     public Optional<UUID> getIslandOwner(UUID islandUuid) {
         return withConnection(connection -> getIslandOwner(connection, islandUuid));
+    }
+
+    public Map<UUID, String> getIslandPlayers(UUID islandUuid) {
+        String sql = "SELECT player_uuid, role FROM " + prefix + "island_players WHERE island_uuid = ?";
+
+        return executeQuery(sql, stmt -> stmt.setString(1, islandUuid.toString()), rs -> {
+            Map<UUID, String> result = new LinkedHashMap<>();
+
+            while (rs.next()) {
+                UUID playerUuid = parseRequiredUuid(rs.getString("player_uuid"), "island_players.player_uuid");
+                String role = rs.getString("role");
+
+                if (role == null || role.isEmpty()) {
+                    continue;
+                }
+
+                result.put(playerUuid, role);
+            }
+
+            return result.isEmpty() ? Collections.emptyMap() : Map.copyOf(result);
+        });
     }
 
     public Map<String, String> getIslandHomes(UUID islandUuid, UUID playerUuid) {
@@ -183,6 +243,71 @@ public class DatabaseHandler {
             }
 
             return result.isEmpty() ? Collections.emptyMap() : Map.copyOf(result);
+        });
+    }
+
+    public Map<String, String> getIslandWarps(UUID islandUuid) {
+        String sql = "SELECT warp_name, warp_location FROM " + prefix + "island_warps WHERE island_uuid = ?";
+
+        return executeQuery(sql, stmt -> {
+            stmt.setString(1, islandUuid.toString());
+        }, rs -> {
+            Map<String, String> result = new LinkedHashMap<>();
+
+            while (rs.next()) {
+                String warpName = rs.getString("warp_name");
+                String warpLocation = rs.getString("warp_location");
+
+                if (warpName == null || warpName.isEmpty()) {
+                    continue;
+                }
+
+                result.put(warpName, warpLocation == null ? "" : warpLocation);
+            }
+
+            return result.isEmpty() ? Collections.emptyMap() : Map.copyOf(result);
+        });
+    }
+
+    public Set<UUID> getIslandBans(UUID islandUuid) {
+        String sql = "SELECT banned_player FROM " + prefix + "island_bans WHERE island_uuid = ?";
+
+        return executeQuery(sql, stmt -> stmt.setString(1, islandUuid.toString()), rs -> {
+            Set<UUID> result = new LinkedHashSet<>();
+
+            while (rs.next()) {
+                result.add(parseRequiredUuid(rs.getString("banned_player"), "island_bans.banned_player"));
+            }
+
+            return result.isEmpty() ? Set.of() : Set.copyOf(result);
+        });
+    }
+
+    public Set<UUID> getIslandCoops(UUID islandUuid) {
+        String sql = "SELECT cooped_player FROM " + prefix + "island_coops WHERE island_uuid = ?";
+
+        return executeQuery(sql, stmt -> stmt.setString(1, islandUuid.toString()), rs -> {
+            Set<UUID> result = new LinkedHashSet<>();
+
+            while (rs.next()) {
+                result.add(parseRequiredUuid(rs.getString("cooped_player"), "island_coops.cooped_player"));
+            }
+
+            return result.isEmpty() ? Set.of() : Set.copyOf(result);
+        });
+    }
+
+    public Set<UUID> getCoopIslandsOfPlayer(UUID playerUuid) {
+        String sql = "SELECT island_uuid FROM " + prefix + "island_coops WHERE cooped_player = ?";
+
+        return executeQuery(sql, stmt -> stmt.setString(1, playerUuid.toString()), rs -> {
+            Set<UUID> result = new LinkedHashSet<>();
+
+            while (rs.next()) {
+                result.add(parseRequiredUuid(rs.getString("island_uuid"), "island_coops.island_uuid"));
+            }
+
+            return result.isEmpty() ? Set.of() : Set.copyOf(result);
         });
     }
 
@@ -217,6 +342,182 @@ public class DatabaseHandler {
                 result.put(rs.getString("server"), rs.getInt("island_count"));
             }
             return result;
+        });
+    }
+
+    /**
+     * Islands hosted on the given server.
+     */
+    public Set<UUID> getIslandUuidsByServer(String server) {
+        return executeQuery("SELECT island_uuid FROM " + prefix + "islands WHERE server = ?", stmt -> stmt.setString(1, server), rs -> {
+            Set<UUID> result = new HashSet<>();
+            while (rs.next()) {
+                result.add(parseRequiredUuid(rs.getString("island_uuid"), "islands.island_uuid"));
+            }
+            return result.isEmpty() ? Set.of() : Set.copyOf(result);
+        });
+    }
+
+    public Optional<UUID> getPlayerUuid(String name) {
+        if (name == null || name.isEmpty()) {
+            return Optional.empty();
+        }
+
+        String sql = "SELECT uuid FROM " + prefix + "player_uuid WHERE name_lower = ? LIMIT 1";
+
+        return executeQuery(sql, stmt -> stmt.setString(1, name.toLowerCase(Locale.ROOT)), rs -> {
+            if (!rs.next()) {
+                return Optional.empty();
+            }
+
+            return Optional.of(parseRequiredUuid(rs.getString("uuid"), "player_uuid.uuid"));
+        });
+    }
+
+    public Optional<String> getPlayerName(UUID uuid) {
+        String sql = "SELECT name FROM " + prefix + "player_uuid WHERE uuid = ? LIMIT 1";
+
+        return executeQuery(sql, stmt -> stmt.setString(1, uuid.toString()), rs -> {
+            if (!rs.next()) {
+                return Optional.empty();
+            }
+
+            return Optional.ofNullable(rs.getString("name"));
+        });
+    }
+
+    public Map<UUID, String> getPlayerNames(Collection<UUID> uuids) {
+        if (uuids == null || uuids.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        List<UUID> ordered = new ArrayList<>();
+        Set<UUID> seen = new HashSet<>();
+
+        for (UUID uuid : uuids) {
+            if (uuid != null && seen.add(uuid)) {
+                ordered.add(uuid);
+            }
+        }
+
+        if (ordered.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        StringBuilder sql = new StringBuilder("SELECT uuid, name FROM ").append(prefix).append("player_uuid WHERE uuid IN (");
+
+        for (int i = 0; i < ordered.size(); i++) {
+            if (i > 0) {
+                sql.append(",");
+            }
+            sql.append("?");
+        }
+
+        sql.append(")");
+
+        return executeQuery(sql.toString(), stmt -> {
+            for (int i = 0; i < ordered.size(); i++) {
+                stmt.setString(i + 1, ordered.get(i).toString());
+            }
+        }, rs -> {
+            Map<UUID, String> result = new HashMap<>();
+
+            while (rs.next()) {
+                UUID uuid = parseRequiredUuid(rs.getString("uuid"), "player_uuid.uuid");
+                String name = rs.getString("name");
+
+                if (name != null) {
+                    result.put(uuid, name);
+                }
+            }
+
+            return result.isEmpty() ? Collections.emptyMap() : Map.copyOf(result);
+        });
+    }
+
+    /**
+     * Uses the same level/UUID ordering and implicit level zero as getTopIslandLevels.
+     */
+    public long getIslandRank(UUID islandUuid) {
+        String sql = "SELECT 1 + (SELECT COUNT(*) FROM " + prefix + "island_players p " + "LEFT JOIN " + prefix + "island_levels l ON l.island_uuid = p.island_uuid " + "WHERE p.role = 'owner' AND (COALESCE(l.level, 0) > COALESCE(target_level.level, 0) " + "OR (COALESCE(l.level, 0) = COALESCE(target_level.level, 0) " + "AND p.island_uuid < target.island_uuid))) AS island_rank " + "FROM " + prefix + "island_players target " + "LEFT JOIN " + prefix + "island_levels target_level ON target_level.island_uuid = target.island_uuid " + "WHERE target.role = 'owner' AND target.island_uuid = ?";
+        return executeQuery(sql, stmt -> stmt.setString(1, islandUuid.toString()), rs -> {
+            if (!rs.next()) {
+                throw new IslandDoesNotExistException();
+            }
+            return rs.getLong("island_rank");
+        });
+    }
+
+    public List<IslandTop> getTopIslandLevels(int limit) {
+        int safeLimit = Math.max(1, limit);
+
+        return withConnection(connection -> {
+            String topSql = "SELECT p.island_uuid, p.player_uuid AS owner_uuid, COALESCE(l.level, 0) AS level " + "FROM " + prefix + "island_players p " + "LEFT JOIN " + prefix + "island_levels l ON l.island_uuid = p.island_uuid " + "WHERE p.role = ? " + "ORDER BY level DESC, p.island_uuid ASC " + "LIMIT ?";
+
+            List<UUID> islandOrder = new ArrayList<>();
+            Map<UUID, UUID> ownerByIsland = new LinkedHashMap<>();
+            Map<UUID, Integer> levelByIsland = new HashMap<>();
+
+            executeQuery(connection, topSql, stmt -> {
+                stmt.setString(1, "owner");
+                stmt.setInt(2, safeLimit);
+            }, rs -> {
+                while (rs.next()) {
+                    UUID islandUuid = parseRequiredUuid(rs.getString("island_uuid"), "top.island_uuid");
+                    UUID ownerUuid = parseRequiredUuid(rs.getString("owner_uuid"), "top.owner_uuid");
+                    int level = rs.getInt("level");
+
+                    islandOrder.add(islandUuid);
+                    ownerByIsland.put(islandUuid, ownerUuid);
+                    levelByIsland.put(islandUuid, level);
+                }
+                return null;
+            });
+
+            if (islandOrder.isEmpty()) {
+                return List.of();
+            }
+
+            Map<UUID, Set<UUID>> membersByIsland = new HashMap<>();
+
+            StringBuilder memberSql = new StringBuilder("SELECT island_uuid, player_uuid FROM " + prefix + "island_players WHERE role = ? AND island_uuid IN (");
+
+            for (int i = 0; i < islandOrder.size(); i++) {
+                if (i > 0) {
+                    memberSql.append(",");
+                }
+                memberSql.append("?");
+            }
+
+            memberSql.append(")");
+
+            executeQuery(connection, memberSql.toString(), stmt -> {
+                stmt.setString(1, "member");
+
+                for (int i = 0; i < islandOrder.size(); i++) {
+                    stmt.setString(i + 2, islandOrder.get(i).toString());
+                }
+            }, rs -> {
+                while (rs.next()) {
+                    UUID islandUuid = parseRequiredUuid(rs.getString("island_uuid"), "topMembers.island_uuid");
+                    UUID memberUuid = parseRequiredUuid(rs.getString("player_uuid"), "topMembers.player_uuid");
+
+                    membersByIsland.computeIfAbsent(islandUuid, ignored -> new LinkedHashSet<>()).add(memberUuid);
+                }
+                return null;
+            });
+
+            List<IslandTop> result = new ArrayList<>(islandOrder.size());
+
+            for (UUID islandUuid : islandOrder) {
+                UUID ownerUuid = ownerByIsland.get(islandUuid);
+                int level = levelByIsland.getOrDefault(islandUuid, 0);
+                Set<UUID> members = membersByIsland.getOrDefault(islandUuid, Set.of());
+
+                result.add(new IslandTop(islandUuid, ownerUuid, level, members.isEmpty() ? Set.of() : Set.copyOf(members)));
+            }
+
+            return result.isEmpty() ? List.of() : List.copyOf(result);
         });
     }
 
@@ -256,9 +557,7 @@ public class DatabaseHandler {
                     stmt.setString(3, "owner");
                 });
 
-                // Only the coordinates of the centre are needed: homes are stored without a world.
-                Location center = islandGrid.center(null, slot);
-                String homePoint = (center.getX() + config.getIslandSpawnX()) + "," + (center.getY() + config.getIslandSpawnY()) + "," + (center.getZ() + config.getIslandSpawnZ()) + "," + config.getIslandSpawnYaw() + "," + config.getIslandSpawnPitch();
+                String homePoint = getDefaultHomePoint(slot);
 
                 executeUpdate(connection, "INSERT INTO " + prefix + "island_homes (player_uuid, island_uuid, home_name, home_location) VALUES (?, ?, ?, ?) " + "ON DUPLICATE KEY UPDATE island_uuid = VALUES(island_uuid), home_location = VALUES(home_location);", stmt -> {
                     stmt.setString(1, ownerUuid.toString());
@@ -274,10 +573,76 @@ public class DatabaseHandler {
         }
     }
 
+    public void addIslandPlayer(Actor actor, UUID islandUuid, UUID playerUuid, String role) {
+        try {
+            inTransaction(connection -> {
+                lockIsland(connection, islandUuid);
+
+                Optional<UUID> playerIsland = getPlayerIsland(connection, playerUuid);
+                if (playerIsland.isPresent()) {
+                    if (playerIsland.get().equals(islandUuid)) {
+                        throw new IslandPlayerAlreadyExistsException();
+                    }
+                    throw new IslandAlreadyExistException();
+                }
+
+                // The owner counts towards the team limit.
+                if (!(actor instanceof Actor.Bypass)) {
+                    int teamLimit = getUpgradeLimit(connection, islandUuid, "team-limit");
+                    if (count(connection, "SELECT COUNT(*) FROM " + prefix + "island_players WHERE island_uuid = ?", stmt -> stmt.setString(1, islandUuid.toString())) >= teamLimit) {
+                        throw new TeamLimitReachedException(String.valueOf(teamLimit));
+                    }
+                }
+
+                // Seeded under the island lock so it cannot race the owner moving their home.
+                String homePoint = getIslandDefaultHome(connection, islandUuid).orElse(getDefaultHomePoint(getIslandSlot(connection, islandUuid)));
+
+                executeUpdate(connection, "INSERT INTO " + prefix + "island_players (player_uuid, island_uuid, role) VALUES (?, ?, ?);", stmt -> {
+                    stmt.setString(1, playerUuid.toString());
+                    stmt.setString(2, islandUuid.toString());
+                    stmt.setString(3, role);
+                });
+
+                executeUpdate(connection, "INSERT INTO " + prefix + "island_homes (player_uuid, island_uuid, home_name, home_location) VALUES (?, ?, ?, ?) " + "ON DUPLICATE KEY UPDATE island_uuid = VALUES(island_uuid), home_location = VALUES(home_location);", stmt -> {
+                    stmt.setString(1, playerUuid.toString());
+                    stmt.setString(2, islandUuid.toString());
+                    stmt.setString(3, "default");
+                    stmt.setString(4, homePoint);
+                });
+
+                executeUpdate(connection, "DELETE FROM " + prefix + "island_bans WHERE island_uuid = ? AND banned_player = ?;", stmt -> {
+                    stmt.setString(1, islandUuid.toString());
+                    stmt.setString(2, playerUuid.toString());
+                });
+
+                executeUpdate(connection, "DELETE FROM " + prefix + "island_coops WHERE island_uuid = ? AND cooped_player = ?;", stmt -> {
+                    stmt.setString(1, islandUuid.toString());
+                    stmt.setString(2, playerUuid.toString());
+                });
+
+                return null;
+            });
+        } catch (ConstraintViolationException e) {
+            throw new IslandAlreadyExistException();
+        }
+    }
+
     public void updateHomePoint(Actor actor, UUID islandUuid, UUID playerUuid, String homeName, String homeLocation) {
         try {
             inTransaction(connection -> {
                 lockIsland(connection, islandUuid);
+
+                // Moving an existing home adds none, so the same name is left out of the count.
+                if (!(actor instanceof Actor.Bypass)) {
+                    int homeLimit = getUpgradeLimit(connection, islandUuid, "home-limit");
+                    if (count(connection, "SELECT COUNT(*) FROM " + prefix + "island_homes WHERE island_uuid = ? AND player_uuid = ? AND home_name <> ?", stmt -> {
+                        stmt.setString(1, islandUuid.toString());
+                        stmt.setString(2, playerUuid.toString());
+                        stmt.setString(3, homeName);
+                    }) >= homeLimit) {
+                        throw new HomeLimitReachedException(String.valueOf(homeLimit));
+                    }
+                }
 
                 executeUpdate(connection, "INSERT INTO " + prefix + "island_homes (player_uuid, island_uuid, home_name, home_location) VALUES (?, ?, ?, ?) " + "ON DUPLICATE KEY UPDATE island_uuid = VALUES(island_uuid), home_location = VALUES(home_location);", stmt -> {
                     stmt.setString(1, playerUuid.toString());
@@ -293,14 +658,270 @@ public class DatabaseHandler {
         }
     }
 
+    public void updateWarpPoint(Actor actor, UUID islandUuid, String warpName, String warpLocation) {
+        inTransaction(connection -> {
+            lockIsland(connection, islandUuid);
+            requireRole(actor, connection, islandUuid, RequiredRole.MEMBER);
+
+            // Moving an existing warp adds none, so the same name is left out of the count.
+            if (!(actor instanceof Actor.Bypass)) {
+                int warpLimit = getUpgradeLimit(connection, islandUuid, "warp-limit");
+                if (count(connection, "SELECT COUNT(*) FROM " + prefix + "island_warps WHERE island_uuid = ? AND warp_name <> ?", stmt -> {
+                    stmt.setString(1, islandUuid.toString());
+                    stmt.setString(2, warpName);
+                }) >= warpLimit) {
+                    throw new WarpLimitReachedException(String.valueOf(warpLimit));
+                }
+            }
+
+            executeUpdate(connection, "INSERT INTO " + prefix + "island_warps (island_uuid, warp_name, warp_location) VALUES (?, ?, ?) " + "ON DUPLICATE KEY UPDATE warp_location = VALUES(warp_location);", stmt -> {
+                stmt.setString(1, islandUuid.toString());
+                stmt.setString(2, warpName);
+                stmt.setString(3, warpLocation);
+            });
+
+            return null;
+        });
+    }
+
+    public boolean toggleIslandLock(Actor actor, UUID islandUuid) {
+        return toggleBooleanColumn(actor, islandUuid, "`lock`");
+    }
+
+    public boolean toggleIslandPvp(Actor actor, UUID islandUuid) {
+        return toggleBooleanColumn(actor, islandUuid, "pvp");
+    }
+
+    private boolean toggleBooleanColumn(Actor actor, UUID islandUuid, String column) {
+        return inTransaction(connection -> {
+            // This select is the island lock as well as the value read, so the role check has to
+            // come after it: checking first would read the role without holding the lock.
+            boolean current = executeQuery(connection, "SELECT " + column + " FROM " + prefix + "islands WHERE island_uuid = ? FOR UPDATE", stmt -> {
+                stmt.setString(1, islandUuid.toString());
+            }, rs -> {
+                if (!rs.next()) {
+                    throw new IslandDoesNotExistException();
+                }
+                return rs.getBoolean(1);
+            });
+
+            requireRole(actor, connection, islandUuid, RequiredRole.MEMBER);
+
+            boolean next = !current;
+
+            executeUpdate(connection, "UPDATE " + prefix + "islands SET " + column + " = ? WHERE island_uuid = ?", stmt -> {
+                stmt.setBoolean(1, next);
+                stmt.setString(2, islandUuid.toString());
+            });
+
+            return next;
+        });
+    }
+
+    public void updateIslandOwner(Actor actor, UUID islandUuid, UUID newOwnerUuid) {
+        inTransaction(connection -> {
+            lockIsland(connection, islandUuid);
+            requireRole(actor, connection, islandUuid, RequiredRole.OWNER);
+
+            UUID oldOwnerUuid = getIslandOwner(connection, islandUuid).orElseThrow(IslandDoesNotExistException::new);
+
+            if (oldOwnerUuid.equals(newOwnerUuid)) {
+                throw new PlayerAlreadyOwnerException();
+            }
+
+            int demoted = executeUpdate(connection, "UPDATE " + prefix + "island_players SET role = ? WHERE player_uuid = ? AND island_uuid = ? AND role = ?", stmt -> {
+                stmt.setString(1, "member");
+                stmt.setString(2, oldOwnerUuid.toString());
+                stmt.setString(3, islandUuid.toString());
+                stmt.setString(4, "owner");
+            });
+
+            if (demoted != 1) {
+                throw new IslandPlayerDoesNotExistException();
+            }
+
+            int promoted = executeUpdate(connection, "UPDATE " + prefix + "island_players SET role = ? WHERE player_uuid = ? AND island_uuid = ? AND role = ?", stmt -> {
+                stmt.setString(1, "owner");
+                stmt.setString(2, newOwnerUuid.toString());
+                stmt.setString(3, islandUuid.toString());
+                stmt.setString(4, "member");
+            });
+
+            if (promoted != 1) {
+                throw new IslandPlayerDoesNotExistException();
+            }
+
+            return null;
+        });
+    }
+
+    public void updateBanPlayer(Actor actor, UUID islandUuid, UUID playerUuid) {
+        try {
+            inTransaction(connection -> {
+                lockIsland(connection, islandUuid);
+                requireRole(actor, connection, islandUuid, RequiredRole.MEMBER);
+
+                int inserted = executeUpdate(connection, "INSERT INTO " + prefix + "island_bans (island_uuid, banned_player) " + "SELECT ?, ? FROM DUAL " + "WHERE NOT EXISTS (" + "SELECT 1 FROM " + prefix + "island_players " + "WHERE island_uuid = ? AND player_uuid = ?" + ");", stmt -> {
+                    stmt.setString(1, islandUuid.toString());
+                    stmt.setString(2, playerUuid.toString());
+                    stmt.setString(3, islandUuid.toString());
+                    stmt.setString(4, playerUuid.toString());
+                });
+
+                if (inserted == 0) {
+                    throw new CannotBanIslandPlayerException();
+                }
+
+                return null;
+            });
+        } catch (ConstraintViolationException e) {
+            throw new PlayerAlreadyBannedException();
+        }
+    }
+
+    public void updateCoopPlayer(Actor actor, UUID islandUuid, UUID playerUuid) {
+        try {
+            inTransaction(connection -> {
+                lockIsland(connection, islandUuid);
+                requireRole(actor, connection, islandUuid, RequiredRole.MEMBER);
+
+                // Re-cooping an existing co-op is reported as such below, not as the limit.
+                if (!(actor instanceof Actor.Bypass)) {
+                    int coopLimit = getUpgradeLimit(connection, islandUuid, "coop-limit");
+                    if (count(connection, "SELECT COUNT(*) FROM " + prefix + "island_coops WHERE island_uuid = ? AND cooped_player <> ?", stmt -> {
+                        stmt.setString(1, islandUuid.toString());
+                        stmt.setString(2, playerUuid.toString());
+                    }) >= coopLimit) {
+                        throw new CoopLimitReachedException(String.valueOf(coopLimit));
+                    }
+                }
+
+                int inserted = executeUpdate(connection, "INSERT INTO " + prefix + "island_coops (island_uuid, cooped_player) " + "SELECT ?, ? FROM DUAL " + "WHERE NOT EXISTS (" + "SELECT 1 FROM " + prefix + "island_players " + "WHERE island_uuid = ? AND player_uuid = ?" + ");", stmt -> {
+                    stmt.setString(1, islandUuid.toString());
+                    stmt.setString(2, playerUuid.toString());
+                    stmt.setString(3, islandUuid.toString());
+                    stmt.setString(4, playerUuid.toString());
+                });
+
+                if (inserted == 0) {
+                    throw new CannotCoopIslandPlayerException();
+                }
+
+                return null;
+            });
+        } catch (ConstraintViolationException e) {
+            throw new PlayerAlreadyCoopedException();
+        }
+    }
+
+    public void updateIslandLevel(UUID islandUuid, int level) {
+        executeUpdate("INSERT INTO " + prefix + "island_levels (island_uuid, level) VALUES (?, ?) " + "ON DUPLICATE KEY UPDATE level = ?;", stmt -> {
+            stmt.setString(1, islandUuid.toString());
+            stmt.setInt(2, level);
+            stmt.setInt(3, level);
+        });
+    }
+
+    /**
+     * Compare-and-set: the write only lands while the upgrade is still at the level the caller
+     * read, so two members paying for the same level cannot both succeed.
+     */
+    public void updateIslandUpgradeLevel(Actor actor, UUID islandUuid, String upgradeId, int expectedLevel, int newLevel) {
+        inTransaction(connection -> {
+            lockIsland(connection, islandUuid);
+            requireRole(actor, connection, islandUuid, RequiredRole.MEMBER);
+
+            if (getIslandUpgradeLevel(connection, islandUuid, upgradeId) != expectedLevel) {
+                throw new UpgradeLevelChangedException();
+            }
+
+            executeUpdate(connection, "INSERT INTO " + prefix + "island_upgrades (island_uuid, upgrade_id, level) VALUES (?, ?, ?) " + "ON DUPLICATE KEY UPDATE level = ?;", stmt -> {
+                stmt.setString(1, islandUuid.toString());
+                stmt.setString(2, upgradeId);
+                stmt.setInt(3, newLevel);
+                stmt.setInt(4, newLevel);
+            });
+
+            return null;
+        });
+    }
+
+    public void updatePlayerName(UUID uuid, String name) {
+        if (name == null || name.isEmpty()) {
+            throw new IllegalArgumentException("Player name cannot be null or empty");
+        }
+
+        String nameLower = name.toLowerCase(Locale.ROOT);
+        String ownUuid = uuid.toString();
+
+        inTransaction(connection -> {
+            // A name released by one player and taken by another must resolve to the
+            // new holder only, otherwise name lookups can pick the previous owner.
+            // The previous holder is read without locking and then deleted by primary
+            // key: deleting straight through name_lower scans a non-unique index and
+            // gap-locks the value's slot even when it matches nothing, so concurrent
+            // joins deadlock against each other's INSERT into that same slot.
+            Set<String> previousHolders = executeQuery(connection, "SELECT uuid FROM " + prefix + "player_uuid WHERE name_lower = ? AND uuid <> ?", stmt -> {
+                stmt.setString(1, nameLower);
+                stmt.setString(2, ownUuid);
+            }, rs -> {
+                Set<String> result = new LinkedHashSet<>();
+
+                while (rs.next()) {
+                    result.add(rs.getString("uuid"));
+                }
+
+                return result;
+            });
+
+            for (String previousHolder : previousHolders) {
+                executeUpdate(connection, "DELETE FROM " + prefix + "player_uuid WHERE uuid = ?;", stmt -> stmt.setString(1, previousHolder));
+            }
+
+            executeUpdate(connection, "INSERT INTO " + prefix + "player_uuid (uuid, name, name_lower) VALUES (?, ?, ?) " + "ON DUPLICATE KEY UPDATE name = ?, name_lower = ?;", stmt -> {
+                stmt.setString(1, ownUuid);
+                stmt.setString(2, name);
+                stmt.setString(3, nameLower);
+                stmt.setString(4, name);
+                stmt.setString(5, nameLower);
+            });
+
+            return null;
+        });
+    }
+
     public void deleteIsland(Actor actor, UUID islandUuid) {
         inTransaction(connection -> {
             lockIsland(connection, islandUuid);
-            requireRole(actor, connection, islandUuid);
+            requireRole(actor, connection, islandUuid, RequiredRole.OWNER);
 
             executeUpdate(connection, "DELETE FROM " + prefix + "islands WHERE island_uuid = ?;", stmt -> {
                 stmt.setString(1, islandUuid.toString());
             });
+
+            return null;
+        });
+    }
+
+    public void deleteIslandPlayer(Actor actor, UUID islandUuid, UUID playerUuid) {
+        inTransaction(connection -> {
+            lockIsland(connection, islandUuid);
+            requireRole(actor, connection, islandUuid, RequiredRole.MEMBER);
+
+            int deleted = executeUpdate(connection, "DELETE FROM " + prefix + "island_players WHERE player_uuid = ? AND island_uuid = ? AND role <> ?;", stmt -> {
+                stmt.setString(1, playerUuid.toString());
+                stmt.setString(2, islandUuid.toString());
+                stmt.setString(3, "owner");
+            });
+
+            if (deleted == 0) {
+                // Either the player is not on this island, or they are its owner.
+                UUID ownerUuid = getIslandOwner(connection, islandUuid).orElse(null);
+                if (playerUuid.equals(ownerUuid)) {
+                    throw new CannotRemoveOwnerException();
+                }
+                throw new IslandPlayerDoesNotExistException();
+            }
 
             return null;
         });
@@ -316,6 +937,149 @@ public class DatabaseHandler {
         if (deleted == 0) {
             throw new HomeDoesNotExistException();
         }
+    }
+
+    public void deleteWarpPoint(Actor actor, UUID islandUuid, String warpName) {
+        inTransaction(connection -> {
+            lockIsland(connection, islandUuid);
+            requireRole(actor, connection, islandUuid, RequiredRole.MEMBER);
+
+            int deleted = executeUpdate(connection, "DELETE FROM " + prefix + "island_warps WHERE island_uuid = ? AND warp_name = ?;", stmt -> {
+                stmt.setString(1, islandUuid.toString());
+                stmt.setString(2, warpName);
+            });
+
+            if (deleted == 0) {
+                throw new WarpDoesNotExistException();
+            }
+
+            return null;
+        });
+    }
+
+    public void deleteBanPlayer(Actor actor, UUID islandUuid, UUID playerUuid) {
+        inTransaction(connection -> {
+            lockIsland(connection, islandUuid);
+            requireRole(actor, connection, islandUuid, RequiredRole.MEMBER);
+
+            int deleted = executeUpdate(connection, "DELETE FROM " + prefix + "island_bans WHERE island_uuid = ? AND banned_player = ?;", stmt -> {
+                stmt.setString(1, islandUuid.toString());
+                stmt.setString(2, playerUuid.toString());
+            });
+
+            if (deleted == 0) {
+                throw new PlayerNotBannedException();
+            }
+
+            return null;
+        });
+    }
+
+    public void deleteCoopPlayer(Actor actor, UUID islandUuid, UUID playerUuid) {
+        inTransaction(connection -> {
+            lockIsland(connection, islandUuid);
+            requireRole(actor, connection, islandUuid, RequiredRole.MEMBER);
+
+            int deleted = executeUpdate(connection, "DELETE FROM " + prefix + "island_coops WHERE island_uuid = ? AND cooped_player = ?;", stmt -> {
+                stmt.setString(1, islandUuid.toString());
+                stmt.setString(2, playerUuid.toString());
+            });
+
+            if (deleted == 0) {
+                throw new PlayerNotCoopedException();
+            }
+
+            return null;
+        });
+    }
+
+    public Island getIslandSnapshot(UUID islandUuid) {
+        return withConnection(connection -> {
+            String islandSql = "SELECT slot, `lock`, pvp FROM " + prefix + "islands WHERE island_uuid = ? LIMIT 1";
+            int[] islandData = executeQuery(connection, islandSql, stmt -> {
+                stmt.setString(1, islandUuid.toString());
+            }, rs -> {
+                if (!rs.next()) {
+                    return null;
+                }
+                return new int[]{rs.getInt("slot"), rs.getBoolean("lock") ? 1 : 0, rs.getBoolean("pvp") ? 1 : 0};
+            });
+
+            if (islandData == null) {
+                return null;
+            }
+            int slot = islandData[0];
+            boolean lock = islandData[1] == 1;
+            boolean pvp = islandData[2] == 1;
+
+            UUID ownerUuid = null;
+            Set<UUID> members = new LinkedHashSet<>();
+
+            String playersSql = "SELECT player_uuid, role FROM " + prefix + "island_players WHERE island_uuid = ?";
+            Map<UUID, String> players = executeQuery(connection, playersSql, stmt -> {
+                stmt.setString(1, islandUuid.toString());
+            }, rs -> {
+                Map<UUID, String> result = new LinkedHashMap<>();
+                while (rs.next()) {
+                    UUID playerUuid = parseRequiredUuid(rs.getString("player_uuid"), "island_players.player_uuid");
+                    result.put(playerUuid, rs.getString("role"));
+                }
+                return result;
+            });
+
+            for (Map.Entry<UUID, String> entry : players.entrySet()) {
+                if ("owner".equalsIgnoreCase(entry.getValue())) {
+                    ownerUuid = entry.getKey();
+                } else if ("member".equalsIgnoreCase(entry.getValue())) {
+                    members.add(entry.getKey());
+                }
+            }
+
+            if (ownerUuid == null) {
+                throw new IllegalStateException("Island owner does not exist in database for island: " + islandUuid);
+            }
+
+            String coopsSql = "SELECT cooped_player FROM " + prefix + "island_coops WHERE island_uuid = ?";
+            Set<UUID> coops = executeQuery(connection, coopsSql, stmt -> {
+                stmt.setString(1, islandUuid.toString());
+            }, rs -> {
+                Set<UUID> result = new LinkedHashSet<>();
+                while (rs.next()) {
+                    result.add(parseRequiredUuid(rs.getString("cooped_player"), "island_coops.cooped_player"));
+                }
+                return result;
+            });
+
+            String bansSql = "SELECT banned_player FROM " + prefix + "island_bans WHERE island_uuid = ?";
+            Set<UUID> bans = executeQuery(connection, bansSql, stmt -> {
+                stmt.setString(1, islandUuid.toString());
+            }, rs -> {
+                Set<UUID> result = new LinkedHashSet<>();
+                while (rs.next()) {
+                    result.add(parseRequiredUuid(rs.getString("banned_player"), "island_bans.banned_player"));
+                }
+                return result;
+            });
+
+            Map<UUID, String> defaultHomes = executeQuery(connection, "SELECT player_uuid, home_location FROM " + prefix + "island_homes WHERE island_uuid = ? AND home_name = 'default'", stmt -> {
+                stmt.setString(1, islandUuid.toString());
+            }, rs -> {
+                Map<UUID, String> result = new LinkedHashMap<>();
+                while (rs.next()) {
+                    result.put(parseRequiredUuid(rs.getString("player_uuid"), "island_homes.player_uuid"), rs.getString("home_location"));
+                }
+                return result;
+            });
+
+            String defaultWarp = executeQuery(connection, "SELECT warp_location FROM " + prefix + "island_warps WHERE island_uuid = ? AND warp_name = 'default'", stmt -> {
+                stmt.setString(1, islandUuid.toString());
+            }, rs -> rs.next() ? rs.getString("warp_location") : null);
+
+            int sizeLevel = getIslandUpgradeLevel(connection, islandUuid, "island-size");
+            int generatorLevel = getIslandUpgradeLevel(connection, islandUuid, "generator-rates");
+
+            return new Island(islandUuid, slot, lock, pvp, ownerUuid, members.isEmpty() ? Set.of() : Set.copyOf(members), coops.isEmpty() ? Set.of() : Set.copyOf(coops), bans.isEmpty() ? Set.of() : Set.copyOf(bans), defaultHomes, defaultWarp, sizeLevel, generatorLevel);
+        });
     }
 
     // ================================================================================================================
@@ -334,6 +1098,26 @@ public class DatabaseHandler {
         }
     }
 
+    private int getIslandSlot(Connection connection, UUID islandUuid) throws SQLException {
+        return executeQuery(connection, "SELECT slot FROM " + prefix + "islands WHERE island_uuid = ? LIMIT 1", stmt -> {
+            stmt.setString(1, islandUuid.toString());
+        }, rs -> {
+            if (!rs.next()) {
+                throw new IslandDoesNotExistException();
+            }
+            return rs.getInt("slot");
+        });
+    }
+
+    /**
+     * Where a new island's players arrive: {@code island.spawn} from the island's centre block.
+     * Only the centre's coordinates are needed, as homes are stored without a world.
+     */
+    private String getDefaultHomePoint(int slot) {
+        Location center = islandGrid.center(null, slot);
+        return (center.getX() + config.getIslandSpawnX()) + "," + (center.getY() + config.getIslandSpawnY()) + "," + (center.getZ() + config.getIslandSpawnZ()) + "," + config.getIslandSpawnYaw() + "," + config.getIslandSpawnPitch();
+    }
+
     private void lockIsland(Connection connection, UUID islandUuid) throws SQLException {
         boolean exists = executeQuery(connection, "SELECT 1 FROM " + prefix + "islands WHERE island_uuid = ? FOR UPDATE", stmt -> {
             stmt.setString(1, islandUuid.toString());
@@ -344,19 +1128,37 @@ public class DatabaseHandler {
         }
     }
 
+    private int getIslandUpgradeLevel(Connection connection, UUID islandUuid, String upgradeId) throws SQLException {
+        return executeQuery(connection, "SELECT level FROM " + prefix + "island_upgrades WHERE island_uuid = ? AND upgrade_id = ? LIMIT 1", stmt -> {
+            stmt.setString(1, islandUuid.toString());
+            stmt.setString(2, upgradeId);
+        }, rs -> rs.next() ? rs.getInt("level") : config.getUpgradeLevels(upgradeId).getFirst());
+    }
+
+    private int getUpgradeLimit(Connection connection, UUID islandUuid, String upgradeId) throws SQLException {
+        return config.getUpgradeLimit(upgradeId, getIslandUpgradeLevel(connection, islandUuid, upgradeId));
+    }
+
+    private int count(Connection connection, String sql, PreparedStatementConsumer consumer) throws SQLException {
+        return executeQuery(connection, sql, consumer, rs -> {
+            rs.next();
+            return rs.getInt(1);
+        });
+    }
+
     /**
      * Enforces the island role an operation demands. Only players are subject to role rules;
      * Bypass actors skip them by construction. The required role is fixed by the calling
      * operation and never comes from outside, so a caller cannot lower its own bar.
      */
-    private void requireRole(Actor actor, Connection connection, UUID islandUuid) throws SQLException {
-        if (!(actor instanceof Actor.Player(UUID uuid))) {
+    private void requireRole(Actor actor, Connection connection, UUID islandUuid, RequiredRole required) throws SQLException {
+        if (!(actor instanceof Actor.Player player)) {
             return;
         }
 
-        String role = getIslandRole(connection, islandUuid, uuid).orElseThrow(IslandDoesNotExistException::new);
+        String role = getIslandRole(connection, islandUuid, player.uuid()).orElseThrow(IslandDoesNotExistException::new);
 
-        if (!"owner".equalsIgnoreCase(role)) {
+        if (required == RequiredRole.OWNER && !"owner".equalsIgnoreCase(role)) {
             throw new NotIslandOwnerException();
         }
     }
@@ -370,6 +1172,21 @@ public class DatabaseHandler {
                 return Optional.empty();
             }
             return Optional.ofNullable(rs.getString("role"));
+        });
+    }
+
+    private Optional<String> getIslandDefaultHome(Connection connection, UUID islandUuid) throws SQLException {
+        String sql = "SELECT h.home_location FROM " + prefix + "island_homes h " + "JOIN " + prefix + "island_players p ON p.player_uuid = h.player_uuid AND p.island_uuid = h.island_uuid " + "WHERE h.island_uuid = ? AND h.home_name = ? AND p.role = ? LIMIT 1";
+
+        return executeQuery(connection, sql, stmt -> {
+            stmt.setString(1, islandUuid.toString());
+            stmt.setString(2, "default");
+            stmt.setString(3, "owner");
+        }, rs -> {
+            if (!rs.next()) {
+                return Optional.empty();
+            }
+            return Optional.ofNullable(rs.getString("home_location"));
         });
     }
 
@@ -394,6 +1211,10 @@ public class DatabaseHandler {
             }
             return Optional.of(parseRequiredUuid(rs.getString("island_uuid"), "island_players.island_uuid"));
         });
+    }
+
+    private enum RequiredRole {
+        MEMBER, OWNER
     }
 
     private static final class ConstraintViolationException extends RuntimeException {
