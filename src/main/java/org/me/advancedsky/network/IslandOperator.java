@@ -253,8 +253,9 @@ public class IslandOperator {
     }
 
     /**
-     * Runs the mutation in the island's chain and refreshes the island cache afterwards, whether the
-     * mutation succeeded or not.
+     * Runs the mutation in the island's chain and refreshes the island cache afterwards. A rule
+     * the database refused rolled its transaction back, so the entry stays as it is; any other
+     * failure may have committed, so the entry is refreshed then too.
      */
     private <T> CompletableFuture<T> updateCache(UUID islandUuid, Supplier<T> mutation) {
         return serialized(islandUuid, () -> {
@@ -267,9 +268,21 @@ public class IslandOperator {
                     return result;
                 });
             } catch (Throwable error) {
+                if (isRuleRejection(error)) {
+                    return CompletableFuture.failedFuture(error);
+                }
+
                 return islandCache.reload(islandUuid).handle((v, reloadError) -> null).thenCompose(v -> CompletableFuture.failedFuture(error));
             }
         });
+    }
+
+    /**
+     * The typed exceptions the database raises for a broken rule, always before its
+     * transaction commits.
+     */
+    private static boolean isRuleRejection(Throwable error) {
+        return error.getClass().getPackageName().equals(IslandDoesNotExistException.class.getPackageName());
     }
 
     private CompletableFuture<Void> cleanupFailedCreate(UUID islandUuid, int slot) {

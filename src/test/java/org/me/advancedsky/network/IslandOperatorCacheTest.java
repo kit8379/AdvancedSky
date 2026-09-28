@@ -9,6 +9,7 @@ import org.me.advancedsky.model.Actor;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import java.sql.SQLException;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -31,8 +32,18 @@ class IslandOperatorCacheTest {
     }
 
     @Test
-    void rejectedMutationKeepsItsOriginalErrorWhenCacheReloadAlsoFails() {
+    void mutationRefusedByARuleLeavesTheCacheAlone() {
         IslandDoesNotExistException failure = new IslandDoesNotExistException();
+        doThrow(failure).when(database).deleteWarpPoint(actor, island, "shop");
+
+        CompletionException error = assertThrows(CompletionException.class, () -> operator.deleteWarp(actor, island, "shop").join());
+        assertSame(failure, error.getCause());
+        verify(cache, never()).reload(island);
+    }
+
+    @Test
+    void failedMutationThatMayHaveCommittedKeepsItsErrorWhenCacheReloadAlsoFails() {
+        RuntimeException failure = new RuntimeException(new SQLException("connection reset during commit"));
         doThrow(failure).when(database).deleteWarpPoint(actor, island, "shop");
         when(cache.reload(island)).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("reload failed")));
 

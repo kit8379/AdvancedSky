@@ -132,14 +132,13 @@ class IslandSizeTest {
     }
 
     @Test
-    void rejectedWriteStillRefreshesTheCacheAndKeepsTheCause() {
+    void rejectedWriteKeepsTheCauseAndLeavesTheCacheAlone() {
         IslandOperator operator = new IslandOperator(plugin, database, null, null, cache, null, "local");
         Actor actor = new Actor.Player(owner);
-        when(cache.reload(islandId)).thenReturn(CompletableFuture.completedFuture(null));
         doThrow(new UpgradeLevelChangedException()).when(database).updateIslandUpgradeLevel(actor, islandId, "island-size", 1, 2);
         CompletionException error = assertThrows(CompletionException.class, () -> operator.setUpgradeLevel(actor, islandId, "island-size", 1, 2).join());
         assertInstanceOf(UpgradeLevelChangedException.class, error.getCause());
-        verify(cache).reload(islandId);
+        verify(cache, never()).reload(islandId);
     }
 
     @Test
