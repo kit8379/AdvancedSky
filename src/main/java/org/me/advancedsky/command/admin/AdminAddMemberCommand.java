@@ -1,0 +1,125 @@
+package org.me.advancedsky.command.admin;
+
+import org.bukkit.command.CommandSender;
+import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.api.AdvancedSkyAPI;
+import org.me.advancedsky.command.AsyncTabComplete;
+import org.me.advancedsky.command.SubCommand;
+import org.me.advancedsky.config.ConfigHandler;
+import org.me.advancedsky.exceptions.IslandAlreadyExistException;
+import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.IslandPlayerAlreadyExistsException;
+import org.me.advancedsky.exceptions.TeamLimitReachedException;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+
+/**
+ * /isadmin addmember <member> <owner>
+ */
+public class AdminAddMemberCommand implements SubCommand, AsyncTabComplete {
+    private final AdvancedSky plugin;
+    private final AdvancedSkyAPI api;
+    private final ConfigHandler config;
+
+    public AdminAddMemberCommand(AdvancedSky plugin, AdvancedSkyAPI api, ConfigHandler config) {
+        this.plugin = plugin;
+        this.api = api;
+        this.config = config;
+    }
+
+    @Override
+    public String getName() {
+        return "addmember";
+    }
+
+    @Override
+    public String[] getAliases() {
+        return config.getAdminAddMemberAliases();
+    }
+
+    @Override
+    public String getPermission() {
+        return config.getAdminAddMemberPermission();
+    }
+
+    @Override
+    public String getSyntax() {
+        return config.getAdminAddMemberSyntax();
+    }
+
+    @Override
+    public String getDescription() {
+        return config.getAdminAddMemberDescription();
+    }
+
+    @Override
+    public boolean execute(CommandSender sender, String[] args) {
+        if (args.length < 3) {
+            return false;
+        }
+
+        String targetMemberName = args[1];
+        String islandOwnerName = args[2];
+
+        api.getPlayerUuid(targetMemberName).thenCompose(targetMemberUuidOpt -> {
+            if (targetMemberUuidOpt.isEmpty()) {
+                sender.sendMessage(config.getUnknownPlayerMessage(targetMemberName));
+                return CompletableFuture.completedFuture(null);
+            }
+
+            return api.getPlayerUuid(islandOwnerName).thenCompose(islandOwnerUuidOpt -> {
+                if (islandOwnerUuidOpt.isEmpty()) {
+                    sender.sendMessage(config.getUnknownPlayerMessage(islandOwnerName));
+                    return CompletableFuture.completedFuture(null);
+                }
+
+                UUID targetMemberUuid = targetMemberUuidOpt.get();
+                UUID islandOwnerUuid = islandOwnerUuidOpt.get();
+
+                return api.getIslandUuid(islandOwnerUuid).thenCompose(islandUuid -> {
+                    return api.admin(sender).addMember(islandUuid, targetMemberUuid);
+                }).thenRun(() -> {
+                    sender.sendMessage(config.getAdminAddMemberSuccessMessage(targetMemberName, islandOwnerName));
+                    api.sendPlayerMessage(targetMemberUuid, config.getWasAddedToIslandMessage(islandOwnerName));
+                });
+            });
+        }).exceptionally(ex -> {
+            Throwable cause = ex.getCause();
+            if (cause instanceof IslandDoesNotExistException) {
+                sender.sendMessage(config.getAdminNoIslandMessage(islandOwnerName));
+            } else if (cause instanceof IslandAlreadyExistException) {
+                sender.sendMessage(config.getAlreadyHasIslandMessage(targetMemberName));
+            } else if (cause instanceof IslandPlayerAlreadyExistsException) {
+                sender.sendMessage(config.getIslandMemberExistsMessage(targetMemberName));
+            } else if (cause instanceof TeamLimitReachedException) {
+                sender.sendMessage(config.getPlayerTeamLimitReachedMessage(cause.getMessage()));
+            } else {
+                sender.sendMessage(config.getUnknownExceptionMessage());
+                plugin.severe("Error adding member " + targetMemberName + " to island of " + islandOwnerName, ex);
+            }
+            return null;
+        });
+
+        return true;
+    }
+
+    @Override
+    public CompletableFuture<List<String>> tabCompleteAsync(CommandSender sender, String label, String[] args) {
+        if (args.length == 2) {
+            String prefix = args[1].toLowerCase(Locale.ROOT);
+            return api.getOnlinePlayersNames().thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList())).exceptionally(ex -> Collections.emptyList());
+        }
+
+        if (args.length == 3) {
+            String prefix = args[2].toLowerCase(Locale.ROOT);
+            return api.getOnlinePlayersNames().thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList())).exceptionally(ex -> Collections.emptyList());
+        }
+
+        return CompletableFuture.completedFuture(Collections.emptyList());
+    }
+}

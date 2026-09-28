@@ -10,6 +10,7 @@ import org.me.advancedsky.api.AdvancedSkyAPI;
 import org.me.advancedsky.cluster.InvitationStore;
 import org.me.advancedsky.cluster.OnlinePlayerRegistry;
 import org.me.advancedsky.command.AsyncTabCompleteListener;
+import org.me.advancedsky.command.IslandAdminCommand;
 import org.me.advancedsky.command.IslandPlayerCommand;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.database.DatabaseHandler;
@@ -186,9 +187,17 @@ public class AdvancedSky extends JavaPlugin {
             playerCommand.setExecutor(islandPlayerCommand);
             Bukkit.getCommandMap().register("island", playerCommand);
 
+            PluginCommand adminCommand = createCommand("islandadmin");
+            adminCommand.setAliases(Collections.singletonList("isadmin"));
+            IslandAdminCommand islandAdminCommand = new IslandAdminCommand(this, api, config);
+            adminCommand.setExecutor(islandAdminCommand);
+            Bukkit.getCommandMap().register("islandadmin", adminCommand);
+
             AsyncTabCompleteListener asyncTabCompleteListener = new AsyncTabCompleteListener(this);
             asyncTabCompleteListener.registerRoot("island", islandPlayerCommand);
             asyncTabCompleteListener.registerRoot("is", islandPlayerCommand);
+            asyncTabCompleteListener.registerRoot("islandadmin", islandAdminCommand);
+            asyncTabCompleteListener.registerRoot("isadmin", islandAdminCommand);
             getServer().getPluginManager().registerEvents(asyncTabCompleteListener, this);
             info("All commands registered");
 

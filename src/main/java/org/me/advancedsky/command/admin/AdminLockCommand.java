@@ -1,0 +1,100 @@
+package org.me.advancedsky.command.admin;
+
+import org.bukkit.command.CommandSender;
+import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.api.AdvancedSkyAPI;
+import org.me.advancedsky.command.AsyncTabComplete;
+import org.me.advancedsky.command.SubCommand;
+import org.me.advancedsky.config.ConfigHandler;
+import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+
+/**
+ * /isadmin lock <player>
+ */
+public class AdminLockCommand implements SubCommand, AsyncTabComplete {
+    private final AdvancedSky plugin;
+    private final AdvancedSkyAPI api;
+    private final ConfigHandler config;
+
+    public AdminLockCommand(AdvancedSky plugin, AdvancedSkyAPI api, ConfigHandler config) {
+        this.plugin = plugin;
+        this.api = api;
+        this.config = config;
+    }
+
+    @Override
+    public String getName() {
+        return "lock";
+    }
+
+    @Override
+    public String[] getAliases() {
+        return config.getAdminLockAliases();
+    }
+
+    @Override
+    public String getPermission() {
+        return config.getAdminLockPermission();
+    }
+
+    @Override
+    public String getSyntax() {
+        return config.getAdminLockSyntax();
+    }
+
+    @Override
+    public String getDescription() {
+        return config.getAdminLockDescription();
+    }
+
+    @Override
+    public boolean execute(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            return false;
+        }
+
+        String targetPlayerName = args[1];
+
+        api.getPlayerUuid(targetPlayerName).thenCompose(targetUuidOpt -> {
+            if (targetUuidOpt.isEmpty()) {
+                sender.sendMessage(config.getUnknownPlayerMessage(targetPlayerName));
+                return CompletableFuture.completedFuture(null);
+            }
+
+            return api.getIslandUuid(targetUuidOpt.get()).thenCompose(islandUuid -> api.admin(sender).toggleLock(islandUuid)).thenAccept(isLocked -> {
+                if (isLocked) {
+                    sender.sendMessage(config.getAdminLockSuccessMessage(targetPlayerName));
+                } else {
+                    sender.sendMessage(config.getAdminUnLockSuccessMessage(targetPlayerName));
+                }
+            });
+        }).exceptionally(ex -> {
+            Throwable cause = ex.getCause();
+            if (cause instanceof IslandDoesNotExistException) {
+                sender.sendMessage(config.getAdminNoIslandMessage(targetPlayerName));
+            } else {
+                sender.sendMessage(config.getUnknownExceptionMessage());
+                plugin.severe("Error toggling island lock for " + targetPlayerName, ex);
+            }
+            return null;
+        });
+
+        return true;
+    }
+
+    @Override
+    public CompletableFuture<List<String>> tabCompleteAsync(CommandSender sender, String label, String[] args) {
+        if (args.length == 2) {
+            String prefix = args[1].toLowerCase(Locale.ROOT);
+            return api.getOnlinePlayersNames().thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList())).exceptionally(ex -> Collections.emptyList());
+        }
+
+        return CompletableFuture.completedFuture(Collections.emptyList());
+    }
+}
