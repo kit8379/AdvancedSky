@@ -5,6 +5,8 @@ import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.cluster.ClusterKeys;
 import redis.clients.jedis.*;
 
+import java.time.Duration;
+
 public class RedisHandler {
 
     private final AdvancedSky plugin;
@@ -19,7 +21,13 @@ public class RedisHandler {
         String password = config.getRedisPassword();
         this.keys = new ClusterKeys(config.getClusterId());
 
+        // The default of 8 connections, one of them held by the stream consumer's blocking read,
+        // queues every other Redis call behind a burst of joins, quits and tab completions. A
+        // bounded wait turns an exhausted pool into an error instead of a thread parked forever.
         ConnectionPoolConfig poolConfig = new ConnectionPoolConfig();
+        poolConfig.setMaxTotal(32);
+        poolConfig.setMaxIdle(32);
+        poolConfig.setMaxWait(Duration.ofSeconds(5));
 
         DefaultJedisClientConfig.Builder clientConfigBuilder = DefaultJedisClientConfig.builder().connectionTimeoutMillis(2000).socketTimeoutMillis(2000);
 
