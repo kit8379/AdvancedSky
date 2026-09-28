@@ -127,7 +127,7 @@ public class LevelHandler {
             // gen=false: a never-generated chunk holds nothing and scores zero, so skip it
             // instead of generating and persisting it just to scan.
             taken.add(worldHandler.onChunk(world, coord[0], coord[1], false, chunk -> {
-                snapshots.add(chunk.getChunkSnapshot());
+                snapshots.add(chunk.getChunkSnapshot(false, false, false));
                 limitHandler.chunkScanned(islandUuid, scan, chunk.getX(), chunk.getZ());
                 return CompletableFuture.completedFuture(null);
             }));
@@ -153,12 +153,22 @@ public class LevelHandler {
         int minZ = Math.max(0, minBlockZ - snapshot.getZ() * 16);
         int maxZ = Math.min(15, maxBlockZ - snapshot.getZ() * 16);
 
-        for (int y = minY; y < maxY; y++) {
-            for (int z = minZ; z <= maxZ; z++) {
-                for (int x = minX; x <= maxX; x++) {
+        // A section holding only air scores nothing and most of an island is air, so those are
+        // skipped. Section indexes count from 0 at the world's lowest section.
+        for (int section = 0; section << 4 < maxY - minY; section++) {
+            if (snapshot.isSectionEmpty(section)) {
+                continue;
+            }
 
-                    counts[snapshot.getBlockType(x, y, z).ordinal()]++;
+            int fromY = minY + (section << 4);
+            int toY = Math.min(fromY + 16, maxY);
+            for (int y = fromY; y < toY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    for (int x = minX; x <= maxX; x++) {
 
+                        counts[snapshot.getBlockType(x, y, z).ordinal()]++;
+
+                    }
                 }
             }
         }

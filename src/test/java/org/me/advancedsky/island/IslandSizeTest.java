@@ -167,7 +167,7 @@ class IslandSizeTest {
             when(snapshot.getX()).thenReturn(call.getArgument(1));
             when(snapshot.getZ()).thenReturn(call.getArgument(2));
             when(snapshot.getBlockType(anyInt(), eq(0), anyInt())).thenReturn(Material.STONE);
-            when(chunk.getChunkSnapshot()).thenReturn(snapshot);
+            when(chunk.getChunkSnapshot(false, false, false)).thenReturn(snapshot);
             return call.<Function<Chunk, CompletableFuture<Void>>>getArgument(4).apply(chunk);
         });
         LimitHandler limits = mock(LimitHandler.class);
@@ -177,6 +177,31 @@ class IslandSizeTest {
         ArgumentCaptor<int[]> counts = ArgumentCaptor.forClass(int[].class);
         verify(limits).finishScan(eq(islandId), any(), counts.capture());
         assertEquals(size * size, counts.getValue()[Material.STONE.ordinal()]);
+    }
+
+    @Test
+    void levelScanSkipsSectionsHoldingOnlyAir() {
+        int size = SIZES[0];
+        when(cache.get(islandId)).thenReturn(island(1));
+        WorldHandler worlds = mock(WorldHandler.class);
+        when(worlds.getWorld()).thenReturn(world);
+        when(world.getMinHeight()).thenReturn(-16);
+        when(world.getMaxHeight()).thenReturn(32);
+        when(config.getBlockLevel("STONE")).thenReturn(100);
+        when(worlds.onChunk(eq(world), anyInt(), anyInt(), eq(false), any())).thenAnswer(call -> {
+            Chunk chunk = mock(Chunk.class);
+            ChunkSnapshot snapshot = mock(ChunkSnapshot.class);
+            when(snapshot.getX()).thenReturn(call.getArgument(1));
+            when(snapshot.getZ()).thenReturn(call.getArgument(2));
+            // Were the empty middle section read, its stone would count too.
+            when(snapshot.getBlockType(anyInt(), anyInt(), anyInt())).thenReturn(Material.STONE);
+            when(snapshot.isSectionEmpty(1)).thenReturn(true);
+            when(chunk.getChunkSnapshot(false, false, false)).thenReturn(snapshot);
+            return call.<Function<Chunk, CompletableFuture<Void>>>getArgument(4).apply(chunk);
+        });
+
+        int level = new LevelHandler(plugin, config, database, mock(LimitHandler.class), worlds, cache, grid).calIslandLevel(islandId).join();
+        assertEquals(size * size * 32, level);
     }
 
     private Island island(int sizeLevel) {
