@@ -4,6 +4,7 @@ import org.bukkit.ExplosionResult;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockState;
 import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -18,6 +19,7 @@ import org.bukkit.event.hanging.HangingBreakByEntityEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.*;
 import org.bukkit.event.vehicle.VehicleDamageEvent;
+import org.bukkit.event.world.PortalCreateEvent;
 import org.bukkit.event.world.StructureGrowEvent;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
@@ -384,6 +386,38 @@ public class IslandProtectionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onTeleport(PlayerTeleportEvent event) {
+        checkArrival(event);
+    }
+
+    /**
+     * A nether portal trip is not seen by {@link #onTeleport}: PlayerPortalEvent has a handler
+     * list of its own. Arriving in the island world through one follows the teleport rule, so
+     * walking the scaled-down nether to another island's coordinates leads nowhere it bars.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onPortal(PlayerPortalEvent event) {
+        if (event.getCause() == PlayerTeleportEvent.TeleportCause.NETHER_PORTAL) {
+            checkArrival(event);
+        }
+    }
+
+    /**
+     * The portal a nether trip builds at its far end is built like any other blocks: only where
+     * the traveller may edit, or inside a boundary when no player builds it.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onPortalCreate(PortalCreateEvent event) {
+        Player player = resolvePlayer(event.getEntity());
+        for (BlockState state : event.getBlocks()) {
+            Location location = state.getLocation();
+            if (player != null ? !canPlayerEdit(player, location) : !isAllowedByBoundary(location)) {
+                event.setCancelled(true);
+                return;
+            }
+        }
+    }
+
+    private void checkArrival(PlayerTeleportEvent event) {
         Player player = event.getPlayer();
         Location to = event.getTo();
 

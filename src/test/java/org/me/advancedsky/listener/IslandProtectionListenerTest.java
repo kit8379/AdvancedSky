@@ -2,8 +2,12 @@ package org.me.advancedsky.listener;
 
 import org.bukkit.Location;
 import org.bukkit.World;
+import org.bukkit.block.BlockState;
 import org.bukkit.entity.Player;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerPortalEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
+import org.bukkit.event.world.PortalCreateEvent;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
@@ -12,6 +16,7 @@ import org.me.advancedsky.model.Island;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -65,6 +70,25 @@ class IslandProtectionListenerTest {
         assertFalse(move(banned, false, inside, outside));
     }
 
+    @Test
+    void netherPortalArrivalsFollowTheTeleportRule() {
+        island(false, Set.of(banned));
+        Location nether = new Location(mock(World.class), 0, 70, 0);
+
+        assertFalse(portal(owner, nether, inside));
+        assertTrue(portal(banned, nether, inside));
+        assertTrue(portal(owner, nether, outside));
+    }
+
+    @Test
+    void theArrivalPortalIsOnlyBuiltWhereTheTravellerMayEdit() {
+        island(false, Set.of());
+
+        assertFalse(portalCreate(owner, inside));
+        assertTrue(portalCreate(visitor, inside));
+        assertTrue(portalCreate(owner, outside));
+    }
+
     private void island(boolean locked, Set<UUID> bans) {
         Island island = new Island(UUID.randomUUID(), SLOT, locked, false, owner, Set.of(member), Set.of(), bans, Map.of(), null, 1, 1);
         when(cache.getAt(any(Location.class))).thenAnswer(call -> {
@@ -73,14 +97,32 @@ class IslandProtectionListenerTest {
         });
     }
 
+    private boolean portal(UUID playerUuid, Location from, Location to) {
+        PlayerPortalEvent event = new PlayerPortalEvent(player(playerUuid, false), from, to, PlayerTeleportEvent.TeleportCause.NETHER_PORTAL);
+        listener.onPortal(event);
+        return event.isCancelled();
+    }
+
+    private boolean portalCreate(UUID playerUuid, Location at) {
+        BlockState block = mock(BlockState.class);
+        when(block.getLocation()).thenReturn(at);
+        PortalCreateEvent event = new PortalCreateEvent(List.of(block), world, player(playerUuid, false), PortalCreateEvent.CreateReason.NETHER_PAIR);
+        listener.onPortalCreate(event);
+        return event.isCancelled();
+    }
+
+    private static Player player(UUID playerUuid, boolean op) {
+        Player player = mock(Player.class);
+        when(player.getUniqueId()).thenReturn(playerUuid);
+        when(player.isOp()).thenReturn(op);
+        return player;
+    }
+
     /**
      * Whether the move was cancelled.
      */
     private boolean move(UUID playerUuid, boolean op, Location from, Location to) {
-        Player player = mock(Player.class);
-        when(player.getUniqueId()).thenReturn(playerUuid);
-        when(player.isOp()).thenReturn(op);
-        PlayerMoveEvent event = new PlayerMoveEvent(player, from, to);
+        PlayerMoveEvent event = new PlayerMoveEvent(player(playerUuid, op), from, to);
         listener.onPlayerMove(event);
         return event.isCancelled();
     }
