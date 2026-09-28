@@ -36,8 +36,8 @@ public class HomeHandler {
     }
 
     /**
-     * Sets a home at a location on this server, which must lie in the area of the player's own
-     * island: in the island world of the server hosting it.
+     * Sets a home at a location on this server, which must lie inside the boundary of the
+     * player's own island: in the island world of the server hosting it.
      */
     public CompletableFuture<Void> setHome(Actor actor, UUID playerUuid, String homeName, Location location) {
         return CompletableFuture.supplyAsync(() -> {
@@ -45,7 +45,9 @@ public class HomeHandler {
 
             String host = database.getIslandServer(islandUuid).orElseThrow(IslandDoesNotExistException::new);
             int slot = database.getIslandSlot(islandUuid).orElseThrow(IslandDoesNotExistException::new);
-            if (!host.equals(config.getServerName()) || location.getWorld() == null || !location.getWorld().getName().equals(config.getIslandWorldName()) || !islandGrid.isInArea(slot, location.getX(), location.getZ())) {
+            // Beyond the boundary a teleport is always refused, so no point may be set there.
+            int size = config.getUpgradeLimit("island-size", database.getIslandUpgradeLevel(islandUuid, "island-size"));
+            if (!host.equals(config.getServerName()) || location.getWorld() == null || !location.getWorld().getName().equals(config.getIslandWorldName()) || !islandGrid.isInArea(slot, location.getX(), location.getZ()) || !islandGrid.isInsideIsland(slot, size, location.getBlockX(), location.getBlockZ())) {
                 throw new LocationNotInIslandException();
             }
 

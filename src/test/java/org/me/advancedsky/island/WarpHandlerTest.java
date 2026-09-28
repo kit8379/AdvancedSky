@@ -49,6 +49,7 @@ class WarpHandlerTest {
     private IslandCache cache;
     private IslandOperator operator;
     private HomeHandler homes;
+    private ConfigHandler config;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -62,7 +63,7 @@ class WarpHandlerTest {
         field("prefix", "test_");
         field("plugin", plugin);
         // Upgrade limits are covered by DatabaseHandlerUpgradeTest; here they stay out of the way.
-        ConfigHandler config = mock(ConfigHandler.class);
+        config = mock(ConfigHandler.class);
         when(config.getUpgradeLevels(anyString())).thenReturn(List.of(1));
         when(config.getUpgradeLimit(anyString(), anyInt())).thenReturn(Integer.MAX_VALUE);
         // This server hosts the island; points must lie in its area of the island world.
@@ -168,6 +169,19 @@ class WarpHandlerTest {
         assertFailure(WarpNameNotLegalException.class,
                 handler.setWarp(new Actor.Player(owner), island, "bad name", new Location(islandWorld, 1, 2, 3)));
         assertTrue(database.getIslandWarps(island).isEmpty());
+    }
+
+    @Test
+    void pointsBeyondTheIslandBoundaryAreRefusedEvenForAdmin() {
+        when(config.getUpgradeLimit("island-size", 1)).thenReturn(50);
+        // 1,70,3 lies in slot 0's area but far outside a 50-block boundary around 256,256.
+        Location beyond = new Location(islandWorld, 1, 70, 3);
+        assertFailure(LocationNotInIslandException.class, handler.setWarp(admin, island, "shop", beyond));
+        assertFailure(LocationNotInIslandException.class, homes.setHome(admin, owner, "far", beyond));
+        assertTrue(database.getIslandWarps(island).isEmpty());
+
+        handler.setWarp(admin, island, "shop", new Location(islandWorld, 256, 70, 256)).join();
+        assertEquals(Set.of("shop"), handler.getWarpNames(island).join());
     }
 
     @Test
