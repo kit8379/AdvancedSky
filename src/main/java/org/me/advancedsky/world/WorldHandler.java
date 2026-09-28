@@ -19,10 +19,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 /**
  * Applies island changes to this server's island world. Only called by {@code IslandOperator} for
@@ -30,7 +33,8 @@ import java.util.function.Predicate;
  * <p>
  * Creating an island copies the template built in the template world onto the island centre;
  * deleting clears every block and non-player entity in the island's area. All block work runs on
- * the region scheduler of the chunk it touches, so it is safe on Folia and on Paper alike.
+ * the region scheduler of the chunk it touches, and where a player stands is read on that
+ * player's own scheduler, so it is safe on Folia and on Paper alike.
  */
 public class WorldHandler {
 
@@ -38,6 +42,12 @@ public class WorldHandler {
      * Chunks loaded and processed at the same time while clearing an island area.
      */
     private static final int CHUNKS_PER_BATCH = 32;
+
+    /**
+     * How long a delete waits for the players it sent to the lobby to leave the island's area
+     * before clearing it anyway: a connect takes effect only once the proxy has moved them.
+     */
+    private static final long EVACUATION_TIMEOUT_MILLIS = 10_000L;
 
     private final AdvancedSky plugin;
     private final IslandGrid grid;
@@ -81,13 +91,14 @@ public class WorldHandler {
     }
 
     /**
-     * Sends every player in the island's area to the lobby, then removes every block and
-     * non-player entity in it, chunk by chunk. Chunks that were never generated are skipped so the
-     * delete does not create them.
+     * Sends every player in the island's area to the lobby and waits for them to leave it, so
+     * nobody is left standing on blocks about to vanish, then removes every block and non-player
+     * entity in it, chunk by chunk. Chunks that were never generated are skipped so the delete
+     * does not create them.
      */
     public CompletableFuture<Void> deleteIsland(int slot) {
-        List<ChunkPos> chunks = areaChunks(slot);
-        return removePlayersFromIsland(chunks, player -> true).thenCompose(v -> clearInBatches(chunks, 0));
+        long deadline = System.currentTimeMillis() + EVACUATION_TIMEOUT_MILLIS;
+        return sendAway(slot, player -> true).thenCompose(sent -> awaitLeft(slot, sent, deadline)).thenCompose(v -> clearInBatches(areaChunks(slot), 0));
     }
 
     /**
@@ -100,23 +111,14 @@ public class WorldHandler {
                 return CompletableFuture.completedFuture(false);
             }
 
-            // The location is read on the thread that owns the player.
-            CompletableFuture<Boolean> removed = new CompletableFuture<>();
-            boolean scheduled = player.getScheduler().run(plugin, task -> {
-                Location location = player.getLocation();
-                if (!location.getWorld().equals(world) || !grid.isInArea(slot, location.getX(), location.getZ())) {
-                    removed.complete(false);
-                    return;
+            return onPlayer(player, () -> {
+                if (!isInArea(player, slot)) {
+                    return false;
                 }
 
                 sendToLobby(player);
-                removed.complete(true);
-            }, () -> removed.complete(false)) != null;
-
-            if (!scheduled) {
-                removed.complete(false);
-            }
-            return removed;
+                return true;
+            }, false);
         });
     }
 
@@ -124,7 +126,84 @@ public class WorldHandler {
      * Sends every player in the island's area for whom the predicate holds to the lobby.
      */
     public CompletableFuture<Void> removePlayersFromIsland(int slot, Predicate<Player> shouldRemove) {
-        return removePlayersFromIsland(areaChunks(slot), shouldRemove);
+        return sendAway(slot, shouldRemove).thenApply(sent -> null);
+    }
+
+    /**
+     * Sends every player in the island's area for whom the predicate holds to the lobby.
+     * Completes with the players sent.
+     */
+    private CompletableFuture<List<Player>> sendAway(int slot, Predicate<Player> shouldRemove) {
+        // Players are listed on the global region; where each one stands is read on their own thread.
+        return CompletableFuture.supplyAsync(() -> List.<Player>copyOf(Bukkit.getOnlinePlayers()), plugin.getGlobalRegionExecutor()).thenCompose(players -> playersInArea(players, slot, player -> {
+            if (!shouldRemove.test(player)) {
+                return false;
+            }
+
+            sendToLobby(player);
+            plugin.debug("WorldHandler", "Removed player " + player.getUniqueId() + " from island area at slot " + slot);
+            return true;
+        }));
+    }
+
+    /**
+     * Completes once none of the players is in the island's area here any more, looking again
+     * every second, or at the deadline with a warning. A player who left the server counts as
+     * gone: their scheduler retires with them.
+     */
+    private CompletableFuture<Void> awaitLeft(int slot, List<Player> players, long deadline) {
+        if (players.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        if (System.currentTimeMillis() >= deadline) {
+            plugin.warning("Clearing the island area at slot " + slot + " with " + players.size() + " player(s) sent to the lobby still in it");
+            return CompletableFuture.completedFuture(null);
+        }
+
+        return CompletableFuture.runAsync(() -> {
+        }, CompletableFuture.delayedExecutor(1L, TimeUnit.SECONDS, plugin.getBukkitAsyncExecutor())).thenCompose(v -> playersInArea(players, slot, player -> true)).thenCompose(remaining -> awaitLeft(slot, remaining, deadline));
+    }
+
+    /**
+     * The players among those given who stand in the island's area here and pass the check,
+     * which runs on each player's own thread.
+     */
+    private CompletableFuture<List<Player>> playersInArea(List<Player> players, int slot, Predicate<Player> check) {
+        List<CompletableFuture<Player>> checks = new ArrayList<>(players.size());
+        for (Player player : players) {
+            checks.add(onPlayer(player, () -> isInArea(player, slot) && check.test(player) ? player : null, null));
+        }
+
+        return CompletableFuture.allOf(checks.toArray(new CompletableFuture<?>[0])).thenApply(v -> checks.stream().map(CompletableFuture::join).filter(Objects::nonNull).toList());
+    }
+
+    /**
+     * Runs on the thread that owns the player.
+     */
+    private boolean isInArea(Player player, int slot) {
+        Location location = player.getLocation();
+        return location.getWorld().equals(world) && grid.isInArea(slot, location.getX(), location.getZ());
+    }
+
+    /**
+     * Runs the action on the thread that owns the player; a player who left meanwhile yields
+     * the fallback.
+     */
+    private <T> CompletableFuture<T> onPlayer(Player player, Supplier<T> action, T ifGone) {
+        CompletableFuture<T> result = new CompletableFuture<>();
+        boolean scheduled = player.getScheduler().run(plugin, task -> {
+            try {
+                result.complete(action.get());
+            } catch (Throwable t) {
+                result.completeExceptionally(t);
+            }
+        }, () -> result.complete(ifGone)) != null;
+
+        if (!scheduled) {
+            result.complete(ifGone);
+        }
+        return result;
     }
 
     private List<ChunkPos> areaChunks(int slot) {
@@ -201,34 +280,6 @@ public class WorldHandler {
     // ===================================================================
     // Area clearing
     // ===================================================================
-
-    /**
-     * Players can only stand in loaded chunks, so only those are looked at, each on the thread
-     * that owns it.
-     */
-    private CompletableFuture<Void> removePlayersFromIsland(List<ChunkPos> chunks, Predicate<Player> shouldRemove) {
-        List<CompletableFuture<Void>> checks = new ArrayList<>();
-        for (ChunkPos pos : chunks) {
-            CompletableFuture<Void> checked = new CompletableFuture<>();
-            Bukkit.getRegionScheduler().run(plugin, world, pos.x(), pos.z(), task -> {
-                try {
-                    if (world.isChunkLoaded(pos.x(), pos.z())) {
-                        for (Entity entity : world.getChunkAt(pos.x(), pos.z()).getEntities()) {
-                            if (entity instanceof Player player && shouldRemove.test(player)) {
-                                sendToLobby(player);
-                                plugin.debug("WorldHandler", "Removed player " + player.getUniqueId() + " from island area at chunk " + pos);
-                            }
-                        }
-                    }
-                    checked.complete(null);
-                } catch (Throwable t) {
-                    checked.completeExceptionally(t);
-                }
-            });
-            checks.add(checked);
-        }
-        return allOf(checks);
-    }
 
     private CompletableFuture<Void> clearInBatches(List<ChunkPos> chunks, int from) {
         if (from >= chunks.size()) {
