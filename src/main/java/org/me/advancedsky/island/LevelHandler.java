@@ -1,6 +1,11 @@
 package org.me.advancedsky.island;
 
 import org.bukkit.*;
+import org.bukkit.block.data.BlockData;
+import org.bukkit.block.data.Bisected;
+import org.bukkit.block.data.type.Bed;
+import org.bukkit.block.data.type.Stairs;
+import org.bukkit.block.data.type.TrapDoor;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
@@ -95,11 +100,12 @@ public class LevelHandler {
         // Every batch adds to one material histogram, which yields both the level and the
         // block counts the limit handler starts from.
         int[] counts = new int[Material.values().length];
+        int[] secondHalves = new int[counts.length];
         LimitHandler.Scan scan = limitHandler.beginScan(islandUuid);
         CompletableFuture<Void> scanned = CompletableFuture.completedFuture(null);
         for (int start = 0; start < chunkCoords.size(); start += SCAN_BATCH_SIZE) {
             List<int[]> batch = chunkCoords.subList(start, Math.min(start + SCAN_BATCH_SIZE, chunkCoords.size()));
-            scanned = scanned.thenCompose(v -> scanBatch(world, islandUuid, scan, batch, minY, maxY, minBlockX, maxBlockX, minBlockZ, maxBlockZ, counts));
+            scanned = scanned.thenCompose(v -> scanBatch(world, islandUuid, scan, batch, minY, maxY, minBlockX, maxBlockX, minBlockZ, maxBlockZ, counts, secondHalves));
         }
 
         return scanned.thenApplyAsync(v -> {
@@ -110,7 +116,11 @@ public class LevelHandler {
             }
 
             // Hand the counts over before the database write, so a failed write still leaves
-            // the island with fresh limit counts; place and break adjust them from here on.
+            // the island with fresh limit counts; place and break adjust them from here on. A
+            // bed or door is one block to place and break, so its second block is not counted.
+            for (int i = 0; i < counts.length; i++) {
+                counts[i] -= secondHalves[i];
+            }
             limitHandler.finishScan(islandUuid, scan, counts);
 
             int totalLevel = (int) Math.round((double) total / 100.0);
@@ -120,7 +130,7 @@ public class LevelHandler {
         }, plugin.getBukkitAsyncExecutor());
     }
 
-    private CompletableFuture<Void> scanBatch(World world, UUID islandUuid, LimitHandler.Scan scan, List<int[]> batch, int minY, int maxY, int minBlockX, int maxBlockX, int minBlockZ, int maxBlockZ, int[] counts) {
+    private CompletableFuture<Void> scanBatch(World world, UUID islandUuid, LimitHandler.Scan scan, List<int[]> batch, int minY, int maxY, int minBlockX, int maxBlockX, int minBlockZ, int maxBlockZ, int[] counts, int[] secondHalves) {
         List<ChunkSnapshot> snapshots = Collections.synchronizedList(new ArrayList<>(batch.size()));
         List<CompletableFuture<Void>> taken = new ArrayList<>(batch.size());
         for (int[] coord : batch) {
@@ -141,12 +151,16 @@ public class LevelHandler {
             }
 
             for (ChunkSnapshot snapshot : snapshots) {
-                countSnapshot(snapshot, minY, maxY, minBlockX, maxBlockX, minBlockZ, maxBlockZ, counts);
+                countSnapshot(snapshot, minY, maxY, minBlockX, maxBlockX, minBlockZ, maxBlockZ, counts, secondHalves);
             }
         }, plugin.getBukkitAsyncExecutor());
     }
 
-    private static void countSnapshot(ChunkSnapshot snapshot, int minY, int maxY, int minBlockX, int maxBlockX, int minBlockZ, int maxBlockZ, int[] counts) {
+    /**
+     * Adds the snapshot's blocks inside the bounds to the counts, and to the second halves the
+     * upper or head block of each capped two-block block (bed, door, tall plant).
+     */
+    private void countSnapshot(ChunkSnapshot snapshot, int minY, int maxY, int minBlockX, int maxBlockX, int minBlockZ, int maxBlockZ, int[] counts, int[] secondHalves) {
 
         int minX = Math.max(0, minBlockX - snapshot.getX() * 16);
         int maxX = Math.min(15, maxBlockX - snapshot.getX() * 16);
@@ -166,12 +180,25 @@ public class LevelHandler {
                 for (int z = minZ; z <= maxZ; z++) {
                     for (int x = minX; x <= maxX; x++) {
 
-                        counts[snapshot.getBlockType(x, y, z).ordinal()]++;
+                        Material type = snapshot.getBlockType(x, y, z);
+                        counts[type.ordinal()]++;
+                        if (limitHandler.getBlockLimit(type) != LimitHandler.UNLIMITED && isSecondHalf(snapshot.getBlockData(x, y, z))) {
+                            secondHalves[type.ordinal()]++;
+                        }
 
                     }
                 }
             }
         }
+    }
+
+    private static boolean isSecondHalf(BlockData data) {
+        if (data instanceof Bed bed) {
+            return bed.getPart() == Bed.Part.HEAD;
+        }
+
+        // Stairs and trapdoors are single blocks whose half is only how they sit.
+        return data instanceof Bisected bisected && !(data instanceof Stairs) && !(data instanceof TrapDoor) && bisected.getHalf() == Bisected.Half.TOP;
     }
 
     public CompletableFuture<Integer> getIslandLevel(UUID islandUuid) {

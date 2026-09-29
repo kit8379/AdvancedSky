@@ -2,6 +2,8 @@ package org.me.advancedsky.island;
 
 import org.bukkit.*;
 import org.bukkit.block.Block;
+import org.bukkit.block.data.Bisected;
+import org.bukkit.block.data.type.Door;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -201,6 +203,41 @@ class IslandSizeTest {
 
         int level = new LevelHandler(plugin, config, database, mock(LimitHandler.class), worlds, cache, grid).calIslandLevel(islandId).join();
         assertEquals(size * size * 32, level);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aCappedTwoBlockBlockIsCountedOnceForItsLimitAndTwiceForTheLevel() {
+        int size = SIZES[0];
+        when(cache.get(islandId)).thenReturn(island(1));
+        WorldHandler worlds = mock(WorldHandler.class);
+        when(worlds.getWorld()).thenReturn(world);
+        when(world.getMinHeight()).thenReturn(0);
+        when(world.getMaxHeight()).thenReturn(2);
+        when(config.getBlockLevel("OAK_DOOR")).thenReturn(100);
+        Door lower = mock(Door.class);
+        when(lower.getHalf()).thenReturn(Bisected.Half.BOTTOM);
+        Door upper = mock(Door.class);
+        when(upper.getHalf()).thenReturn(Bisected.Half.TOP);
+        when(worlds.onChunk(eq(world), anyInt(), anyInt(), eq(false), any())).thenAnswer(call -> {
+            Chunk chunk = mock(Chunk.class);
+            ChunkSnapshot snapshot = mock(ChunkSnapshot.class);
+            when(snapshot.getX()).thenReturn(call.getArgument(1));
+            when(snapshot.getZ()).thenReturn(call.getArgument(2));
+            when(snapshot.getBlockType(anyInt(), anyInt(), anyInt())).thenReturn(Material.OAK_DOOR);
+            when(snapshot.getBlockData(anyInt(), eq(0), anyInt())).thenReturn(lower);
+            when(snapshot.getBlockData(anyInt(), eq(1), anyInt())).thenReturn(upper);
+            when(chunk.getChunkSnapshot(false, false, false)).thenReturn(snapshot);
+            return call.<Function<Chunk, CompletableFuture<Void>>>getArgument(4).apply(chunk);
+        });
+        LimitHandler limits = mock(LimitHandler.class);
+        when(limits.getBlockLimit(any())).thenReturn(LimitHandler.UNLIMITED);
+        when(limits.getBlockLimit(Material.OAK_DOOR)).thenReturn(10);
+
+        assertEquals(2 * size * size, new LevelHandler(plugin, config, database, limits, worlds, cache, grid).calIslandLevel(islandId).join());
+        ArgumentCaptor<int[]> counts = ArgumentCaptor.forClass(int[].class);
+        verify(limits).finishScan(eq(islandId), any(), counts.capture());
+        assertEquals(size * size, counts.getValue()[Material.OAK_DOOR.ordinal()]);
     }
 
     private Island island(int sizeLevel) {

@@ -176,11 +176,10 @@ public class LimitHandler {
     }
 
     /**
-     * Counts one more of that block, placed in the given chunk, on the island if its cap allows.
-     * Denies until the island's first scan since startup has produced counts, so it fails closed
-     * rather than open.
+     * Whether the island's cap allows one more of that block. Denies until the island's first
+     * scan since startup has produced counts, so it fails closed rather than open.
      */
-    public boolean tryIncrement(UUID islandUuid, Material type, int chunkX, int chunkZ) {
+    public boolean hasRoom(UUID islandUuid, Material type) {
         int limit = blockLimitByOrdinal[type.ordinal()];
         if (limit == UNLIMITED) {
             return true;
@@ -192,13 +191,29 @@ public class LimitHandler {
         }
 
         synchronized (island) {
-            if (island.counts == null || island.counts[type.ordinal()] >= limit) {
-                return false;
-            }
+            return island.counts != null && island.counts[type.ordinal()] < limit;
+        }
+    }
 
-            island.counts[type.ordinal()]++;
+    /**
+     * Counts one more of that block, placed in the given chunk, once its placement stands. A scan
+     * in progress takes the addition even before the island's first counts exist.
+     */
+    public void increment(UUID islandUuid, Material type, int chunkX, int chunkZ) {
+        if (blockLimitByOrdinal[type.ordinal()] == UNLIMITED) {
+            return;
+        }
+
+        IslandCounts island = countsByIsland.get(islandUuid);
+        if (island == null) {
+            return;
+        }
+
+        synchronized (island) {
+            if (island.counts != null) {
+                island.counts[type.ordinal()]++;
+            }
             island.record(type, 1, chunkX, chunkZ);
-            return true;
         }
     }
 

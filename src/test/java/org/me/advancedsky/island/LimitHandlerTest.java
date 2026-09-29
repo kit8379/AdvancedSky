@@ -98,8 +98,8 @@ class LimitHandlerTest {
         assertEquals(0, limits.getBlockLimit(Material.HOPPER));
         assertEquals(LimitHandler.UNLIMITED, limits.getBlockLimit(Material.DISPENSER));
         counted(limits, new int[Material.values().length]);
-        assertFalse(limits.tryIncrement(island, Material.HOPPER, 0, 0));
-        assertTrue(limits.tryIncrement(island, Material.DISPENSER, 0, 0));
+        assertFalse(place(limits, Material.HOPPER, 0, 0));
+        assertTrue(place(limits, Material.DISPENSER, 0, 0));
 
         World world = mock(World.class);
         assertEquals(0, limits.getEntityLimit(EntityType.MINECART));
@@ -114,24 +114,24 @@ class LimitHandlerTest {
         assertEquals(LimitHandler.UNLIMITED, limits.getBlockLimit(Material.STONE));
 
         assertFalse(limits.isReady(island));
-        assertTrue(limits.tryIncrement(island, Material.STONE, 0, 0));
-        assertFalse(limits.tryIncrement(island, Material.HOPPER, 0, 0));
+        assertTrue(place(limits, Material.STONE, 0, 0));
+        assertFalse(place(limits, Material.HOPPER, 0, 0));
 
         int[] counts = new int[Material.values().length];
         counts[Material.HOPPER.ordinal()] = 49;
         counted(limits, counts);
         assertTrue(limits.isReady(island));
-        assertTrue(limits.tryIncrement(island, Material.HOPPER, 0, 0));
-        assertFalse(limits.tryIncrement(island, Material.HOPPER, 0, 0));
+        assertTrue(place(limits, Material.HOPPER, 0, 0));
+        assertFalse(place(limits, Material.HOPPER, 0, 0));
         assertEquals(50, counts[Material.HOPPER.ordinal()]);
 
         limits.decrement(island, Material.HOPPER, 0, 0);
-        assertTrue(limits.tryIncrement(island, Material.HOPPER, 0, 0));
-        assertFalse(limits.tryIncrement(island, Material.HOPPER, 0, 0));
+        assertTrue(place(limits, Material.HOPPER, 0, 0));
+        assertFalse(place(limits, Material.HOPPER, 0, 0));
 
         limits.unload(island);
         assertFalse(limits.isReady(island));
-        assertFalse(limits.tryIncrement(island, Material.HOPPER, 0, 0));
+        assertFalse(place(limits, Material.HOPPER, 0, 0));
     }
 
     @Test
@@ -140,9 +140,9 @@ class LimitHandlerTest {
         counted(limits, new int[Material.values().length]);
         limits.decrement(island, Material.HOPPER, 0, 0);
         for (int i = 0; i < 50; i++) {
-            assertTrue(limits.tryIncrement(island, Material.HOPPER, 0, 0), "hopper " + (i + 1));
+            assertTrue(place(limits, Material.HOPPER, 0, 0), "hopper " + (i + 1));
         }
-        assertFalse(limits.tryIncrement(island, Material.HOPPER, 0, 0));
+        assertFalse(place(limits, Material.HOPPER, 0, 0));
     }
 
     @Test
@@ -154,8 +154,8 @@ class LimitHandlerTest {
         limits.chunkScanned(island, scan, 0, 0);
         // Placed after chunk 0,0 was snapshotted, so the histogram misses it; the one in 1,0 is
         // placed before that chunk's snapshot, so the histogram has it.
-        assertTrue(limits.tryIncrement(island, Material.HOPPER, 0, 0));
-        assertTrue(limits.tryIncrement(island, Material.HOPPER, 1, 0));
+        assertTrue(place(limits, Material.HOPPER, 0, 0));
+        assertTrue(place(limits, Material.HOPPER, 1, 0));
         limits.chunkScanned(island, scan, 1, 0);
         int[] histogram = new int[Material.values().length];
         histogram[Material.HOPPER.ordinal()] = 1;
@@ -210,6 +210,18 @@ class LimitHandlerTest {
         verify(edgeChunk, times(2)).getEntities();
     }
 
+    /**
+     * A place as the listener handles it: checked first, counted once it stands.
+     */
+    private boolean place(LimitHandler limits, Material type, int chunkX, int chunkZ) {
+        if (!limits.hasRoom(island, type)) {
+            return false;
+        }
+
+        limits.increment(island, type, chunkX, chunkZ);
+        return true;
+    }
+
     private static Chunk loadedChunk(World world, int chunkX, int chunkZ) {
         Chunk chunk = mock(Chunk.class);
         when(world.isChunkLoaded(chunkX, chunkZ)).thenReturn(true);
@@ -234,16 +246,16 @@ class LimitHandlerTest {
         listener.onBlockPlace(notReady);
         assertTrue(notReady.isCancelled());
         verify(player).sendMessage(calculating);
-        verify(limits, never()).tryIncrement(any(), any(), anyInt(), anyInt());
+        verify(limits, never()).hasRoom(any(), any());
 
         when(limits.isReady(island)).thenReturn(true);
-        when(limits.tryIncrement(island, Material.HOPPER, 0, 0)).thenReturn(false);
+        when(limits.hasRoom(island, Material.HOPPER)).thenReturn(false);
         BlockPlaceEvent denied = placeEvent(ISLAND_WORLD, Material.HOPPER, player);
         listener.onBlockPlace(denied);
         assertTrue(denied.isCancelled());
         verify(player).sendMessage(full);
 
-        when(limits.tryIncrement(island, Material.HOPPER, 0, 0)).thenReturn(true);
+        when(limits.hasRoom(island, Material.HOPPER)).thenReturn(true);
         BlockPlaceEvent allowed = placeEvent(ISLAND_WORLD, Material.HOPPER, player);
         listener.onBlockPlace(allowed);
         assertFalse(allowed.isCancelled());
@@ -256,8 +268,29 @@ class LimitHandlerTest {
         listener.onBlockPlace(untracked);
         assertFalse(untracked.isCancelled());
 
-        verify(limits, times(2)).tryIncrement(any(), any(), anyInt(), anyInt());
+        verify(limits, times(2)).hasRoom(any(), any());
         verify(player, times(2)).sendMessage(any(Component.class));
+        verify(limits, never()).increment(any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void aPlaceIsCountedOnlyOnceItStands() {
+        LimitHandler limits = mock(LimitHandler.class);
+        when(limits.getBlockLimit(any())).thenReturn(LimitHandler.UNLIMITED);
+        when(limits.getBlockLimit(Material.HOPPER)).thenReturn(50);
+        IslandLimitListener listener = new IslandLimitListener(plugin, islandWorldConfig(), limits, cache());
+        Player player = mock(Player.class);
+
+        BlockPlaceEvent refused = placeEvent(ISLAND_WORLD, Material.HOPPER, player);
+        refused.setBuild(false);
+        listener.onBlockPlaced(refused);
+        verify(limits, never()).increment(any(), any(), anyInt(), anyInt());
+
+        listener.onBlockPlaced(placeEvent(ISLAND_WORLD, Material.STONE, player));
+        listener.onBlockPlaced(placeEvent("world", Material.HOPPER, player));
+        listener.onBlockPlaced(placeEvent(ISLAND_WORLD, Material.HOPPER, player));
+        verify(limits).increment(island, Material.HOPPER, 0, 0);
+        verify(limits, times(1)).increment(any(), any(), anyInt(), anyInt());
     }
 
     @Test

@@ -66,10 +66,33 @@ public final class IslandLimitListener implements Listener {
             return;
         }
 
-        if (!limitHandler.tryIncrement(islandUuid, type, block.getX() >> 4, block.getZ() >> 4)) {
+        if (!limitHandler.hasRoom(islandUuid, type)) {
             event.setCancelled(true);
             event.getPlayer().sendMessage(config.getBlockLimitReachedMessage(type.name(), limit));
             plugin.debug("IslandLimitListener", "Denied block place due to limit: island=" + islandUuid + ", type=" + type + ", player=" + event.getPlayer().getUniqueId());
+        }
+    }
+
+    /**
+     * Counts a capped block once its placement stands: a handler after the check above may still
+     * cancel it. Places on one island run one after another on its region thread, so none can
+     * slip in between the check and the count.
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBlockPlaced(BlockPlaceEvent event) {
+        if (!event.canBuild()) {
+            return;
+        }
+
+        Block block = event.getBlockPlaced();
+        Material type = block.getType();
+        if (limitHandler.getBlockLimit(type) == LimitHandler.UNLIMITED) {
+            return;
+        }
+
+        UUID islandUuid = getIslandUuid(block.getLocation());
+        if (islandUuid != null) {
+            limitHandler.increment(islandUuid, type, block.getX() >> 4, block.getZ() >> 4);
         }
     }
 
