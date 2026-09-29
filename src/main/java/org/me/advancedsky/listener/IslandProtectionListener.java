@@ -447,11 +447,14 @@ public class IslandProtectionListener implements Listener {
         }
     }
 
+    /**
+     * Operators go anywhere, the gap and free slots included, as they walk out of any boundary.
+     */
     private void checkArrival(PlayerTeleportEvent event) {
         Player player = event.getPlayer();
         Location to = event.getTo();
 
-        if (!isIslandWorld(to)) {
+        if (!isIslandWorld(to) || player.isOp()) {
             return;
         }
 
@@ -462,7 +465,7 @@ public class IslandProtectionListener implements Listener {
             return;
         }
 
-        if (player.isOp() || mayEnter(player, island)) {
+        if (mayEnter(player, island)) {
             return;
         }
 

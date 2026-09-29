@@ -92,6 +92,14 @@ class IslandProtectionListenerTest {
     }
 
     @Test
+    void operatorsMayTeleportIntoTheGap() {
+        island(false, Set.of());
+
+        assertTrue(teleport(visitor, false, outside));
+        assertFalse(teleport(visitor, true, outside));
+    }
+
+    @Test
     void theArrivalPortalIsOnlyBuiltWhereTheTravellerMayEdit() {
         island(false, Set.of());
 
@@ -111,6 +119,12 @@ class IslandProtectionListenerTest {
     private boolean portal(UUID playerUuid, Location from, Location to) {
         PlayerPortalEvent event = new PlayerPortalEvent(player(playerUuid, false), from, to, PlayerTeleportEvent.TeleportCause.NETHER_PORTAL);
         listener.onPortal(event);
+        return event.isCancelled();
+    }
+
+    private boolean teleport(UUID playerUuid, boolean op, Location to) {
+        PlayerTeleportEvent event = new PlayerTeleportEvent(player(playerUuid, op), center, to);
+        listener.onTeleport(event);
         return event.isCancelled();
     }
 
