@@ -62,7 +62,8 @@ keeps the teleport and the player is sent there through the proxy; it fires when
 the island row lock), sends everyone standing in the island area to the lobby, then clears the
 area: it walks the 32x32 chunks of the island's region file in batches, removes non-player
 entities and every block, and skips chunks that were never generated. Slots are never handed
-out twice, so a new island can never land on an area that is still being cleared.
+out twice, so a new island can never land on an area that is still being cleared, and the
+command completes as soon as the row is gone instead of waiting for the area.
 
 ## Features
 

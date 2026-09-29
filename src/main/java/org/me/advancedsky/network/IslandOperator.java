@@ -66,7 +66,9 @@ public class IslandOperator {
     }
 
     /**
-     * Deletes the island's rows, then clears its area.
+     * Deletes the island's rows, then clears its area. Completes once the rows are gone: clearing
+     * takes longer than a remote requester waits, and nothing can reach the island or reuse its
+     * slot any more.
      */
     public CompletableFuture<Void> deleteIsland(Actor actor, UUID islandUuid) {
         return serialized(islandUuid, () -> {
@@ -75,12 +77,14 @@ public class IslandOperator {
             islandCache.unload(islandUuid);
             limitHandler.unload(islandUuid);
 
-            return worldHandler.deleteIsland(slot).exceptionally(e -> {
-                plugin.severe("Island rows deleted but the area could not be cleared, leaving orphaned blocks at slot " + slot + ": " + islandUuid, e);
-                return null;
-            }).thenRunAsync(() -> {
-                plugin.debug("IslandOperator", "Deleted island " + islandUuid + " at slot " + slot);
-            }, plugin.getBukkitAsyncExecutor());
+            worldHandler.deleteIsland(slot).whenComplete((v, e) -> {
+                if (e != null) {
+                    plugin.severe("Island rows deleted but the area could not be cleared, leaving orphaned blocks at slot " + slot + ": " + islandUuid, e);
+                } else {
+                    plugin.debug("IslandOperator", "Deleted island " + islandUuid + " at slot " + slot);
+                }
+            });
+            return CompletableFuture.completedFuture(null);
         });
     }
 
