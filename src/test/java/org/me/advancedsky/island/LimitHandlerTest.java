@@ -1,7 +1,6 @@
 package org.me.advancedsky.island;
 
 import net.kyori.adventure.text.Component;
-import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -18,6 +17,7 @@ import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityPlaceEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.util.BoundingBox;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 class LimitHandlerTest {
     private static final String ISLAND_WORLD = "islands";
@@ -185,29 +186,32 @@ class LimitHandlerTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void entityLimitCountsLiveEntitiesOfThatTypeOnTheIsland() throws Exception {
         LimitHandler limits = new LimitHandler(plugin, defaultLimits(), grid);
         World world = mock(World.class);
-        Chunk centreChunk = loadedChunk(world, center.getBlockX() >> 4, center.getBlockZ() >> 4);
-        // The chunk on the island's west edge also holds blocks beyond the boundary: minecarts
-        // there are not the island's.
-        int outsideX = center.getBlockX() - SIZE / 2 - 1;
-        Chunk edgeChunk = loadedChunk(world, outsideX >> 4, center.getBlockZ() >> 4);
-        List<Entity> outside = entities(world, EntityType.MINECART, 5, outsideX);
-        when(edgeChunk.getEntities()).thenReturn(outside.toArray(Entity[]::new));
+        // Minecarts just beyond the west edge of the boundary are not the island's.
+        List<Entity> nearby = new ArrayList<>(entities(world, EntityType.MINECART, 5, center.getBlockX() - SIZE / 2 - 1));
+        nearby.addAll(entities(world, EntityType.MINECART, 19, center.getBlockX()));
+        nearby.addAll(entities(world, EntityType.ARMOR_STAND, 10, center.getBlockX()));
+        List<BoundingBox> boxes = new ArrayList<>();
+        when(world.getNearbyEntities(any(BoundingBox.class), any())).thenAnswer(call -> {
+            boxes.add(call.getArgument(0));
+            Predicate<Entity> filter = call.getArgument(1);
+            return nearby.stream().filter(filter).toList();
+        });
 
-        List<Entity> entities = new ArrayList<>(entities(world, EntityType.MINECART, 19, center.getBlockX()));
-        entities.addAll(entities(world, EntityType.ARMOR_STAND, 5, center.getBlockX()));
-        when(centreChunk.getEntities()).thenReturn(entities.toArray(Entity[]::new));
         assertTrue(limits.canSpawnEntity(cachedIsland, world, EntityType.MINECART));
-
-        List<Entity> full = entities(world, EntityType.MINECART, 20, center.getBlockX());
-        when(centreChunk.getEntities()).thenReturn(full.toArray(Entity[]::new));
+        nearby.addAll(entities(world, EntityType.MINECART, 1, center.getBlockX()));
         assertFalse(limits.canSpawnEntity(cachedIsland, world, EntityType.MINECART));
-
         assertTrue(limits.canSpawnEntity(cachedIsland, world, EntityType.ZOMBIE));
-        verify(centreChunk, times(2)).getEntities();
-        verify(edgeChunk, times(2)).getEntities();
+
+        // Only the island boundary is looked at, and not at all for an unlimited type.
+        assertEquals(2, boxes.size());
+        BoundingBox boundary = boxes.getFirst();
+        assertEquals(center.getBlockX() - SIZE / 2, boundary.getMinX());
+        assertEquals(SIZE, boundary.getWidthX());
+        assertEquals(SIZE, boundary.getWidthZ());
     }
 
     /**
@@ -220,13 +224,6 @@ class LimitHandlerTest {
 
         limits.increment(island, type, chunkX, chunkZ);
         return true;
-    }
-
-    private static Chunk loadedChunk(World world, int chunkX, int chunkZ) {
-        Chunk chunk = mock(Chunk.class);
-        when(world.isChunkLoaded(chunkX, chunkZ)).thenReturn(true);
-        when(world.getChunkAt(chunkX, chunkZ)).thenReturn(chunk);
-        return chunk;
     }
 
     @Test

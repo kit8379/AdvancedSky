@@ -3,8 +3,8 @@ package org.me.advancedsky.island;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
-import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
+import org.bukkit.util.BoundingBox;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.grid.IslandGrid;
@@ -242,7 +242,8 @@ public class LimitHandler {
     /**
      * Whether one more entity of that type fits on the island. Runs on the island's region
      * thread: every loaded chunk of one island belongs to the same region, as islands are far
-     * smaller than the spacing that keeps neighbours in separate regions.
+     * smaller than the spacing that keeps neighbours in separate regions. The lookup visits only
+     * the loaded entity sections inside the island boundary.
      */
     public boolean canSpawnEntity(Island island, World world, EntityType type) {
         int limit = entityLimitByOrdinal[type.ordinal()];
@@ -252,27 +253,15 @@ public class LimitHandler {
 
         int size = config.getUpgradeLimit("island-size", island.getSizeLevel());
         Location center = islandGrid.center(world, island.getSlot());
-        int minChunkX = Math.floorDiv(center.getBlockX() - size / 2, 16);
-        int minChunkZ = Math.floorDiv(center.getBlockZ() - size / 2, 16);
-        int maxChunkX = Math.floorDiv(center.getBlockX() - size / 2 + size - 1, 16);
-        int maxChunkZ = Math.floorDiv(center.getBlockZ() - size / 2 + size - 1, 16);
+        int minX = center.getBlockX() - size / 2;
+        int minZ = center.getBlockZ() - size / 2;
+        BoundingBox boundary = new BoundingBox(minX, world.getMinHeight(), minZ, minX + size, world.getMaxHeight(), minZ + size);
 
-        int count = 0;
-        for (int cx = minChunkX; cx <= maxChunkX; cx++) {
-            for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
-                if (!world.isChunkLoaded(cx, cz)) {
-                    continue;
-                }
-
-                for (Entity entity : world.getChunkAt(cx, cz).getEntities()) {
-                    Location location = entity.getLocation();
-                    if (entity.getType() == type && islandGrid.isInsideIsland(island.getSlot(), size, location.getBlockX(), location.getBlockZ())) {
-                        count++;
-                    }
-                }
-            }
-        }
-
+        // An entity whose box only reaches over the boundary stands outside it.
+        int count = world.getNearbyEntities(boundary, entity -> {
+            Location location = entity.getLocation();
+            return entity.getType() == type && islandGrid.isInsideIsland(island.getSlot(), size, location.getBlockX(), location.getBlockZ());
+        }).size();
         return count < limit;
     }
 
