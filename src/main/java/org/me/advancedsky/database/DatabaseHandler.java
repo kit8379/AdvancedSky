@@ -822,9 +822,10 @@ public class DatabaseHandler {
 
     /**
      * Compare-and-set: the write only lands while the upgrade is still at the level the caller
-     * read, so two members paying for the same level cannot both succeed.
+     * read, so two members paying for the same level cannot both succeed. It rolls back instead
+     * of committing after the deadline, when the payer may already have been refunded.
      */
-    public void updateIslandUpgradeLevel(Actor actor, UUID islandUuid, String upgradeId, int expectedLevel, int newLevel) {
+    public void updateIslandUpgradeLevel(Actor actor, UUID islandUuid, String upgradeId, int expectedLevel, int newLevel, long deadlineMillis) {
         inTransaction(connection -> {
             lockIsland(connection, islandUuid);
             requireRole(actor, connection, islandUuid, RequiredRole.MEMBER);
@@ -839,6 +840,10 @@ public class DatabaseHandler {
                 stmt.setInt(3, newLevel);
                 stmt.setInt(4, newLevel);
             });
+
+            if (System.currentTimeMillis() > deadlineMillis) {
+                throw new IllegalStateException("Upgrade write for island " + islandUuid + " passed its deadline");
+            }
 
             return null;
         });

@@ -143,6 +143,15 @@ class UpgradeHandlerTest {
     }
 
     @Test
+    void aRefundThatThrowsIsLoggedWithThePurchaseContext() {
+        when(distributor.setUpgradeLevel(actor, island, "coop-limit", 1, 2)).thenReturn(CompletableFuture.failedFuture(new UpgradeLevelChangedException()));
+        when(economy.depositPlayer(payer, 25000.0)).thenThrow(new IllegalStateException("economy down"));
+
+        assertFailure(UpgradeLevelChangedException.class, handler.buyUpgrade(actor, island, buyer, "coop-limit"));
+        verify(plugin).severe(eq("Could not refund 25000.0 to " + buyer + " after a failed coop-limit upgrade purchase."), any(Throwable.class));
+    }
+
+    @Test
     void insufficientFundsWritesNothing() {
         when(economy.withdrawPlayer(payer, 25000.0)).thenReturn(response(EconomyResponse.ResponseType.FAILURE));
 

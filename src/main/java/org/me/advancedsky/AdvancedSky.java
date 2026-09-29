@@ -248,7 +248,7 @@ public class AdvancedSky extends JavaPlugin {
         messenger.register(IslandDistributor.ACTION_ISLAND_HOME_DELETE, payload -> emptyResponse(islandOperator.deleteHome(uuid(payload, "islandUuid"), uuid(payload, "playerUuid"), payload.getString("homeName"))));
         messenger.register(IslandDistributor.ACTION_ISLAND_WARP_SET, payload -> emptyResponse(islandOperator.setWarp(Actor.fromJson(payload), uuid(payload, "islandUuid"), payload.getString("warpName"), payload.getString("warpLocation"))));
         messenger.register(IslandDistributor.ACTION_ISLAND_WARP_DELETE, payload -> emptyResponse(islandOperator.deleteWarp(Actor.fromJson(payload), uuid(payload, "islandUuid"), payload.getString("warpName"))));
-        messenger.register(IslandDistributor.ACTION_ISLAND_UPGRADE_SET, payload -> emptyResponse(islandOperator.setUpgradeLevel(Actor.fromJson(payload), uuid(payload, "islandUuid"), payload.getString("upgradeId"), payload.getInt("expectedLevel"), payload.getInt("newLevel"))));
+        messenger.register(IslandDistributor.ACTION_ISLAND_UPGRADE_SET, payload -> emptyResponse(islandOperator.setUpgradeLevel(Actor.fromJson(payload), uuid(payload, "islandUuid"), payload.getString("upgradeId"), payload.getInt("expectedLevel"), payload.getInt("newLevel"), System.currentTimeMillis() + CrossServerMessenger.HANDLER_DEADLINE_MILLIS)));
         messenger.register(IslandDistributor.ACTION_PLAYER_CONNECT, payload -> emptyResponse(ServerUtil.connectToServer(this, uuid(payload, "playerUuid"), payload.getString("targetServer"))));
     }
 

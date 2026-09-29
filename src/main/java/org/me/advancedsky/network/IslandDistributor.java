@@ -231,12 +231,17 @@ public class IslandDistributor {
         return onIsland(islandUuid, ACTION_ISLAND_WARP_DELETE, payload, () -> islandOperator.deleteWarp(actor, islandUuid, warpName), VOID);
     }
 
+    /**
+     * On another host the write is refused once the request has waited so long that the answer
+     * could miss this server's wait (see {@link CrossServerMessenger#HANDLER_DEADLINE_MILLIS}), so
+     * after a timeout the stored level tells whether it landed. Here nothing times out.
+     */
     public CompletableFuture<Void> setUpgradeLevel(Actor actor, UUID islandUuid, String upgradeId, int expectedLevel, int newLevel) {
         JSONObject payload = islandActorPayload(actor, islandUuid);
         payload.put("upgradeId", upgradeId);
         payload.put("expectedLevel", expectedLevel);
         payload.put("newLevel", newLevel);
-        return onIsland(islandUuid, ACTION_ISLAND_UPGRADE_SET, payload, () -> islandOperator.setUpgradeLevel(actor, islandUuid, upgradeId, expectedLevel, newLevel), VOID);
+        return onIsland(islandUuid, ACTION_ISLAND_UPGRADE_SET, payload, () -> islandOperator.setUpgradeLevel(actor, islandUuid, upgradeId, expectedLevel, newLevel, Long.MAX_VALUE), VOID);
     }
 
     // =====================================================================================

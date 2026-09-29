@@ -69,9 +69,9 @@ public class UpgradeHandler {
     }
 
     /**
-     * A timed-out request leaves the write's outcome unknown: the host may have applied it after
-     * the requester stopped waiting. The stored level decides; if it cannot be read, the write
-     * counts as failed.
+     * A timed-out request leaves the write's outcome unknown to the requester, but no longer
+     * open: the host refuses to commit it once the answer could miss the requester's wait, so the
+     * stored level decides. If it cannot be read, the write counts as failed.
      */
     private boolean writeLanded(UUID islandUuid, String upgradeId, Purchase purchase, Throwable error) {
         Throwable cause = error;
@@ -139,10 +139,14 @@ public class UpgradeHandler {
     }
 
     private CompletableFuture<Void> refund(UUID payerUuid, double amount, String upgradeId) {
-        return economy.deposit(payerUuid, amount).thenAccept(success -> {
-            if (!success) {
-                plugin.severe("Could not refund " + amount + " to " + payerUuid + " after a failed " + upgradeId + " upgrade purchase.");
+        return economy.deposit(payerUuid, amount).handle((success, error) -> {
+            String message = "Could not refund " + amount + " to " + payerUuid + " after a failed " + upgradeId + " upgrade purchase.";
+            if (error != null) {
+                plugin.severe(message, error);
+            } else if (!success) {
+                plugin.severe(message);
             }
+            return null;
         });
     }
 
