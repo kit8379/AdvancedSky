@@ -27,6 +27,11 @@ public class ConfigHandler {
     private volatile FileConfiguration upgrades;
     private volatile FileConfiguration limits;
 
+    // Read on every move, block change and hit, so kept from the last load rather than looked up
+    // in the YAML tree each time.
+    private volatile String islandWorldName;
+    private volatile Map<String, Map<Integer, Integer>> upgradeLimits;
+
     public ConfigHandler(AdvancedSky plugin) {
         this.plugin = plugin;
         reload();
@@ -39,6 +44,24 @@ public class ConfigHandler {
         this.levels = load("levels.yml");
         this.upgrades = load("upgrades.yml");
         this.limits = load("limits.yml");
+        this.islandWorldName = config.getString("island.world");
+        this.upgradeLimits = loadUpgradeLimits();
+    }
+
+    /**
+     * The size or limit of every level of every upgrade, by upgrade id and level.
+     */
+    private Map<String, Map<Integer, Integer>> loadUpgradeLimits() {
+        Map<String, Map<Integer, Integer>> result = new HashMap<>();
+        for (String upgradeId : getUpgradeIds()) {
+            String valueKey = upgradeId.equals("island-size") ? "size" : "limit";
+            Map<Integer, Integer> byLevel = new HashMap<>();
+            for (int level : getUpgradeLevels(upgradeId)) {
+                byLevel.put(level, upgrades.getInt("upgrades." + upgradeId + "." + level + "." + valueKey));
+            }
+            result.put(upgradeId, Map.copyOf(byLevel));
+        }
+        return Map.copyOf(result);
     }
 
     private FileConfiguration load(String fileName) {
@@ -203,7 +226,7 @@ public class ConfigHandler {
     }
 
     public String getIslandWorldName() {
-        return config.getString("island.world");
+        return islandWorldName;
     }
 
     public int getIslandHeight() {
@@ -286,9 +309,11 @@ public class ConfigHandler {
         return Objects.requireNonNull(upgrades.getConfigurationSection("upgrades." + upgradeId)).getKeys(false).stream().map(Integer::parseInt).sorted().toList();
     }
 
+    /**
+     * Zero for an upgrade or level the config does not have.
+     */
     public int getUpgradeLimit(String upgradeId, int level) {
-        String valueKey = upgradeId.equals("island-size") ? "size" : "limit";
-        return upgrades.getInt("upgrades." + upgradeId + "." + level + "." + valueKey);
+        return upgradeLimits.getOrDefault(upgradeId, Map.of()).getOrDefault(level, 0);
     }
 
     /**

@@ -30,6 +30,7 @@ import static org.mockito.Mockito.*;
 
 import java.io.InputStreamReader;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -74,6 +75,12 @@ class IslandSizeTest {
             field.setAccessible(true);
             field.set(realConfig, YamlConfiguration.loadConfiguration(new InputStreamReader(stream, StandardCharsets.UTF_8)));
         }
+        // The limits reload() keeps from the upgrades just set.
+        Method loadUpgradeLimits = ConfigHandler.class.getDeclaredMethod("loadUpgradeLimits");
+        loadUpgradeLimits.setAccessible(true);
+        Field upgradeLimits = ConfigHandler.class.getDeclaredField("upgradeLimits");
+        upgradeLimits.setAccessible(true);
+        upgradeLimits.set(realConfig, loadUpgradeLimits.invoke(realConfig));
         assertTrue(realConfig.isUpgrade("island-size"));
         assertEquals(List.of(1, 2, 3, 4, 5), realConfig.getUpgradeLevels("island-size"));
         int[] sizes = {75, 100, 125, 150, 175};

@@ -149,10 +149,11 @@ public class IslandBorderListener implements Listener {
 
         int size = config.getUpgradeLimit("island-size", island.getSizeLevel());
         long key = ((long) island.getSlot() << 32) | size;
-        Long shown = shownBorders.put(playerUuid, key);
+        Long shown = shownBorders.get(playerUuid);
         if (shown != null && shown == key) {
             return;
         }
+        shownBorders.put(playerUuid, key);
 
         // The boundary runs from size/2 blocks before the centre block to size - size/2 - 1 after
         // it, so an odd size is centred on the middle of that block, not on its corner.

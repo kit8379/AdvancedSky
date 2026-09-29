@@ -72,10 +72,14 @@ public class IslandActivityListener implements Listener {
     private void update(Player player, Location location) {
         UUID islandUuid = getIslandUuid(location);
         UUID playerUuid = player.getUniqueId();
-        UUID previous = islandUuid == null ? currentIsland.remove(playerUuid) : currentIsland.put(playerUuid, islandUuid);
+        UUID previous = islandUuid == null ? currentIsland.remove(playerUuid) : currentIsland.get(playerUuid);
 
         if (islandUuid != null && islandUuid.equals(previous)) {
             return;
+        }
+
+        if (islandUuid != null) {
+            currentIsland.put(playerUuid, islandUuid);
         }
 
         if (previous != null) {

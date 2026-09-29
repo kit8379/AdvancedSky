@@ -16,6 +16,7 @@ import org.mockito.MockedStatic;
 
 import java.io.InputStreamReader;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
@@ -61,6 +62,12 @@ class BiomeUpgradeTest {
             field.setAccessible(true);
             field.set(realConfig, YamlConfiguration.loadConfiguration(new InputStreamReader(stream, StandardCharsets.UTF_8)));
         }
+        // The limits reload() keeps from the upgrades just set.
+        Method loadUpgradeLimits = ConfigHandler.class.getDeclaredMethod("loadUpgradeLimits");
+        loadUpgradeLimits.setAccessible(true);
+        Field upgradeLimits = ConfigHandler.class.getDeclaredField("upgradeLimits");
+        upgradeLimits.setAccessible(true);
+        upgradeLimits.set(realConfig, loadUpgradeLimits.invoke(realConfig));
         assertTrue(realConfig.isUpgrade("biomes"));
         assertEquals(List.of(1, 2, 3, 4, 5), realConfig.getUpgradeLevels("biomes"));
         assertEquals(List.of("plains"), realConfig.getUpgradeAllowedBiomes(1));
