@@ -15,7 +15,8 @@ limit:
     PISTON: 500
 
   # Maximum entities of each type inside the island border, checked when a
-  # creature spawns or a player places a vehicle, armor stand or hanging.
+  # creature spawns, a vehicle is placed or dispensed, or a player places an
+  # armor stand or hanging.
   entities:
     MINECART: 20
     ITEM_FRAME: 100

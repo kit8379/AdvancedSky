@@ -17,6 +17,7 @@ import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityPlaceEvent;
 import org.bukkit.event.entity.EntityTransformEvent;
 import org.bukkit.event.hanging.HangingPlaceEvent;
+import org.bukkit.event.vehicle.VehicleCreateEvent;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
@@ -105,6 +106,12 @@ public final class IslandLimitListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onEntityPlace(EntityPlaceEvent event) {
         denyIfFull(event, event.getBlock().getLocation(), event.getEntityType());
+    }
+
+    /** Minecarts and boats a dispenser puts out fire neither of the events above. */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onVehicleCreate(VehicleCreateEvent event) {
+        denyIfFull(event, event.getVehicle().getLocation(), event.getVehicle().getType());
     }
 
     /** Item frames and paintings. */
