@@ -30,17 +30,22 @@ public class ServerUtil {
         }, plugin.getGlobalRegionExecutor()).thenCompose(player -> {
             // Sent from the thread that owns the player, as Folia requires for player state.
             CompletableFuture<Void> sent = new CompletableFuture<>();
-            player.getScheduler().run(plugin, task -> {
+            boolean scheduled = player.getScheduler().run(plugin, task -> {
                 try (ByteArrayOutputStream byteArray = new ByteArrayOutputStream(); DataOutputStream out = new DataOutputStream(byteArray)) {
                     out.writeUTF("Connect");
                     out.writeUTF(serverName);
                     player.sendPluginMessage(plugin, "BungeeCord", byteArray.toByteArray());
                     sent.complete(null);
-                } catch (IOException e) {
+                } catch (IOException | RuntimeException e) {
                     plugin.severe("Failed to send plugin message to player " + player.getName(), e);
                     sent.completeExceptionally(e);
                 }
-            }, () -> sent.completeExceptionally(new IllegalStateException("Player left before the connect: " + playerUuid)));
+            }, () -> sent.completeExceptionally(new IllegalStateException("Player left before the connect: " + playerUuid))) != null;
+
+            // A player whose scheduler is already retired gets neither the task nor the callback.
+            if (!scheduled) {
+                sent.completeExceptionally(new IllegalStateException("Player left before the connect: " + playerUuid));
+            }
             return sent;
         });
     }
