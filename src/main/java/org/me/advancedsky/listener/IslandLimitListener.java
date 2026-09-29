@@ -50,7 +50,7 @@ public final class IslandLimitListener implements Listener {
         Block block = event.getBlockPlaced();
         Material type = block.getType();
         int limit = limitHandler.getBlockLimit(type);
-        if (limit == LimitHandler.UNLIMITED) {
+        if (limit == LimitHandler.UNLIMITED || addsToExisting(event)) {
             return;
         }
 
@@ -86,7 +86,7 @@ public final class IslandLimitListener implements Listener {
 
         Block block = event.getBlockPlaced();
         Material type = block.getType();
-        if (limitHandler.getBlockLimit(type) == LimitHandler.UNLIMITED) {
+        if (limitHandler.getBlockLimit(type) == LimitHandler.UNLIMITED || addsToExisting(event)) {
             return;
         }
 
@@ -94,6 +94,13 @@ public final class IslandLimitListener implements Listener {
         if (islandUuid != null) {
             limitHandler.increment(islandUuid, type, block.getX() >> 4, block.getZ() >> 4);
         }
+    }
+
+    /**
+     * A second slab, another candle, pickle, egg or snow layer goes into the block already there.
+     */
+    private static boolean addsToExisting(BlockPlaceEvent event) {
+        return event.getBlockReplacedState().getType() == event.getBlockPlaced().getType();
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)

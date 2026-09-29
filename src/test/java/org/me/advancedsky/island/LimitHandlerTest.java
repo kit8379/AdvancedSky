@@ -291,6 +291,24 @@ class LimitHandlerTest {
     }
 
     @Test
+    void addingToABlockAlreadyThereIsNeitherCheckedNorCounted() {
+        LimitHandler limits = mock(LimitHandler.class);
+        when(limits.getBlockLimit(any())).thenReturn(LimitHandler.UNLIMITED);
+        when(limits.getBlockLimit(Material.HOPPER)).thenReturn(50);
+        IslandLimitListener listener = new IslandLimitListener(plugin, islandWorldConfig(), limits, cache());
+        BlockState existing = mock(BlockState.class);
+        when(existing.getType()).thenReturn(Material.HOPPER);
+        BlockPlaceEvent stacked = new BlockPlaceEvent(block(ISLAND_WORLD, Material.HOPPER), existing, mock(Block.class), mock(ItemStack.class), mock(Player.class), true);
+
+        listener.onBlockPlace(stacked);
+        listener.onBlockPlaced(stacked);
+
+        assertFalse(stacked.isCancelled());
+        verify(limits, never()).hasRoom(any(), any());
+        verify(limits, never()).increment(any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
     void breakReleasesTrackedBlocksOnIslandsOnly() {
         LimitHandler limits = mock(LimitHandler.class);
         when(limits.getBlockLimit(any())).thenReturn(LimitHandler.UNLIMITED);
