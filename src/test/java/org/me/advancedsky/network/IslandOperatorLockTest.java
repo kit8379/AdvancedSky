@@ -53,7 +53,6 @@ class IslandOperatorLockTest {
         assertTrue(evicts.test(player(visitor)));
         verify(database, never()).getIslandPlayers(island);
         verify(database, never()).getIslandCoops(island);
-        verify(database, never()).getIslandSlot(island);
     }
 
     @Test

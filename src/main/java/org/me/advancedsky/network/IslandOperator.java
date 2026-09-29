@@ -149,7 +149,7 @@ public class IslandOperator {
                 return CompletableFuture.failedFuture(new CannotExpelIslandPlayerException());
             }
 
-            return worldHandler.removePlayerFromIsland(slotOf(islandUuid), playerUuid).thenAccept(removed -> {
+            return worldHandler.removePlayerFromIsland(getIslandSlot(islandUuid), playerUuid).thenAccept(removed -> {
                 if (!removed) {
                     throw new PlayerNotInIslandException();
                 }
@@ -169,7 +169,7 @@ public class IslandOperator {
             database.deleteIslandPlayer(actor, islandUuid, playerUuid);
             return null;
         }).thenCompose(v -> {
-            return worldHandler.removePlayerFromIsland(slotOf(islandUuid), playerUuid);
+            return worldHandler.removePlayerFromIsland(getIslandSlot(islandUuid), playerUuid);
         }).thenApply(removed -> null);
     }
 
@@ -185,7 +185,7 @@ public class IslandOperator {
             database.updateBanPlayer(actor, islandUuid, playerUuid);
             return null;
         }).thenCompose(v -> {
-            return worldHandler.removePlayerFromIsland(slotOf(islandUuid), playerUuid);
+            return worldHandler.removePlayerFromIsland(getIslandSlot(islandUuid), playerUuid);
         }).thenApply(removed -> null);
     }
 
@@ -208,7 +208,7 @@ public class IslandOperator {
             database.deleteCoopPlayer(actor, islandUuid, playerUuid);
             return null;
         }).thenCompose(v -> {
-            return worldHandler.removePlayerFromIsland(slotOf(islandUuid), playerUuid);
+            return worldHandler.removePlayerFromIsland(getIslandSlot(islandUuid), playerUuid);
         }).thenApply(removed -> null);
     }
 
@@ -231,7 +231,7 @@ public class IslandOperator {
                 allowed.addAll(database.getIslandCoops(islandUuid));
             }
 
-            return worldHandler.removePlayersFromIsland(slotOf(islandUuid), player -> !allowed.contains(player.getUniqueId())).thenApply(v -> true);
+            return worldHandler.removePlayersFromIsland(getIslandSlot(islandUuid), player -> !allowed.contains(player.getUniqueId())).thenApply(v -> true);
         });
     }
 
@@ -330,15 +330,6 @@ public class IslandOperator {
 
     private int getIslandSlot(UUID islandUuid) {
         return database.getIslandSlot(islandUuid).orElseThrow(IslandDoesNotExistException::new);
-    }
-
-    /**
-     * The island's slot from the cache, which holds every island hosted here, or from the
-     * database while its entry is unavailable.
-     */
-    private int slotOf(UUID islandUuid) {
-        Island island = islandCache.get(islandUuid);
-        return island != null ? island.getSlot() : getIslandSlot(islandUuid);
     }
 
     /**
