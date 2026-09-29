@@ -29,6 +29,10 @@ demand; AdvancedSky keeps every island of a server in one pre-loaded world, on a
   number in MySQL maps to a position, so no coordinates are stored. Each island server keeps an
   in-memory cache of all its islands, read in one pass at startup before anyone can join and
   refreshed after every change it makes, for the listeners to read.
+- **Co-ops end when their player is gone.** A co-op ends a few seconds after its player quits
+  and is not online elsewhere. Players online when a server stops or crashes never quit there,
+  so each island server also removes, every five minutes, the co-ops on its islands whose player
+  the online registry no longer lists.
 - **Borders per player.** NewSky's per-world border becomes a border sent to each player around
   the island they stand on, and a move out of the island boundary is refused.
 - **The starter island is a world, not a file.** Every island server also loads a template world

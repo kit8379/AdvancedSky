@@ -26,6 +26,7 @@ import org.me.advancedsky.network.IslandDistributor;
 import org.me.advancedsky.network.IslandOperator;
 import org.me.advancedsky.placeholder.AdvancedSkyExpansion;
 import org.me.advancedsky.redis.RedisHandler;
+import org.me.advancedsky.scheduler.CoopCleanupScheduler;
 import org.me.advancedsky.scheduler.LevelUpdateScheduler;
 import org.me.advancedsky.teleport.TeleportHandler;
 import org.me.advancedsky.thread.BukkitAsyncExecutor;
@@ -46,6 +47,7 @@ public class AdvancedSky extends JavaPlugin {
     private DatabaseHandler databaseHandler;
     private OnlinePlayerRegistry onlinePlayerRegistry;
     private LevelUpdateScheduler levelUpdateScheduler;
+    private CoopCleanupScheduler coopCleanupScheduler;
     private CrossServerMessenger crossServerMessenger;
     private LimitHandler limitHandler;
     private LevelHandler levelHandler;
@@ -161,6 +163,7 @@ public class AdvancedSky extends JavaPlugin {
 
             info("Starting all schedulers for the plugin");
             levelUpdateScheduler = new LevelUpdateScheduler(this, levelHandler);
+            coopCleanupScheduler = new CoopCleanupScheduler(this, islandCache, coopHandler, onlinePlayerRegistry);
             info("All schedulers loaded");
 
             info("Starting API");
@@ -217,6 +220,9 @@ public class AdvancedSky extends JavaPlugin {
 
             crossServerMessenger.start();
             levelUpdateScheduler.start();
+            if (!config.isLobbyOnly()) {
+                coopCleanupScheduler.start();
+            }
 
         } catch (Exception e) {
             getLogger().log(Level.SEVERE, "An error occurred during plugin initialization", e);
@@ -279,6 +285,10 @@ public class AdvancedSky extends JavaPlugin {
 
         if (levelUpdateScheduler != null) {
             levelUpdateScheduler.stop();
+        }
+
+        if (coopCleanupScheduler != null) {
+            coopCleanupScheduler.stop();
         }
 
         if (crossServerMessenger != null) {

@@ -6,6 +6,7 @@ import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.model.Island;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -51,6 +52,13 @@ public class IslandCache {
         }
 
         return islands.get(islandUuid);
+    }
+
+    /**
+     * Every island hosted here whose entry is available (see {@link #get}).
+     */
+    public List<Island> getIslands() {
+        return islands.values().stream().filter(island -> !dirty.containsKey(island.getIslandUuid())).toList();
     }
 
     /**
