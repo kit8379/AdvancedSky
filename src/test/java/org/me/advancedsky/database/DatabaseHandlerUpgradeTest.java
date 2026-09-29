@@ -102,12 +102,29 @@ class DatabaseHandlerUpgradeTest {
         UUID first = UUID.randomUUID();
         UUID second = UUID.randomUUID();
 
-        assertEquals("1", assertThrows(TeamLimitReachedException.class, () -> database.addIslandPlayer(new Actor.Player(first), island, first, "member")).getMessage());
+        assertEquals("1", assertThrows(TeamLimitReachedException.class, () -> database.addIslandPlayer(new Actor.Player(owner), island, first, "member")).getMessage());
 
         database.updateIslandUpgradeLevel(admin, island, "team-limit", 1, 2);
-        database.addIslandPlayer(new Actor.Player(first), island, first, "member");
-        assertEquals("2", assertThrows(TeamLimitReachedException.class, () -> database.addIslandPlayer(new Actor.Player(second), island, second, "member")).getMessage());
+        database.addIslandPlayer(new Actor.Player(owner), island, first, "member");
+        assertEquals("2", assertThrows(TeamLimitReachedException.class, () -> database.addIslandPlayer(new Actor.Player(first), island, second, "member")).getMessage());
         assertEquals(2, database.getIslandPlayers(island).size());
+    }
+
+    @Test
+    void joiningNeedsTheInviterOnTheIslandAndNoBanUnlessAnOperatorAddsThePlayer() {
+        UUID invitee = UUID.randomUUID();
+        UUID stranger = UUID.randomUUID();
+        database.updateIslandUpgradeLevel(admin, island, "team-limit", 1, 2);
+
+        assertThrows(IslandDoesNotExistException.class, () -> database.addIslandPlayer(new Actor.Player(stranger), island, invitee, "member"));
+
+        database.updateBanPlayer(new Actor.Player(owner), island, invitee);
+        assertThrows(PlayerBannedException.class, () -> database.addIslandPlayer(new Actor.Player(owner), island, invitee, "member"));
+        assertEquals(1, database.getIslandPlayers(island).size());
+
+        database.addIslandPlayer(admin, island, invitee, "member");
+        assertTrue(database.getIslandPlayers(island).containsKey(invitee));
+        assertTrue(database.getIslandBans(island).isEmpty());
     }
 
     @Test
@@ -120,7 +137,7 @@ class DatabaseHandlerUpgradeTest {
         // Another member's homes are their own count: the seeded default fills their base limit.
         UUID member = UUID.randomUUID();
         database.updateIslandUpgradeLevel(admin, island, "team-limit", 1, 2);
-        database.addIslandPlayer(new Actor.Player(member), island, member, "member");
+        database.addIslandPlayer(new Actor.Player(owner), island, member, "member");
         assertThrows(HomeLimitReachedException.class, () -> database.updateHomePoint(new Actor.Player(member), island, member, "farm", "0,0,0,0,0"));
 
         database.updateIslandUpgradeLevel(admin, island, "home-limit", 1, 2);

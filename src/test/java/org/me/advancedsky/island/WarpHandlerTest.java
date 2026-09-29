@@ -269,7 +269,7 @@ class WarpHandlerTest {
     void newMembersDefaultHomeIsIncludedByMembershipCacheReload() {
         homes.setHome(new Actor.Player(owner), owner, "default", new Location(islandWorld, 1, 70, 3)).join();
         UUID newMember = UUID.randomUUID();
-        operator.addMember(new Actor.Player(newMember), island, newMember, "member").join();
+        operator.addMember(new Actor.Player(owner), island, newMember, "member").join();
         assertEquals("1.0,70.0,3.0,0.0,0.0", cache.get(island).getDefaultHomes().get(newMember));
         assertTrue(cache.get(island).getMembers().contains(newMember));
     }

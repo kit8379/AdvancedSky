@@ -11,6 +11,7 @@ import org.me.advancedsky.exceptions.InvitedAlreadyException;
 import org.me.advancedsky.exceptions.IslandAlreadyExistException;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.exceptions.IslandPlayerAlreadyExistsException;
+import org.me.advancedsky.exceptions.PlayerAlreadyBannedException;
 import org.me.advancedsky.exceptions.PlayerNotOnlineException;
 
 import java.util.Collections;
@@ -97,6 +98,8 @@ public class PlayerInviteCommand implements SubCommand, AsyncTabComplete {
                 player.sendMessage(config.getAlreadyHasIslandMessage(targetPlayerName));
             } else if (cause instanceof IslandPlayerAlreadyExistsException) {
                 player.sendMessage(config.getIslandMemberExistsMessage(targetPlayerName));
+            } else if (cause instanceof PlayerAlreadyBannedException) {
+                player.sendMessage(config.getPlayerAlreadyBannedMessage(targetPlayerName));
             } else {
                 player.sendMessage(config.getUnknownExceptionMessage());
                 plugin.severe("Error inviting player " + targetPlayerName + " to island of " + player.getName(), ex);

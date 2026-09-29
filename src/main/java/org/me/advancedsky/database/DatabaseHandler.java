@@ -564,6 +564,9 @@ public class DatabaseHandler {
         try {
             inTransaction(connection -> {
                 lockIsland(connection, islandUuid);
+                // A player joins with the authority of the member who invited them, so the
+                // invitation lapses once that member has left the island.
+                requireRole(actor, connection, islandUuid, RequiredRole.MEMBER);
 
                 Optional<UUID> playerIsland = getPlayerIsland(connection, playerUuid);
                 if (playerIsland.isPresent()) {
@@ -571,6 +574,14 @@ public class DatabaseHandler {
                         throw new IslandPlayerAlreadyExistsException();
                     }
                     throw new IslandAlreadyExistException();
+                }
+
+                // A ban set after the invitation stands; only an operator adding the player lifts it.
+                if (actor instanceof Actor.Player && count(connection, "SELECT COUNT(*) FROM " + prefix + "island_bans WHERE island_uuid = ? AND banned_player = ?", stmt -> {
+                    stmt.setString(1, islandUuid.toString());
+                    stmt.setString(2, playerUuid.toString());
+                }) > 0) {
+                    throw new PlayerBannedException();
                 }
 
                 // The owner counts towards the team limit.

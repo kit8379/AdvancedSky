@@ -70,6 +70,10 @@ public class PlayerHandler {
                 throw new IslandAlreadyExistException();
             }
 
+            if (database.getIslandBans(islandUuid).contains(inviteeUuid)) {
+                throw new PlayerAlreadyBannedException();
+            }
+
             if (!invitationStore.addIslandInvite(inviteeUuid, islandUuid, inviterUuid, ttlSeconds)) {
                 throw new InvitedAlreadyException();
             }

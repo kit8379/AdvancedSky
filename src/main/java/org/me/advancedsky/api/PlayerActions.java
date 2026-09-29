@@ -87,7 +87,8 @@ public final class PlayerActions {
     /**
      * Redeems this player's pending invitation and joins the island it names. Empty when no
      * invitation was pending; the returned invitation carries the island and inviter for the
-     * caller's messaging.
+     * caller's messaging. The join is written with the inviter's authority, taken from the stored
+     * invitation, so it fails once the inviter has left the island.
      */
     public CompletableFuture<Optional<Invitation>> acceptInvite() {
         return playerHandler.getPendingInvite(playerUuid).thenCompose(invite -> {
@@ -96,7 +97,7 @@ public final class PlayerActions {
             }
 
             Invitation pending = invite.get();
-            return playerHandler.removePendingInvite(playerUuid).thenCompose(v -> playerHandler.addMember(actor, pending.getIslandUuid(), playerUuid, "member")).thenApply(v -> Optional.of(pending));
+            return playerHandler.removePendingInvite(playerUuid).thenCompose(v -> playerHandler.addMember(new Actor.Player(pending.getInviterUuid()), pending.getIslandUuid(), playerUuid, "member")).thenApply(v -> Optional.of(pending));
         });
     }
 

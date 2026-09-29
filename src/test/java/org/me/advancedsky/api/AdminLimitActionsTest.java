@@ -25,7 +25,8 @@ class AdminLimitActionsTest {
         HomeHandler homes = mock(HomeHandler.class);
         when(members.addMember(any(), any(), any(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
         when(homes.setHome(any(), any(), anyString(), any(Location.class))).thenReturn(CompletableFuture.completedFuture(null));
-        when(members.getPendingInvite(player)).thenReturn(CompletableFuture.completedFuture(Optional.of(new Invitation(island, UUID.randomUUID()))));
+        UUID inviter = UUID.randomUUID();
+        when(members.getPendingInvite(player)).thenReturn(CompletableFuture.completedFuture(Optional.of(new Invitation(island, inviter))));
         when(members.removePendingInvite(player)).thenReturn(CompletableFuture.completedFuture(null));
 
         AdminActions admin = new AdminActions("console", null, members, homes, null, null, null, null, null);
@@ -37,7 +38,8 @@ class AdminLimitActionsTest {
         PlayerActions normal = new PlayerActions(player, null, members, homes, null, null, null, null, null);
         normal.acceptInvite().join();
         normal.setHome("farm", location).join();
-        verify(members).addMember(new Actor.Player(player), island, player, "member");
+        // A join is written with the inviter's authority, not the joining player's.
+        verify(members).addMember(new Actor.Player(inviter), island, player, "member");
         verify(homes).setHome(new Actor.Player(player), player, "farm", location);
     }
 }
