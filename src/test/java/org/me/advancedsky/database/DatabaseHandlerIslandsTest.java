@@ -93,7 +93,7 @@ class DatabaseHandlerIslandsTest {
 
     @Test
     void serverReadHoldsExactlyThatServersIslandsWithEveryField() {
-        Map<UUID, Island> hosted = database.getIslandCachesByServer("a");
+        Map<UUID, Island> hosted = database.getIslandsByServer("a");
         assertEquals(Set.of(full, bare), hosted.keySet());
 
         Island island = hosted.get(full);
@@ -124,16 +124,16 @@ class DatabaseHandlerIslandsTest {
         assertEquals(1, ownerOnly.getSizeLevel());
         assertEquals(1, ownerOnly.getGeneratorLevel());
 
-        assertEquals(Map.of(), database.getIslandCachesByServer("c"));
+        assertEquals(Map.of(), database.getIslandsByServer("c"));
     }
 
     @Test
     void singleIslandReadMatchesTheServerRead() {
-        Map<UUID, Island> hosted = database.getIslandCachesByServer("a");
+        Map<UUID, Island> hosted = database.getIslandsByServer("a");
         for (UUID islandUuid : List.of(full, bare)) {
-            assertSameIsland(hosted.get(islandUuid), database.getIslandCache(islandUuid));
+            assertSameIsland(hosted.get(islandUuid), database.getIsland(islandUuid));
         }
-        assertNull(database.getIslandCache(UUID.randomUUID()));
+        assertNull(database.getIsland(UUID.randomUUID()));
     }
 
     private static void assertSameIsland(Island expected, Island actual) {

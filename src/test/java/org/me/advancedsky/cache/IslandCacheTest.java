@@ -31,7 +31,7 @@ class IslandCacheTest {
 
     @Test
     void aFailedLoadIsRetriedUntilTheIslandIsAvailableAgain() throws Exception {
-        when(database.getIslandCache(islandUuid)).thenThrow(new IllegalStateException("database unavailable")).thenReturn(island);
+        when(database.getIsland(islandUuid)).thenThrow(new IllegalStateException("database unavailable")).thenReturn(island);
 
         assertTrue(cache.load(islandUuid).isCompletedExceptionally());
         assertNull(cache.get(islandUuid));
@@ -41,16 +41,16 @@ class IslandCacheTest {
             Thread.sleep(50L);
         }
         assertSame(island, cache.get(islandUuid));
-        verify(database, times(2)).getIslandCache(islandUuid);
+        verify(database, times(2)).getIsland(islandUuid);
     }
 
     @Test
     void anIslandGoneFromTheDatabaseFreesItsSlot() {
-        when(database.getIslandCachesByServer("sky1")).thenReturn(Map.of(islandUuid, island));
+        when(database.getIslandsByServer("sky1")).thenReturn(Map.of(islandUuid, island));
         cache.loadAll("sky1");
         assertEquals(islandUuid, cache.getIslandUuidAt(grid.center(null, SLOT)));
 
-        when(database.getIslandCache(islandUuid)).thenReturn(null);
+        when(database.getIsland(islandUuid)).thenReturn(null);
         assertTrue(cache.reload(islandUuid).isCompletedExceptionally());
 
         assertNull(cache.get(islandUuid));

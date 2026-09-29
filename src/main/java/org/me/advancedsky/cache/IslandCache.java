@@ -78,7 +78,7 @@ public class IslandCache {
      * other load, mutation or listener can touch the cache.
      */
     public void loadAll(String server) {
-        database.getIslandCachesByServer(server).forEach((islandUuid, island) -> {
+        database.getIslandsByServer(server).forEach((islandUuid, island) -> {
             islands.put(islandUuid, island);
             islandsBySlot.put(island.getSlot(), islandUuid);
         });
@@ -89,7 +89,7 @@ public class IslandCache {
         loading.put(islandUuid, generation);
 
         try {
-            Island island = database.getIslandCache(islandUuid);
+            Island island = database.getIsland(islandUuid);
 
             if (!Long.valueOf(generation).equals(loading.get(islandUuid))) {
                 return CompletableFuture.completedFuture(null);
