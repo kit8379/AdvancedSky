@@ -1,6 +1,5 @@
 package org.me.advancedsky.listener;
 
-import com.destroystokyo.paper.event.player.PlayerPostRespawnEvent;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -9,6 +8,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
@@ -65,8 +65,8 @@ public class IslandActivityListener implements Listener {
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
-    public void onPlayerPostRespawn(PlayerPostRespawnEvent event) {
-        update(event.getPlayer(), event.getRespawnedLocation());
+    public void onPlayerRespawn(PlayerRespawnEvent event) {
+        update(event.getPlayer(), event.getRespawnLocation());
     }
 
     private void update(Player player, Location location) {

@@ -1,12 +1,10 @@
 package org.me.advancedsky.listener;
 
-import com.destroystokyo.paper.event.player.PlayerPostRespawnEvent;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
@@ -14,16 +12,13 @@ import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.model.Island;
 import org.me.advancedsky.util.LocationUtils;
 
-import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class IslandRespawnListener implements Listener {
 
     private final AdvancedSky plugin;
     private final ConfigHandler config;
     private final IslandCache islandCache;
-    private final Set<UUID> pendingLobby = ConcurrentHashMap.newKeySet();
 
     public IslandRespawnListener(AdvancedSky plugin, ConfigHandler config, IslandCache islandCache) {
         this.plugin = plugin;
@@ -35,7 +30,6 @@ public class IslandRespawnListener implements Listener {
     public void onRespawn(PlayerRespawnEvent event) {
         Player player = event.getPlayer();
         UUID playerUuid = player.getUniqueId();
-        pendingLobby.remove(playerUuid);
         if (event.getRespawnReason() != PlayerRespawnEvent.RespawnReason.DEATH) {
             return;
         }
@@ -60,7 +54,7 @@ public class IslandRespawnListener implements Listener {
             if (!player.isOp() && respawn.getWorld() != null && respawn.getWorld().getName().equals(worldName) && islandCache.getIslandUuidAt(respawn) != null) {
                 Island respawnIsland = islandCache.getAt(respawn);
                 if (respawnIsland == null || isBarred(respawnIsland, playerUuid)) {
-                    pendingLobby.add(playerUuid);
+                    lobbyAfterRespawn(player);
                 }
             }
             return;
@@ -69,7 +63,7 @@ public class IslandRespawnListener implements Listener {
 
         boolean member = island.getOwner().equals(playerUuid) || island.getMembers().contains(playerUuid);
         if (!player.isOp() && isBarred(island, playerUuid)) {
-            pendingLobby.add(playerUuid);
+            lobbyAfterRespawn(player);
             return;
         }
 
@@ -78,7 +72,7 @@ public class IslandRespawnListener implements Listener {
             if (member) {
                 plugin.severe("Cannot resolve respawn for " + playerUuid + ": default home missing on island " + islandUuid);
             } else {
-                pendingLobby.add(playerUuid);
+                lobbyAfterRespawn(player);
             }
             return;
         }
@@ -95,21 +89,15 @@ public class IslandRespawnListener implements Listener {
         return island.getBans().contains(playerUuid) || (island.isLock() && !member && !island.getCoops().contains(playerUuid));
     }
 
-    @EventHandler(priority = EventPriority.MONITOR)
-    public void onPostRespawn(PlayerPostRespawnEvent event) {
-        UUID playerUuid = event.getPlayer().getUniqueId();
-        if (!pendingLobby.remove(playerUuid) || !event.getPlayer().isOnline()) {
-            return;
-        }
-
-        plugin.getApi().lobby(playerUuid).exceptionally(error -> {
+    /**
+     * Sends the player to the lobby once the respawn is over, a tick later on their own scheduler:
+     * Folia fires no PlayerPostRespawnEvent.
+     */
+    private void lobbyAfterRespawn(Player player) {
+        UUID playerUuid = player.getUniqueId();
+        player.getScheduler().runDelayed(plugin, task -> plugin.getApi().lobby(playerUuid).exceptionally(error -> {
             plugin.severe("Failed to send respawned player " + playerUuid + " to lobby", error);
             return null;
-        });
-    }
-
-    @EventHandler
-    public void onQuit(PlayerQuitEvent event) {
-        pendingLobby.remove(event.getPlayer().getUniqueId());
+        }), null, 1L);
     }
 }

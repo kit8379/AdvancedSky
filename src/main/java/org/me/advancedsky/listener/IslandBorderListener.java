@@ -1,6 +1,5 @@
 package org.me.advancedsky.listener;
 
-import com.destroystokyo.paper.event.player.PlayerPostRespawnEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.WorldBorder;
@@ -13,9 +12,11 @@ import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.vehicle.VehicleMoveEvent;
 import org.bukkit.util.Vector;
+import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.grid.IslandGrid;
@@ -33,6 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class IslandBorderListener implements Listener {
 
+    private final AdvancedSky plugin;
     private final ConfigHandler config;
     private final IslandCache islandCache;
     private final IslandGrid islandGrid;
@@ -42,7 +44,8 @@ public class IslandBorderListener implements Listener {
      */
     private final Map<UUID, Long> shownBorders = new ConcurrentHashMap<>();
 
-    public IslandBorderListener(ConfigHandler config, IslandCache islandCache, IslandGrid islandGrid) {
+    public IslandBorderListener(AdvancedSky plugin, ConfigHandler config, IslandCache islandCache, IslandGrid islandGrid) {
+        this.plugin = plugin;
         this.config = config;
         this.islandCache = islandCache;
         this.islandGrid = islandGrid;
@@ -63,9 +66,14 @@ public class IslandBorderListener implements Listener {
         showBorder(event.getPlayer(), event.getTo());
     }
 
+    /**
+     * Once the respawn is over, a tick later on the player's scheduler: Folia fires no
+     * PlayerPostRespawnEvent.
+     */
     @EventHandler(priority = EventPriority.MONITOR)
-    public void onPlayerPostRespawn(PlayerPostRespawnEvent event) {
-        resendBorder(event.getPlayer(), event.getRespawnedLocation());
+    public void onPlayerRespawn(PlayerRespawnEvent event) {
+        Player player = event.getPlayer();
+        player.getScheduler().runDelayed(plugin, task -> resendBorder(player, player.getLocation()), null, 1L);
     }
 
     /**

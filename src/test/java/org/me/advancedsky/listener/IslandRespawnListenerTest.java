@@ -1,6 +1,7 @@
 package org.me.advancedsky.listener;
 
-import com.destroystokyo.paper.event.player.PlayerPostRespawnEvent;
+import io.papermc.paper.threadedregions.scheduler.EntityScheduler;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
@@ -16,6 +17,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 import static org.mockito.Mockito.*;
 
@@ -39,7 +41,13 @@ class IslandRespawnListenerTest {
         when(world.getName()).thenReturn("skyblock");
         when(player.getUniqueId()).thenReturn(playerUuid);
         when(player.getLocation()).thenReturn(gap);
-        when(player.isOnline()).thenReturn(true);
+        // The lobby trip waits a tick after the respawn; run it at once here.
+        EntityScheduler scheduler = mock(EntityScheduler.class);
+        when(player.getScheduler()).thenReturn(scheduler);
+        when(scheduler.runDelayed(any(), any(), any(), anyLong())).thenAnswer(call -> {
+            call.<Consumer<ScheduledTask>>getArgument(1).accept(mock(ScheduledTask.class));
+            return mock(ScheduledTask.class);
+        });
     }
 
     @Test
@@ -68,6 +76,5 @@ class IslandRespawnListenerTest {
 
     private void respawn() {
         listener.onRespawn(new PlayerRespawnEvent(player, bed, true, false, false, PlayerRespawnEvent.RespawnReason.DEATH));
-        listener.onPostRespawn(new PlayerPostRespawnEvent(player, bed, true, false, false, PlayerRespawnEvent.RespawnReason.DEATH));
     }
 }
