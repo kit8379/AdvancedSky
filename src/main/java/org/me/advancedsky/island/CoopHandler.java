@@ -30,9 +30,9 @@ public class CoopHandler {
             if (!onlinePlayerRegistry.isOnline(playerUuid)) {
                 throw new PlayerNotOnlineException();
             }
-        }, plugin.getBukkitAsyncExecutor()).thenCompose(v -> {
+        }, plugin.getBukkitAsyncExecutor()).thenComposeAsync(v -> {
             return islandDistributor.addCoop(actor, islandUuid, playerUuid);
-        });
+        }, plugin.getBukkitAsyncExecutor());
     }
 
     public CompletableFuture<Void> unCoopPlayer(Actor actor, UUID islandUuid, UUID playerUuid) {
@@ -40,7 +40,7 @@ public class CoopHandler {
     }
 
     public CompletableFuture<Void> deleteAllCoopOfPlayer(UUID playerUuid) {
-        return CompletableFuture.supplyAsync(() -> database.getCoopIslandsOfPlayer(playerUuid), plugin.getBukkitAsyncExecutor()).thenCompose(islands -> {
+        return CompletableFuture.supplyAsync(() -> database.getCoopIslandsOfPlayer(playerUuid), plugin.getBukkitAsyncExecutor()).thenComposeAsync(islands -> {
             if (islands.isEmpty()) {
                 return CompletableFuture.completedFuture(null);
             }
@@ -49,7 +49,7 @@ public class CoopHandler {
                 plugin.severe("Failed to clean up coop for " + playerUuid + " on island " + islandUuid, e);
                 return null;
             })).toArray(CompletableFuture[]::new));
-        });
+        }, plugin.getBukkitAsyncExecutor());
     }
 
     public CompletableFuture<Boolean> isPlayerCooped(UUID islandUuid, UUID playerUuid) {

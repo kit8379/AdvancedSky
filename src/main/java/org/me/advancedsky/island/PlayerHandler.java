@@ -49,9 +49,9 @@ public class PlayerHandler {
             if (!onlinePlayerRegistry.isOnline(playerUuid)) {
                 throw new PlayerNotOnlineException();
             }
-        }, plugin.getBukkitAsyncExecutor()).thenCompose(v -> {
+        }, plugin.getBukkitAsyncExecutor()).thenComposeAsync(v -> {
             return islandDistributor.expelPlayer(actor, islandUuid, playerUuid);
-        });
+        }, plugin.getBukkitAsyncExecutor());
     }
 
     public CompletableFuture<Void> addPendingInvite(UUID inviteeUuid, UUID islandUuid, UUID inviterUuid, int ttlSeconds) {

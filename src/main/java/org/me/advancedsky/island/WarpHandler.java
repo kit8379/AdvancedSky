@@ -82,7 +82,7 @@ public class WarpHandler {
             }
 
             return Optional.ofNullable(database.getIslandWarps(islandUuid).get(warpName.toLowerCase(Locale.ROOT))).orElseThrow(WarpDoesNotExistException::new);
-        }, plugin.getBukkitAsyncExecutor()).thenCompose(warpLocation -> islandDistributor.teleportIsland(islandUuid, targetPlayerUuid, config.getIslandWorldName(), warpLocation));
+        }, plugin.getBukkitAsyncExecutor()).thenComposeAsync(warpLocation -> islandDistributor.teleportIsland(islandUuid, targetPlayerUuid, config.getIslandWorldName(), warpLocation), plugin.getBukkitAsyncExecutor());
     }
 
     public CompletableFuture<Set<String>> getWarpNames(UUID islandUuid) {

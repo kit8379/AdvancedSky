@@ -105,7 +105,7 @@ public class UpgradeHandler {
             }
 
             return database.getIslandUpgradeLevel(islandUuid, upgradeId);
-        }, plugin.getBukkitAsyncExecutor()).thenCompose(current -> islandDistributor.setUpgradeLevel(actor, islandUuid, upgradeId, current, level));
+        }, plugin.getBukkitAsyncExecutor()).thenComposeAsync(current -> islandDistributor.setUpgradeLevel(actor, islandUuid, upgradeId, current, level), plugin.getBukkitAsyncExecutor());
     }
 
     public CompletableFuture<Integer> getUpgradeLevel(UUID islandUuid, String upgradeId) {
