@@ -6,6 +6,7 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.WorldBorder;
 import org.bukkit.entity.Player;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.junit.jupiter.api.Test;
@@ -68,6 +69,21 @@ class IslandBorderListenerTest {
 
         // The second teleport found it already shown; the respawn did not.
         verify(player, times(2)).setWorldBorder(border);
+    }
+
+    @Test
+    void aWorldChangeOffTheIslandsClearsTheBorderLastSent() {
+        when(config.getUpgradeLimit("island-size", 1)).thenReturn(75);
+        World nether = mock(World.class);
+        when(nether.getName()).thenReturn("nether");
+        when(player.getLocation()).thenReturn(new Location(nether, 0, 70, 0));
+        withBorders(() -> {
+            listener.onPlayerTeleport(new PlayerTeleportEvent(player, center, center));
+            listener.onWorldChange(new PlayerChangedWorldEvent(player, world));
+        });
+
+        verify(player).setWorldBorder(border);
+        verify(player).setWorldBorder(null);
     }
 
     private void withBorders(Runnable run) {

@@ -64,24 +64,17 @@ public class IslandBorderListener implements Listener {
         showBorder(event.getPlayer(), event.getTo());
     }
 
-    /**
-     * A respawn sends the client its world's own border again, so the island's is resent even
-     * when it has not changed.
-     */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerPostRespawn(PlayerPostRespawnEvent event) {
-        shownBorders.remove(event.getPlayer().getUniqueId());
-        showBorder(event.getPlayer(), event.getRespawnedLocation());
+        resendBorder(event.getPlayer(), event.getRespawnedLocation());
     }
 
     /**
-     * Joining a world sends the client that world's border, after the teleport there showed the
-     * island's, so it is sent again once the player is in the new world.
+     * Also after a nether portal trip, which is no teleport event here.
      */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onWorldChange(PlayerChangedWorldEvent event) {
-        shownBorders.remove(event.getPlayer().getUniqueId());
-        showBorder(event.getPlayer(), event.getPlayer().getLocation());
+        resendBorder(event.getPlayer(), event.getPlayer().getLocation());
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -163,6 +156,18 @@ public class IslandBorderListener implements Listener {
         border.setSize(size);
         border.setWarningDistance(0);
         player.setWorldBorder(border);
+    }
+
+    /**
+     * A respawn or a world change makes the client show its world's own border, so the island's
+     * is sent again even when it has not changed, and one sent before is cleared off an island.
+     */
+    private void resendBorder(Player player, Location location) {
+        boolean shown = shownBorders.remove(player.getUniqueId()) != null;
+        showBorder(player, location);
+        if (shown && !shownBorders.containsKey(player.getUniqueId())) {
+            player.setWorldBorder(null);
+        }
     }
 
     private Island getIsland(Location location) {
