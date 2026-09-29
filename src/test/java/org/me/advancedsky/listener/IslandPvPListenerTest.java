@@ -1,5 +1,7 @@
 package org.me.advancedsky.listener;
 
+import com.google.common.base.Function;
+import com.google.common.base.Functions;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.damage.DamageSource;
@@ -16,6 +18,7 @@ import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.model.Island;
 
+import java.util.EnumMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -69,7 +72,11 @@ class IslandPvPListenerTest {
     private boolean damage(Entity damager, Entity causing) {
         DamageSource source = mock(DamageSource.class);
         when(source.getCausingEntity()).thenReturn(causing);
-        EntityDamageByEntityEvent event = new EntityDamageByEntityEvent(damager, victim, EntityDamageEvent.DamageCause.ENTITY_EXPLOSION, source, 4.0);
+        Map<EntityDamageEvent.DamageModifier, Double> modifiers = new EnumMap<>(EntityDamageEvent.DamageModifier.class);
+        modifiers.put(EntityDamageEvent.DamageModifier.BASE, 4.0);
+        Map<EntityDamageEvent.DamageModifier, Function<? super Double, Double>> functions = new EnumMap<>(EntityDamageEvent.DamageModifier.class);
+        functions.put(EntityDamageEvent.DamageModifier.BASE, Functions.constant(-0.0));
+        EntityDamageByEntityEvent event = new EntityDamageByEntityEvent(damager, victim, EntityDamageEvent.DamageCause.ENTITY_EXPLOSION, source, modifiers, functions, false);
         listener.onEntityDamageByEntity(event);
         return event.isCancelled();
     }
