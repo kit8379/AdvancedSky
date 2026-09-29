@@ -1,5 +1,8 @@
 package org.me.advancedsky.listener;
 
+import io.papermc.paper.threadedregions.scheduler.EntityScheduler;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
@@ -12,6 +15,7 @@ import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.model.Island;
 import org.me.advancedsky.teleport.TeleportHandler;
+import org.mockito.MockedStatic;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -19,6 +23,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 class IslandAccessListenerTest {
     private final AdvancedSky plugin = mock(AdvancedSky.class);
@@ -79,6 +84,33 @@ class IslandAccessListenerTest {
         join();
 
         verify(api, never()).lobby(any());
+    }
+
+    @Test
+    void aPendingTeleportThatDoesNotHappenLeavesTheLogoutSpotToTheJoinRule() {
+        Island island = new Island(UUID.randomUUID(), 1, false, false, UUID.randomUUID(), Set.of(), Set.of(), Set.of(playerUuid), Map.of(), null, 1, 1);
+        when(cache.getIslandUuidAt(location)).thenReturn(island.getIslandUuid());
+        when(cache.getAt(location)).thenReturn(island);
+        teleports.addPendingTeleport(playerUuid, new Location(world, 2304, 101, 256));
+        EntityScheduler scheduler = mock(EntityScheduler.class);
+        when(player.getScheduler()).thenReturn(scheduler);
+        when(scheduler.run(any(), any(), any())).thenAnswer(call -> {
+            call.<Consumer<ScheduledTask>>getArgument(1).accept(mock(ScheduledTask.class));
+            return mock(ScheduledTask.class);
+        });
+        when(player.teleportAsync(any(Location.class))).thenReturn(CompletableFuture.completedFuture(false));
+        UUID worldUuid = UUID.randomUUID();
+        when(world.getUID()).thenReturn(worldUuid);
+
+        IslandAccessListener access = new IslandAccessListener(plugin, config, cache, teleports);
+        PlayerJoinEvent event = new PlayerJoinEvent(player, net.kyori.adventure.text.Component.empty());
+        try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
+            bukkit.when(() -> Bukkit.getWorld(worldUuid)).thenReturn(world);
+            access.onPlayerJoin(event);
+            new TeleportRequestListener(plugin, teleports, access).onPlayerJoin(event);
+        }
+
+        verify(api).lobby(playerUuid);
     }
 
     @Test

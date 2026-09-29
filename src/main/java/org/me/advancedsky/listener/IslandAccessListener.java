@@ -48,7 +48,11 @@ public class IslandAccessListener implements Listener {
         checkAccess(event.getPlayer());
     }
 
-    private void checkAccess(Player player) {
+    /**
+     * Sends the player to the lobby if they stand on an island they may not be on. Runs on the
+     * player's thread.
+     */
+    void checkAccess(Player player) {
         if (player.isOp()) {
             return;
         }
