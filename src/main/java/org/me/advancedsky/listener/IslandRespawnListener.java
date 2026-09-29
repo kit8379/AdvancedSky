@@ -52,15 +52,23 @@ public class IslandRespawnListener implements Listener {
             // Dying in the gap or on a free slot is dying on no island: vanilla respawn.
             if (islandCache.getIslandUuidAt(deathLocation) != null) {
                 plugin.severe("Cannot resolve respawn for " + playerUuid + ": island cache entry unavailable at " + deathLocation);
+                return;
+            }
+
+            // That respawn may be a bed or anchor on an island that has barred the player since.
+            Location respawn = event.getRespawnLocation();
+            if (!player.isOp() && respawn.getWorld() != null && respawn.getWorld().getName().equals(worldName) && islandCache.getIslandUuidAt(respawn) != null) {
+                Island respawnIsland = islandCache.getAt(respawn);
+                if (respawnIsland == null || isBarred(respawnIsland, playerUuid)) {
+                    pendingLobby.add(playerUuid);
+                }
             }
             return;
         }
         UUID islandUuid = island.getIslandUuid();
 
         boolean member = island.getOwner().equals(playerUuid) || island.getMembers().contains(playerUuid);
-        boolean banned = island.getBans().contains(playerUuid);
-        boolean lockedOut = island.isLock() && !member && !island.getCoops().contains(playerUuid);
-        if (!player.isOp() && (banned || lockedOut)) {
+        if (!player.isOp() && isBarred(island, playerUuid)) {
             pendingLobby.add(playerUuid);
             return;
         }
@@ -77,6 +85,14 @@ public class IslandRespawnListener implements Listener {
 
         // Only override this respawn; beds and anchors never replace the island defaults.
         event.setRespawnLocation(LocationUtils.stringToLocation(worldName, location));
+    }
+
+    /**
+     * Banned from the island, or locked out of it as neither a member nor a co-op.
+     */
+    private static boolean isBarred(Island island, UUID playerUuid) {
+        boolean member = island.getOwner().equals(playerUuid) || island.getMembers().contains(playerUuid);
+        return island.getBans().contains(playerUuid) || (island.isLock() && !member && !island.getCoops().contains(playerUuid));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
