@@ -2,11 +2,15 @@ package org.me.advancedsky.listener;
 
 import io.papermc.paper.entity.TeleportFlag;
 import org.bukkit.ExplosionResult;
+import org.bukkit.FluidCollisionMode;
 import org.bukkit.Location;
 import org.bukkit.World;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
 import org.bukkit.entity.*;
+import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -23,6 +27,8 @@ import org.bukkit.event.vehicle.VehicleDamageEvent;
 import org.bukkit.event.vehicle.VehicleMoveEvent;
 import org.bukkit.event.world.PortalCreateEvent;
 import org.bukkit.event.world.StructureGrowEvent;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.util.RayTraceResult;
 import org.bukkit.util.Vector;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
@@ -172,6 +178,27 @@ public class IslandProtectionListener implements Listener {
             if (event.getAction() != Action.PHYSICAL) {
                 deny(player);
             }
+        }
+    }
+
+    /**
+     * A spawn egg used on water names no clicked block, and an interaction without one arrives
+     * already cancelled, so the handler above never sees it: the creature appears on the fluid the
+     * player looks at, which is held to the edit rule like a clicked block.
+     */
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onSpawnEggUse(PlayerInteractEvent event) {
+        ItemStack item = event.getItem();
+        if (event.getAction() != Action.RIGHT_CLICK_AIR || event.useItemInHand() == Event.Result.DENY || item == null || !item.getType().name().endsWith("_SPAWN_EGG")) {
+            return;
+        }
+
+        Player player = event.getPlayer();
+        AttributeInstance reach = player.getAttribute(Attribute.BLOCK_INTERACTION_RANGE);
+        RayTraceResult hit = player.rayTraceBlocks(reach == null ? 4.5 : reach.getValue(), FluidCollisionMode.SOURCE_ONLY);
+        if (hit != null && hit.getHitBlock() != null && !canPlayerEdit(player, hit.getHitBlock().getLocation())) {
+            event.setUseItemInHand(Event.Result.DENY);
+            deny(player);
         }
     }
 
