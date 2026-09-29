@@ -105,16 +105,22 @@ public class IslandOperator {
             // teleportAsync runs on the thread that owns the player; a player who left meanwhile
             // gets the teleport stored for their return, like one who was never here.
             CompletableFuture<Boolean> teleported = new CompletableFuture<>();
-            if (player != null && player.getScheduler().run(plugin, task -> player.teleportAsync(location).whenComplete((moved, error) -> {
-                if (error != null) {
+            if (player != null && player.getScheduler().run(plugin, task -> {
+                try {
+                    player.teleportAsync(location).whenComplete((moved, error) -> {
+                        if (error != null) {
+                            teleported.completeExceptionally(error);
+                        } else if (!moved) {
+                            teleported.completeExceptionally(new TeleportCancelledException());
+                        } else {
+                            plugin.debug("IslandOperator", "Teleported player " + playerUuid + " to location: " + teleportLocation + " in world: " + teleportWorld);
+                            teleported.complete(true);
+                        }
+                    });
+                } catch (Throwable error) {
                     teleported.completeExceptionally(error);
-                } else if (!moved) {
-                    teleported.completeExceptionally(new TeleportCancelledException());
-                } else {
-                    plugin.debug("IslandOperator", "Teleported player " + playerUuid + " to location: " + teleportLocation + " in world: " + teleportWorld);
-                    teleported.complete(true);
                 }
-            }), () -> teleported.complete(store(playerUuid, location))) != null) {
+            }, () -> teleported.complete(store(playerUuid, location))) != null) {
                 return teleported;
             }
 
