@@ -1,6 +1,5 @@
 package org.me.advancedsky.listener;
 
-import io.papermc.paper.entity.TeleportFlag;
 import org.bukkit.ExplosionResult;
 import org.bukkit.FluidCollisionMode;
 import org.bukkit.Location;
@@ -520,7 +519,7 @@ public class IslandProtectionListener implements Listener {
         for (Entity passenger : vehicle.getPassengers()) {
             if (passenger instanceof Player player && !player.isOp() && !mayEnter(player, island)) {
                 vehicle.setVelocity(new Vector());
-                vehicle.teleportAsync(from, PlayerTeleportEvent.TeleportCause.PLUGIN, TeleportFlag.EntityState.RETAIN_PASSENGERS);
+                vehicle.teleportAsync(from, PlayerTeleportEvent.TeleportCause.PLUGIN);
                 return;
             }
         }

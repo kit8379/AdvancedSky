@@ -1,7 +1,6 @@
 package org.me.advancedsky.listener;
 
 import com.destroystokyo.paper.event.player.PlayerPostRespawnEvent;
-import io.papermc.paper.entity.TeleportFlag;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.WorldBorder;
@@ -126,7 +125,7 @@ public class IslandBorderListener implements Listener {
         for (Entity passenger : vehicle.getPassengers()) {
             if (passenger instanceof Player player && !player.isOp()) {
                 vehicle.setVelocity(new Vector());
-                vehicle.teleportAsync(from, PlayerTeleportEvent.TeleportCause.PLUGIN, TeleportFlag.EntityState.RETAIN_PASSENGERS);
+                vehicle.teleportAsync(from, PlayerTeleportEvent.TeleportCause.PLUGIN);
                 return;
             }
         }
