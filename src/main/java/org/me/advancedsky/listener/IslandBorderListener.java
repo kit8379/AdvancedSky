@@ -1,10 +1,13 @@
 package org.me.advancedsky.listener;
 
 import com.destroystokyo.paper.event.player.PlayerPostRespawnEvent;
+import io.papermc.paper.entity.TeleportFlag;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.WorldBorder;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Vehicle;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -12,6 +15,8 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
+import org.bukkit.event.vehicle.VehicleMoveEvent;
+import org.bukkit.util.Vector;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.grid.IslandGrid;
@@ -82,6 +87,33 @@ public class IslandBorderListener implements Listener {
         }
 
         showBorder(player, to);
+    }
+
+    /**
+     * A rider fires no PlayerMoveEvent: their vehicle moves them. A vehicle carrying a player out
+     * of the boundary of the island it is on is put back where it came from, riders and all.
+     */
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onVehicleMove(VehicleMoveEvent event) {
+        Location from = event.getFrom();
+        Location to = event.getTo();
+        if (from.getBlockX() == to.getBlockX() && from.getBlockZ() == to.getBlockZ()) {
+            return;
+        }
+
+        Island island = getIsland(from);
+        if (island == null || !isInside(island, from) || isInside(island, to)) {
+            return;
+        }
+
+        Vehicle vehicle = event.getVehicle();
+        for (Entity passenger : vehicle.getPassengers()) {
+            if (passenger instanceof Player player && !player.isOp()) {
+                vehicle.setVelocity(new Vector());
+                vehicle.teleportAsync(from, PlayerTeleportEvent.TeleportCause.PLUGIN, TeleportFlag.EntityState.RETAIN_PASSENGERS);
+                return;
+            }
+        }
     }
 
     /**

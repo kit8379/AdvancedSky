@@ -4,9 +4,11 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.BlockState;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Vehicle;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerPortalEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
+import org.bukkit.event.vehicle.VehicleMoveEvent;
 import org.bukkit.event.world.PortalCreateEvent;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.cache.IslandCache;
@@ -71,6 +73,15 @@ class IslandProtectionListenerTest {
     }
 
     @Test
+    void ridersOntoALockedIslandArePutBackWithTheirVehicle() {
+        island(true, Set.of());
+
+        assertTrue(ride(visitor, outside, inside));
+        assertFalse(ride(member, outside, inside));
+        assertFalse(ride(visitor, inside, inside.clone().add(1, 0, 0)));
+    }
+
+    @Test
     void netherPortalArrivalsFollowTheTeleportRule() {
         island(false, Set.of(banned));
         Location nether = new Location(mock(World.class), 0, 70, 0);
@@ -116,6 +127,17 @@ class IslandProtectionListenerTest {
         when(player.getUniqueId()).thenReturn(playerUuid);
         when(player.isOp()).thenReturn(op);
         return player;
+    }
+
+    /**
+     * Whether the vehicle carrying the player was put back.
+     */
+    private boolean ride(UUID playerUuid, Location from, Location to) {
+        Vehicle vehicle = mock(Vehicle.class);
+        Player rider = player(playerUuid, false);
+        when(vehicle.getPassengers()).thenReturn(List.of(rider));
+        listener.onVehicleMove(new VehicleMoveEvent(vehicle, from, to));
+        return mockingDetails(vehicle).getInvocations().stream().anyMatch(invocation -> invocation.getMethod().getName().equals("teleportAsync"));
     }
 
     /**

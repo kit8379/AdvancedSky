@@ -1,5 +1,6 @@
 package org.me.advancedsky.listener;
 
+import io.papermc.paper.entity.TeleportFlag;
 import org.bukkit.ExplosionResult;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -19,8 +20,10 @@ import org.bukkit.event.hanging.HangingBreakByEntityEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.*;
 import org.bukkit.event.vehicle.VehicleDamageEvent;
+import org.bukkit.event.vehicle.VehicleMoveEvent;
 import org.bukkit.event.world.PortalCreateEvent;
 import org.bukkit.event.world.StructureGrowEvent;
+import org.bukkit.util.Vector;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.grid.IslandGrid;
@@ -463,6 +466,33 @@ public class IslandProtectionListener implements Listener {
 
         if (isInsideIslandBoundary(island, to) && !isInsideIslandBoundary(island, event.getFrom())) {
             event.setCancelled(true);
+        }
+    }
+
+    /**
+     * Riding onto an island follows the walking rule: a rider fires no PlayerMoveEvent, so the
+     * vehicle bringing in a player who may not enter is put back where it came from.
+     */
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onVehicleMove(VehicleMoveEvent event) {
+        Location from = event.getFrom();
+        Location to = event.getTo();
+        if ((from.getBlockX() == to.getBlockX() && from.getBlockZ() == to.getBlockZ()) || !isIslandWorld(to)) {
+            return;
+        }
+
+        Island island = islandCache.getAt(to);
+        if (!isInsideIslandBoundary(island, to) || isInsideIslandBoundary(island, from)) {
+            return;
+        }
+
+        Vehicle vehicle = event.getVehicle();
+        for (Entity passenger : vehicle.getPassengers()) {
+            if (passenger instanceof Player player && !player.isOp() && !mayEnter(player, island)) {
+                vehicle.setVelocity(new Vector());
+                vehicle.teleportAsync(from, PlayerTeleportEvent.TeleportCause.PLUGIN, TeleportFlag.EntityState.RETAIN_PASSENGERS);
+                return;
+            }
         }
     }
 
