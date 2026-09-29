@@ -250,6 +250,9 @@ The expansion (identifier `advancedsky`) registers itself when PlaceholderAPI is
 | `%advancedsky_top_<n>_uuid%` | Island UUID at position n |
 | `%advancedsky_top_<n>_members%` | Member count at position n |
 
+Ranks, the `top_` placeholders and `/is top` come from one leaderboard each server reads at most
+once a minute, so a new island has no rank (`0`) until the next read.
+
 ## Developer API
 
 Everything is asynchronous and returns `CompletableFuture`. Failures arrive as completion

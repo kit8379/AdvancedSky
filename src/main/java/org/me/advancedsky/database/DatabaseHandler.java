@@ -423,88 +423,61 @@ public class DatabaseHandler {
     }
 
     /**
-     * Uses the same level/UUID ordering and implicit level zero as getTopIslandLevels.
+     * Every island with its owner and level, highest level first and ties by island id; an island
+     * never scanned is at level zero.
      */
-    public long getIslandRank(UUID islandUuid) {
-        String sql = "SELECT 1 + (SELECT COUNT(*) FROM " + prefix + "island_players p " + "LEFT JOIN " + prefix + "island_levels l ON l.island_uuid = p.island_uuid " + "WHERE p.role = 'owner' AND (COALESCE(l.level, 0) > COALESCE(target_level.level, 0) " + "OR (COALESCE(l.level, 0) = COALESCE(target_level.level, 0) " + "AND p.island_uuid < target.island_uuid))) AS island_rank " + "FROM " + prefix + "island_players target " + "LEFT JOIN " + prefix + "island_levels target_level ON target_level.island_uuid = target.island_uuid " + "WHERE target.role = 'owner' AND target.island_uuid = ?";
-        return executeQuery(sql, stmt -> stmt.setString(1, islandUuid.toString()), rs -> {
-            if (!rs.next()) {
-                throw new IslandDoesNotExistException();
-            }
-            return rs.getLong("island_rank");
-        });
-    }
+    public List<IslandTop> getIslandRanking() {
+        String sql = "SELECT p.island_uuid, p.player_uuid AS owner_uuid, COALESCE(l.level, 0) AS level " + "FROM " + prefix + "island_players p " + "LEFT JOIN " + prefix + "island_levels l ON l.island_uuid = p.island_uuid " + "WHERE p.role = ? " + "ORDER BY level DESC, p.island_uuid ASC";
 
-    public List<IslandTop> getTopIslandLevels(int limit) {
-        int safeLimit = Math.max(1, limit);
+        return executeQuery(sql, stmt -> stmt.setString(1, "owner"), rs -> {
+            List<IslandTop> result = new ArrayList<>();
 
-        return withConnection(connection -> {
-            String topSql = "SELECT p.island_uuid, p.player_uuid AS owner_uuid, COALESCE(l.level, 0) AS level " + "FROM " + prefix + "island_players p " + "LEFT JOIN " + prefix + "island_levels l ON l.island_uuid = p.island_uuid " + "WHERE p.role = ? " + "ORDER BY level DESC, p.island_uuid ASC " + "LIMIT ?";
-
-            List<UUID> islandOrder = new ArrayList<>();
-            Map<UUID, UUID> ownerByIsland = new LinkedHashMap<>();
-            Map<UUID, Integer> levelByIsland = new HashMap<>();
-
-            executeQuery(connection, topSql, stmt -> {
-                stmt.setString(1, "owner");
-                stmt.setInt(2, safeLimit);
-            }, rs -> {
-                while (rs.next()) {
-                    UUID islandUuid = parseRequiredUuid(rs.getString("island_uuid"), "top.island_uuid");
-                    UUID ownerUuid = parseRequiredUuid(rs.getString("owner_uuid"), "top.owner_uuid");
-                    int level = rs.getInt("level");
-
-                    islandOrder.add(islandUuid);
-                    ownerByIsland.put(islandUuid, ownerUuid);
-                    levelByIsland.put(islandUuid, level);
-                }
-                return null;
-            });
-
-            if (islandOrder.isEmpty()) {
-                return List.of();
-            }
-
-            Map<UUID, Set<UUID>> membersByIsland = new HashMap<>();
-
-            StringBuilder memberSql = new StringBuilder("SELECT island_uuid, player_uuid FROM " + prefix + "island_players WHERE role = ? AND island_uuid IN (");
-
-            for (int i = 0; i < islandOrder.size(); i++) {
-                if (i > 0) {
-                    memberSql.append(",");
-                }
-                memberSql.append("?");
-            }
-
-            memberSql.append(")");
-
-            executeQuery(connection, memberSql.toString(), stmt -> {
-                stmt.setString(1, "member");
-
-                for (int i = 0; i < islandOrder.size(); i++) {
-                    stmt.setString(i + 2, islandOrder.get(i).toString());
-                }
-            }, rs -> {
-                while (rs.next()) {
-                    UUID islandUuid = parseRequiredUuid(rs.getString("island_uuid"), "topMembers.island_uuid");
-                    UUID memberUuid = parseRequiredUuid(rs.getString("player_uuid"), "topMembers.player_uuid");
-
-                    membersByIsland.computeIfAbsent(islandUuid, ignored -> new LinkedHashSet<>()).add(memberUuid);
-                }
-                return null;
-            });
-
-            List<IslandTop> result = new ArrayList<>(islandOrder.size());
-
-            for (UUID islandUuid : islandOrder) {
-                UUID ownerUuid = ownerByIsland.get(islandUuid);
-                int level = levelByIsland.getOrDefault(islandUuid, 0);
-                Set<UUID> members = membersByIsland.getOrDefault(islandUuid, Set.of());
-
-                result.add(new IslandTop(islandUuid, ownerUuid, level, members.isEmpty() ? Set.of() : Set.copyOf(members)));
+            while (rs.next()) {
+                UUID islandUuid = parseRequiredUuid(rs.getString("island_uuid"), "ranking.island_uuid");
+                UUID ownerUuid = parseRequiredUuid(rs.getString("owner_uuid"), "ranking.owner_uuid");
+                result.add(new IslandTop(islandUuid, ownerUuid, rs.getInt("level"), Set.of()));
             }
 
             return result.isEmpty() ? List.of() : List.copyOf(result);
+        });
+    }
+
+    /**
+     * The members of each of the islands, owners left out. Islands without members are absent.
+     */
+    public Map<UUID, Set<UUID>> getIslandMembers(Collection<UUID> islandUuids) {
+        if (islandUuids == null || islandUuids.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        List<UUID> ordered = List.copyOf(new LinkedHashSet<>(islandUuids));
+        StringBuilder sql = new StringBuilder("SELECT island_uuid, player_uuid FROM " + prefix + "island_players WHERE role = ? AND island_uuid IN (");
+
+        for (int i = 0; i < ordered.size(); i++) {
+            if (i > 0) {
+                sql.append(",");
+            }
+            sql.append("?");
+        }
+
+        sql.append(")");
+
+        return executeQuery(sql.toString(), stmt -> {
+            stmt.setString(1, "member");
+
+            for (int i = 0; i < ordered.size(); i++) {
+                stmt.setString(i + 2, ordered.get(i).toString());
+            }
+        }, rs -> {
+            Map<UUID, Set<UUID>> result = new HashMap<>();
+
+            while (rs.next()) {
+                UUID islandUuid = parseRequiredUuid(rs.getString("island_uuid"), "members.island_uuid");
+                UUID memberUuid = parseRequiredUuid(rs.getString("player_uuid"), "members.player_uuid");
+                result.computeIfAbsent(islandUuid, ignored -> new LinkedHashSet<>()).add(memberUuid);
+            }
+
+            return result;
         });
     }
 

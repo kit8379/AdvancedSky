@@ -10,6 +10,7 @@ import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.database.DatabaseHandler;
+import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.model.Island;
 import org.me.advancedsky.model.IslandTop;
@@ -17,13 +18,18 @@ import org.me.advancedsky.world.WorldHandler;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 public class LevelHandler {
 
     private static final int SCAN_BATCH_SIZE = 16;
+    private static final long RANKING_TTL_NANOS = TimeUnit.SECONDS.toNanos(60);
 
     private final AdvancedSky plugin;
     private final ConfigHandler config;
@@ -34,6 +40,9 @@ public class LevelHandler {
     private final IslandGrid islandGrid;
 
     private volatile int[] pointsByMaterialOrdinal;
+
+    private CompletableFuture<Ranking> ranking;
+    private long rankingLoadedAt;
 
     public LevelHandler(AdvancedSky plugin, ConfigHandler config, DatabaseHandler database, LimitHandler limitHandler, WorldHandler worldHandler, IslandCache islandCache, IslandGrid islandGrid) {
         this.plugin = plugin;
@@ -208,10 +217,52 @@ public class LevelHandler {
     }
 
     public CompletableFuture<List<IslandTop>> getTopIslandLevels(int limit) {
-        return CompletableFuture.supplyAsync(() -> database.getTopIslandLevels(limit), plugin.getBukkitAsyncExecutor());
+        return ranking().thenApplyAsync(ranking -> {
+            List<IslandTop> top = ranking.order().subList(0, Math.min(Math.max(1, limit), ranking.order().size()));
+            Map<UUID, Set<UUID>> members = database.getIslandMembers(top.stream().map(IslandTop::getIslandUuid).toList());
+            return top.stream().map(island -> new IslandTop(island.getIslandUuid(), island.getOwnerUuid(), island.getLevel(), members.getOrDefault(island.getIslandUuid(), Set.of()))).toList();
+        }, plugin.getBukkitAsyncExecutor());
     }
 
+    /**
+     * An island created since the ranking was read is not in it yet.
+     */
     public CompletableFuture<Long> getIslandRank(UUID islandUuid) {
-        return CompletableFuture.supplyAsync(() -> database.getIslandRank(islandUuid), plugin.getBukkitAsyncExecutor());
+        return ranking().thenApply(ranking -> {
+            Integer position = ranking.positions().get(islandUuid);
+            if (position == null) {
+                throw new IslandDoesNotExistException();
+            }
+            return position + 1L;
+        });
+    }
+
+    /**
+     * Every island in leaderboard order, read in one query at most once a minute and shared by
+     * the top list and every rank, rather than sorting or counting all islands for each. A failed
+     * read is retried on the next request.
+     */
+    private synchronized CompletableFuture<Ranking> ranking() {
+        long now = System.nanoTime();
+        if (ranking == null || ranking.isCompletedExceptionally() || (ranking.isDone() && now - rankingLoadedAt >= RANKING_TTL_NANOS)) {
+            ranking = CompletableFuture.supplyAsync(() -> new Ranking(database.getIslandRanking()), plugin.getBukkitAsyncExecutor());
+            rankingLoadedAt = now;
+        }
+        return ranking;
+    }
+
+    private record Ranking(List<IslandTop> order, Map<UUID, Integer> positions) {
+
+        private Ranking(List<IslandTop> order) {
+            this(order, positionsOf(order));
+        }
+
+        private static Map<UUID, Integer> positionsOf(List<IslandTop> order) {
+            Map<UUID, Integer> positions = new HashMap<>(order.size() * 2);
+            for (int i = 0; i < order.size(); i++) {
+                positions.put(order.get(i).getIslandUuid(), i);
+            }
+            return positions;
+        }
     }
 }

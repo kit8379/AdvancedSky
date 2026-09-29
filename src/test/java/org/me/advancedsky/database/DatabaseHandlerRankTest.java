@@ -5,7 +5,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
-import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.model.IslandTop;
 
 import java.lang.reflect.Field;
@@ -14,6 +13,8 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -46,29 +47,35 @@ class DatabaseHandlerRankTest {
     }
 
     @Test
-    void rankMatchesLeaderboardForTiesMissingLevelsZeroAndNegativeLevels() throws Exception {
+    void rankingOrdersByLevelThenIslandWithMissingLevelsAtZero() throws Exception {
         island(2, 20);
         island(1, 20);
         island(3, 5);
         island(4, null);
         island(5, 0);
         island(6, -1);
-        try (PreparedStatement statement = connection.prepareStatement("INSERT INTO test_island_players VALUES (?, ?, 'member')")) {
-            statement.setString(1, uuid(1).toString());
-            statement.setString(2, UUID.randomUUID().toString());
-            statement.executeUpdate();
-        }
-        List<IslandTop> top = database.getTopIslandLevels(10);
-        assertEquals(List.of(uuid(1), uuid(2), uuid(3), uuid(4), uuid(5), uuid(6)),
-                top.stream().map(IslandTop::getIslandUuid).toList());
-        for (int i = 0; i < top.size(); i++) {
-            assertEquals(i + 1L, database.getIslandRank(top.get(i).getIslandUuid()));
-        }
+
+        List<IslandTop> ranking = database.getIslandRanking();
+        assertEquals(List.of(uuid(1), uuid(2), uuid(3), uuid(4), uuid(5), uuid(6)), ranking.stream().map(IslandTop::getIslandUuid).toList());
+        assertEquals(List.of(20, 20, 5, 0, 0, -1), ranking.stream().map(IslandTop::getLevel).toList());
     }
 
     @Test
-    void missingIslandIsNotReportedAsRankOne() {
-        assertThrows(IslandDoesNotExistException.class, () -> database.getIslandRank(uuid(1)));
+    void membersAreReadForTheIslandsAskedForOnly() throws Exception {
+        island(1, 20);
+        island(2, 10);
+        UUID member = UUID.randomUUID();
+        try (PreparedStatement statement = connection.prepareStatement("INSERT INTO test_island_players VALUES (?, ?, 'member')")) {
+            statement.setString(1, uuid(1).toString());
+            statement.setString(2, member.toString());
+            statement.executeUpdate();
+            statement.setString(1, uuid(2).toString());
+            statement.setString(2, UUID.randomUUID().toString());
+            statement.executeUpdate();
+        }
+
+        assertEquals(Map.of(uuid(1), Set.of(member)), database.getIslandMembers(List.of(uuid(1))));
+        assertEquals(Map.of(), database.getIslandMembers(List.of()));
     }
 
     private void island(int id, Integer level) throws Exception {
