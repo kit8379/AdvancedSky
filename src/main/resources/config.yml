@@ -61,7 +61,9 @@ cluster-id: default
 # Servers
 # ===================================================================
 # Names must match BungeeCord / Velocity server names. Every server running this plugin must
-# appear in exactly one of the two lists. All listed servers are assumed to be online.
+# appear in exactly one of the two lists. All listed servers are assumed to be online, and their
+# clocks must agree (run NTP): a request between servers is refused once it is ten seconds old by
+# the sender's clock.
 servers:
   # Servers that host islands. A new island goes to the one with the fewest islands.
   island:

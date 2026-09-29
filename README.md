@@ -14,7 +14,8 @@ demand; AdvancedSky keeps every island of a server in one pre-loaded world, on a
 ## Design
 
 - **Static server lists.** `config.yml` lists every island server and every lobby server. They
-  are assumed to be online: no heartbeats, no server registry, no failover.
+  are assumed to be online: no heartbeats, no server registry, no failover. Their clocks must
+  agree (NTP), because a request between servers is refused once it is ten seconds old.
 - **MySQL is the source of truth.** An island row holds its host server and its grid slot; its
   players, homes, warps, bans, co-ops, level and upgrades live in NewSky's tables. Slots are
   unique across the whole network and never reused, so an island has the same coordinates on
