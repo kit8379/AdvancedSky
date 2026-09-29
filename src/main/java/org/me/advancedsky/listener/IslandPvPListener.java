@@ -8,6 +8,7 @@ import org.bukkit.World;
 import org.bukkit.entity.AbstractWindCharge;
 import org.bukkit.entity.AreaEffectCloud;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.LightningStrike;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
@@ -53,6 +54,23 @@ public class IslandPvPListener implements Listener {
 
         if (entity instanceof Projectile projectile && projectile.getShooter() instanceof Player player) {
             return player.getUniqueId();
+        }
+
+        return null;
+    }
+
+    /**
+     * The player behind the damage: the attacker, the shooter, the one who lit the TNT or hit the
+     * end crystal. Lightning carries no causing entity in its damage source, so a Channeling
+     * strike is traced through the strike itself.
+     */
+    private Player resolveAttacker(EntityDamageByEntityEvent event) {
+        if (event.getDamageSource().getCausingEntity() instanceof Player player) {
+            return player;
+        }
+
+        if (event.getDamager() instanceof LightningStrike strike && strike.getCausingEntity() instanceof Player player) {
+            return player;
         }
 
         return null;
@@ -105,8 +123,8 @@ public class IslandPvPListener implements Listener {
             return;
         }
 
-        UUID attackerUuid = resolvePlayerUuid(event.getDamager());
-        if (attackerUuid == null || attackerUuid.equals(victim.getUniqueId())) {
+        Player attacker = resolveAttacker(event);
+        if (attacker == null || attacker.getUniqueId().equals(victim.getUniqueId())) {
             return;
         }
 
@@ -115,8 +133,8 @@ public class IslandPvPListener implements Listener {
         }
 
         event.setCancelled(true);
-        notifyAttacker(event.getDamager());
-        plugin.debug("IslandPvPListener", "Cancelled PvP from " + attackerUuid + " against " + victim.getName() + " in island world: " + victim.getWorld().getName());
+        attacker.sendMessage(config.getIslandPvpDisabledMessage());
+        plugin.debug("IslandPvPListener", "Cancelled PvP from " + attacker.getUniqueId() + " against " + victim.getName() + " in island world: " + victim.getWorld().getName());
     }
 
     /**
