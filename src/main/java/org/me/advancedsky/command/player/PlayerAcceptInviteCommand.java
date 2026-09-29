@@ -11,6 +11,7 @@ import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.exceptions.IslandPlayerAlreadyExistsException;
 import org.me.advancedsky.exceptions.PlayerBannedException;
 import org.me.advancedsky.exceptions.TeamLimitReachedException;
+import org.me.advancedsky.exceptions.TeleportCancelledException;
 import org.me.advancedsky.model.Invitation;
 
 import java.util.UUID;
@@ -85,7 +86,14 @@ public class PlayerAcceptInviteCommand implements SubCommand {
                         api.sendPlayerMessage(uuid, config.getNewMemberNotificationMessage(player.getName()));
                     }
                 }
-                return api.player(playerUuid).home("default");
+                // The player has joined now; a failed trip there is reported as that, not as the join.
+                return api.player(playerUuid).home("default").exceptionally(ex -> {
+                    if (!(ex.getCause() instanceof TeleportCancelledException)) {
+                        player.sendMessage(config.getUnknownExceptionMessage());
+                        plugin.severe("Player " + player.getName() + " joined island " + islandUuid + " but could not be taken home", ex);
+                    }
+                    return null;
+                });
             });
         }).exceptionally(ex -> {
             Throwable cause = ex.getCause();

@@ -9,6 +9,7 @@ import org.me.advancedsky.command.SubCommand;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.HomeDoesNotExistException;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.TeleportCancelledException;
 
 import java.util.Collections;
 import java.util.List;
@@ -74,6 +75,8 @@ public class PlayerHomeCommand implements SubCommand, AsyncTabComplete {
                 player.sendMessage(config.getPlayerNoIslandMessage());
             } else if (cause instanceof HomeDoesNotExistException) {
                 player.sendMessage(config.getPlayerNoHomeMessage(homeName));
+            } else if (cause instanceof TeleportCancelledException) {
+                // Whatever cancelled the teleport told the player why.
             } else {
                 player.sendMessage(config.getUnknownExceptionMessage());
                 plugin.severe("Error teleporting to home for player " + player.getName(), ex);

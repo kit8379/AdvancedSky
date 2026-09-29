@@ -1450,6 +1450,10 @@ public class ConfigHandler {
         return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.admin-lobby-success")).replace("{player}", player));
     }
 
+    public Component getAdminTeleportCancelledMessage(String player) {
+        return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.admin-teleport-cancelled")).replace("{player}", player));
+    }
+
     // Player Command Messages
     public Component getPlayerCommandUsageMessage(String command, String syntax) {
         return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.player-usage-command")).replace("{command}", command).replace("{syntax}", syntax));

@@ -94,23 +94,41 @@ public class IslandOperator {
 
     /**
      * Teleports the player at once when they are on this server, otherwise stores the teleport
-     * for their next join here. True when teleported in place.
+     * for their next join here. True when teleported in place; fails with
+     * TeleportCancelledException when a listener cancelled the teleport in place.
      */
     private CompletableFuture<Boolean> teleportOrStore(UUID playerUuid, String teleportWorld, String teleportLocation) {
         return CompletableFuture.supplyAsync(() -> {
             Location location = LocationUtils.stringToLocation(teleportWorld, teleportLocation);
             Player player = Bukkit.getPlayer(playerUuid);
 
-            // teleportAsync runs on the thread that owns the player; a player who left meanwhile gets no task.
-            if (player != null && player.getScheduler().run(plugin, task -> player.teleportAsync(location), null) != null) {
-                plugin.debug("IslandOperator", "Teleported player " + playerUuid + " to location: " + teleportLocation + " in world: " + teleportWorld);
-                return true;
+            // teleportAsync runs on the thread that owns the player; a player who left meanwhile
+            // gets the teleport stored for their return, like one who was never here.
+            CompletableFuture<Boolean> teleported = new CompletableFuture<>();
+            if (player != null && player.getScheduler().run(plugin, task -> player.teleportAsync(location).whenComplete((moved, error) -> {
+                if (error != null) {
+                    teleported.completeExceptionally(error);
+                } else if (!moved) {
+                    teleported.completeExceptionally(new TeleportCancelledException());
+                } else {
+                    plugin.debug("IslandOperator", "Teleported player " + playerUuid + " to location: " + teleportLocation + " in world: " + teleportWorld);
+                    teleported.complete(true);
+                }
+            }), () -> teleported.complete(store(playerUuid, location))) != null) {
+                return teleported;
             }
 
-            teleportHandler.addPendingTeleport(playerUuid, location);
-            plugin.debug("IslandOperator", "Stored pending teleport for player " + playerUuid + " to location: " + teleportLocation + " in world: " + teleportWorld);
-            return false;
-        }, plugin.getGlobalRegionExecutor());
+            return CompletableFuture.completedFuture(store(playerUuid, location));
+        }, plugin.getGlobalRegionExecutor()).thenCompose(teleported -> teleported);
+    }
+
+    /**
+     * Keeps the teleport for the player's next join here. False: not teleported in place.
+     */
+    private boolean store(UUID playerUuid, Location location) {
+        teleportHandler.addPendingTeleport(playerUuid, location);
+        plugin.debug("IslandOperator", "Stored pending teleport for player " + playerUuid + " to " + location);
+        return false;
     }
 
     public CompletableFuture<Void> expelPlayer(Actor actor, UUID islandUuid, UUID playerUuid) {

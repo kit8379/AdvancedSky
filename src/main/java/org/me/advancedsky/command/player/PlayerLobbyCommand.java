@@ -6,6 +6,7 @@ import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.api.AdvancedSkyAPI;
 import org.me.advancedsky.command.SubCommand;
 import org.me.advancedsky.config.ConfigHandler;
+import org.me.advancedsky.exceptions.TeleportCancelledException;
 
 import java.util.UUID;
 
@@ -57,8 +58,11 @@ public class PlayerLobbyCommand implements SubCommand {
         api.lobby(playerUuid).thenRun(() -> {
             api.sendPlayerMessage(playerUuid, config.getPlayerLobbySuccessMessage());
         }).exceptionally(ex -> {
-            player.sendMessage(config.getUnknownExceptionMessage());
-            plugin.severe("Error teleporting player " + player.getName() + " to lobby", ex);
+            // Whatever cancelled a teleport told the player why.
+            if (!(ex.getCause() instanceof TeleportCancelledException)) {
+                player.sendMessage(config.getUnknownExceptionMessage());
+                plugin.severe("Error teleporting player " + player.getName() + " to lobby", ex);
+            }
             return null;
         });
 

@@ -10,6 +10,7 @@ import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.HomeDoesNotExistException;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.exceptions.PlayerNotOnlineException;
+import org.me.advancedsky.exceptions.TeleportCancelledException;
 
 import java.util.Collections;
 import java.util.List;
@@ -106,6 +107,8 @@ public class AdminHomeCommand implements SubCommand, AsyncTabComplete {
                 sender.sendMessage(config.getAdminNoHomeMessage(homePlayerName, homeName));
             } else if (cause instanceof PlayerNotOnlineException) {
                 sender.sendMessage(config.getPlayerNotOnlineMessage(teleportPlayerName != null ? teleportPlayerName : sender.getName()));
+            } else if (cause instanceof TeleportCancelledException) {
+                sender.sendMessage(config.getAdminTeleportCancelledMessage(teleportPlayerName != null ? teleportPlayerName : sender.getName()));
             } else {
                 sender.sendMessage(config.getUnknownExceptionMessage());
                 plugin.severe("Error teleporting to home " + homeName + " of " + homePlayerName, ex);

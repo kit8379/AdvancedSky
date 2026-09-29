@@ -89,6 +89,8 @@ public class PlayerWarpCommand implements SubCommand, AsyncTabComplete {
                 player.sendMessage(config.getPlayerBannedMessage());
             } else if (cause instanceof IslandLockedException) {
                 player.sendMessage(config.getIslandLockedMessage());
+            } else if (cause instanceof TeleportCancelledException) {
+                // Whatever cancelled the teleport told the player why.
             } else {
                 player.sendMessage(config.getUnknownExceptionMessage());
                 plugin.severe("Error teleporting to warp for player " + player.getName(), ex);

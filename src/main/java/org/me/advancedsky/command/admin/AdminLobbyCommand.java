@@ -6,6 +6,7 @@ import org.me.advancedsky.api.AdvancedSkyAPI;
 import org.me.advancedsky.command.AsyncTabComplete;
 import org.me.advancedsky.command.SubCommand;
 import org.me.advancedsky.config.ConfigHandler;
+import org.me.advancedsky.exceptions.TeleportCancelledException;
 
 import java.util.Collections;
 import java.util.List;
@@ -65,8 +66,12 @@ public class AdminLobbyCommand implements SubCommand, AsyncTabComplete {
 
             return api.lobby(targetUuidOpt.get()).thenRun(() -> sender.sendMessage(config.getAdminLobbySuccessMessage(targetName)));
         }).exceptionally(ex -> {
-            sender.sendMessage(config.getUnknownExceptionMessage());
-            plugin.severe("Error teleporting " + targetName + " to lobby", ex);
+            if (ex.getCause() instanceof TeleportCancelledException) {
+                sender.sendMessage(config.getAdminTeleportCancelledMessage(targetName));
+            } else {
+                sender.sendMessage(config.getUnknownExceptionMessage());
+                plugin.severe("Error teleporting " + targetName + " to lobby", ex);
+            }
             return null;
         });
 
