@@ -6,7 +6,9 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.WorldBorder;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Vehicle;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.junit.jupiter.api.Test;
@@ -16,10 +18,12 @@ import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.model.Island;
 import org.mockito.MockedStatic;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
 class IslandBorderListenerTest {
@@ -84,6 +88,22 @@ class IslandBorderListenerTest {
 
         verify(player).setWorldBorder(border);
         verify(player).setWorldBorder(null);
+    }
+
+    @Test
+    void aRiderSteeringOutOfTheBoundaryIsPutBackWithTheMount() {
+        when(config.getUpgradeLimit("island-size", 1)).thenReturn(75);
+        Vehicle mount = mock(Vehicle.class);
+        when(player.getVehicle()).thenReturn(mount);
+        when(mount.getPassengers()).thenReturn(List.of(player));
+        Location inside = center.clone().add(-37, 0, 0);
+        Location outside = center.clone().add(-38, 0, 0);
+
+        PlayerMoveEvent event = new PlayerMoveEvent(player, inside, outside);
+        listener.onPlayerMove(event);
+
+        assertTrue(event.isCancelled());
+        verify(mount).teleportAsync(inside, PlayerTeleportEvent.TeleportCause.PLUGIN);
     }
 
     private void withBorders(Runnable run) {

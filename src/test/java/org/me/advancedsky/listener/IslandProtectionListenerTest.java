@@ -82,6 +82,22 @@ class IslandProtectionListenerTest {
     }
 
     @Test
+    void aMountSteeredInWithABannedPassengerIsPutBack() {
+        island(false, Set.of(banned));
+        Vehicle mount = mock(Vehicle.class);
+        Player driver = player(member, false);
+        Player passenger = player(banned, false);
+        when(driver.getVehicle()).thenReturn(mount);
+        when(mount.getPassengers()).thenReturn(List.of(driver, passenger));
+
+        PlayerMoveEvent event = new PlayerMoveEvent(driver, outside, inside);
+        listener.onPlayerMove(event);
+
+        assertTrue(event.isCancelled());
+        assertTrue(mockingDetails(mount).getInvocations().stream().anyMatch(invocation -> invocation.getMethod().getName().equals("teleportAsync")));
+    }
+
+    @Test
     void netherPortalArrivalsFollowTheTeleportRule() {
         island(false, Set.of(banned));
         Location nether = new Location(mock(World.class), 0, 70, 0);

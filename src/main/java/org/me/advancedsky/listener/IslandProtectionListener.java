@@ -484,7 +484,18 @@ public class IslandProtectionListener implements Listener {
             return;
         }
 
+        // A rider steering a vehicle moves it, and from and to are the vehicle's. Every rider must
+        // be allowed in, and Folia's own undo of a cancelled move fails for a passenger, so the
+        // vehicle is put back.
         Player player = event.getPlayer();
+        Entity vehicle = player.getVehicle();
+        if (vehicle != null) {
+            if (putBack(vehicle, event.getFrom(), to)) {
+                event.setCancelled(true);
+            }
+            return;
+        }
+
         Island island = islandCache.getAt(to);
         if (island == null || player.isOp() || mayEnter(player, island)) {
             return;
@@ -496,30 +507,35 @@ public class IslandProtectionListener implements Listener {
     }
 
     /**
-     * Riding onto an island follows the walking rule: a rider fires no PlayerMoveEvent, so the
-     * vehicle bringing in a player who may not enter is put back where it came from.
+     * Boats and minecarts report their moves here, whoever steers them.
      */
     @EventHandler(priority = EventPriority.HIGH)
     public void onVehicleMove(VehicleMoveEvent event) {
-        Location from = event.getFrom();
-        Location to = event.getTo();
+        putBack(event.getVehicle(), event.getFrom(), event.getTo());
+    }
+
+    /**
+     * Puts the vehicle back where it came from, riders and all, when the move would carry a
+     * player who may not enter onto an island.
+     */
+    private boolean putBack(Entity vehicle, Location from, Location to) {
         if ((from.getBlockX() == to.getBlockX() && from.getBlockZ() == to.getBlockZ()) || !isIslandWorld(to)) {
-            return;
+            return false;
         }
 
         Island island = islandCache.getAt(to);
         if (!isInsideIslandBoundary(island, to) || isInsideIslandBoundary(island, from)) {
-            return;
+            return false;
         }
 
-        Vehicle vehicle = event.getVehicle();
         for (Entity passenger : vehicle.getPassengers()) {
             if (passenger instanceof Player player && !player.isOp() && !mayEnter(player, island)) {
                 vehicle.setVelocity(new Vector());
                 vehicle.teleportAsync(from, PlayerTeleportEvent.TeleportCause.PLUGIN);
-                return;
+                return true;
             }
         }
+        return false;
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)

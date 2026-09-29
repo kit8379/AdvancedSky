@@ -6,7 +6,6 @@ import org.bukkit.Location;
 import org.bukkit.WorldBorder;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Vehicle;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -87,41 +86,56 @@ public class IslandBorderListener implements Listener {
         Location from = event.getFrom();
         Location to = event.getTo();
 
-        // Leaving the boundary of the island they stand on is refused, as a world border would.
-        Island island = getIsland(from);
-        if (island != null && !player.isOp() && isInside(island, from) && !isInside(island, to)) {
-            event.setCancelled(true);
-            return;
+        // A rider steering a vehicle moves it, and from and to are the vehicle's. Folia's own undo of
+        // a cancelled move teleports the rider, which fails for a passenger, so the vehicle is put back.
+        Entity vehicle = player.getVehicle();
+        if (vehicle != null) {
+            if (putBack(vehicle, from, to)) {
+                event.setCancelled(true);
+                return;
+            }
+        } else {
+            // Leaving the boundary of the island they stand on is refused, as a world border would.
+            Island island = getIsland(from);
+            if (island != null && !player.isOp() && isInside(island, from) && !isInside(island, to)) {
+                event.setCancelled(true);
+                return;
+            }
         }
 
         showBorder(player, to);
     }
 
     /**
-     * A rider fires no PlayerMoveEvent: their vehicle moves them. A vehicle carrying a player out
-     * of the boundary of the island it is on is put back where it came from, riders and all.
+     * Boats and minecarts report their moves here, whoever steers them.
      */
     @EventHandler(priority = EventPriority.HIGH)
     public void onVehicleMove(VehicleMoveEvent event) {
-        Location from = event.getFrom();
-        Location to = event.getTo();
+        putBack(event.getVehicle(), event.getFrom(), event.getTo());
+    }
+
+    /**
+     * Puts the vehicle back where it came from, riders and all, when the move would carry a
+     * player out of the boundary of the island it is on.
+     */
+    private boolean putBack(Entity vehicle, Location from, Location to) {
         if (from.getBlockX() == to.getBlockX() && from.getBlockZ() == to.getBlockZ()) {
-            return;
+            return false;
         }
 
         Island island = getIsland(from);
         if (island == null || !isInside(island, from) || isInside(island, to)) {
-            return;
+            return false;
         }
 
-        Vehicle vehicle = event.getVehicle();
         for (Entity passenger : vehicle.getPassengers()) {
             if (passenger instanceof Player player && !player.isOp()) {
                 vehicle.setVelocity(new Vector());
                 vehicle.teleportAsync(from, PlayerTeleportEvent.TeleportCause.PLUGIN);
-                return;
+                return true;
             }
         }
+        return false;
     }
 
     /**
