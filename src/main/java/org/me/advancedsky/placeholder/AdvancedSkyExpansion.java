@@ -28,6 +28,9 @@ public final class AdvancedSkyExpansion extends PlaceholderExpansion {
     private static final long REFRESH_NANOS = TimeUnit.SECONDS.toNanos(30);
     private static final long RANK_REFRESH_NANOS = TimeUnit.SECONDS.toNanos(30);
     private static final long EXPIRE_NANOS = TimeUnit.MINUTES.toNanos(1);
+    // Every top placeholder loads the leaderboard down to the deepest position ever asked for,
+    // and anyone who can have text parsed can ask.
+    private static final int MAX_TOP_POSITION = 100;
     private static final Pattern TOP = Pattern.compile("top_([1-9][0-9]*)_(owner|level|uuid|members)");
     private static final Pattern UPGRADE = Pattern.compile("upgrade_([a-z0-9-]+)_(level|value|max|maxed|next_price|next_require_level|next_value)");
     private static final Map<String, String> NO_ISLAND = Map.ofEntries(Map.entry("island_level", "0"), Map.entry("island_members", "0"), Map.entry("island_owner", ""), Map.entry("island_uuid", ""), Map.entry("island_role", "none"), Map.entry("island_owner_uuid", ""), Map.entry("island_lock", "false"), Map.entry("island_pvp", "false"), Map.entry("island_players", "0"), Map.entry("island_coops", "0"), Map.entry("island_bans", "0"), Map.entry("island_rank", "0"));
@@ -92,6 +95,9 @@ public final class AdvancedSkyExpansion extends PlaceholderExpansion {
             try {
                 position = Integer.parseInt(top.group(1));
             } catch (NumberFormatException error) {
+                return null;
+            }
+            if (position > MAX_TOP_POSITION) {
                 return null;
             }
             return topValue(position, key);

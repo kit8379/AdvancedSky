@@ -106,7 +106,7 @@ class AdvancedSkyExpansionTest {
     @Test
     void invalidNamesAndNullPlayersDoNotQueryPlayerData() {
         for (String key : List.of("unknown", "top_0_owner", "top_-1_level", "top_01_owner",
-                "top_2147483648_owner", "top_1_invalid", "top_1_level_extra", "island_online",
+                "top_2147483648_owner", "top_101_owner", "top_1_invalid", "top_1_level_extra", "island_online",
                 "player_homes", "player_homes_list", "player_warps", "player_warps_list",
                 "has_island", "island_members_list", "island_coops_list", "island_bans_list")) {
             assertNull(expansion.onRequest(player, key), key);
