@@ -8,13 +8,17 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.model.Island;
 import org.me.advancedsky.teleport.TeleportHandler;
 
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class IslandAccessListener implements Listener {
 
@@ -22,6 +26,10 @@ public class IslandAccessListener implements Listener {
     private final ConfigHandler config;
     private final IslandCache islandCache;
     private final TeleportHandler teleportHandler;
+
+    // Players already sent to the lobby off an island, so the steps they take before the move
+    // happens do not send them again.
+    private final Set<UUID> sentAway = ConcurrentHashMap.newKeySet();
 
     public IslandAccessListener(AdvancedSky plugin, ConfigHandler config, IslandCache islandCache, TeleportHandler teleportHandler) {
         this.plugin = plugin;
@@ -49,6 +57,29 @@ public class IslandAccessListener implements Listener {
     }
 
     /**
+     * Paper refuses a teleport or portal trip onto an island the player may not be on, but Folia
+     * fires no event for either, so there the first step they take on it is checked. An island
+     * whose cache entry is unavailable is left alone here: its members walk on it too.
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPlayerMove(PlayerMoveEvent event) {
+        Player player = event.getPlayer();
+        if (!event.hasChangedBlock() || player.isOp() || !isIslandWorld(event.getTo().getWorld())) {
+            return;
+        }
+
+        Island island = islandCache.getAt(event.getTo());
+        if (island != null) {
+            denyIfBarred(player, island);
+        }
+    }
+
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        sentAway.remove(event.getPlayer().getUniqueId());
+    }
+
+    /**
      * Sends the player to the lobby if they stand on an island they may not be on. Runs on the
      * player's thread.
      */
@@ -61,7 +92,6 @@ public class IslandAccessListener implements Listener {
         if (!isIslandWorld(location.getWorld())) {
             return;
         }
-        UUID playerUuid = player.getUniqueId();
 
         Island island = islandCache.getAt(location);
         if (island == null) {
@@ -73,6 +103,11 @@ public class IslandAccessListener implements Listener {
             return;
         }
 
+        denyIfBarred(player, island);
+    }
+
+    private void denyIfBarred(Player player, Island island) {
+        UUID playerUuid = player.getUniqueId();
         boolean banned = island.getBans().contains(playerUuid);
         boolean locked = island.isLock() && !island.getOwner().equals(playerUuid) && !island.getMembers().contains(playerUuid) && !island.getCoops().contains(playerUuid);
 
@@ -87,10 +122,17 @@ public class IslandAccessListener implements Listener {
     }
 
     private void denyAccess(Player player, net.kyori.adventure.text.Component message) {
-        plugin.getApi().lobby(player.getUniqueId()).exceptionally(error -> {
+        UUID playerUuid = player.getUniqueId();
+        if (!sentAway.add(playerUuid)) {
+            return;
+        }
+
+        plugin.getApi().lobby(playerUuid).exceptionally(error -> {
+            // Sent again on their next step or join.
+            sentAway.remove(playerUuid);
             plugin.severe("Failed to send player " + player.getName() + " to the lobby off an island they may not be on", error);
             return null;
         });
-        plugin.getApi().sendPlayerMessage(player.getUniqueId(), message);
+        plugin.getApi().sendPlayerMessage(playerUuid, message);
     }
 }

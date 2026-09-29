@@ -7,6 +7,7 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
@@ -111,6 +112,30 @@ class IslandAccessListenerTest {
         }
 
         verify(api).lobby(playerUuid);
+    }
+
+    @Test
+    void stepsOnAnIslandThatBarsThePlayerSendThemAwayOnce() {
+        Island island = new Island(UUID.randomUUID(), 1, false, false, UUID.randomUUID(), Set.of(), Set.of(), Set.of(playerUuid), Map.of(), null, 1, 1);
+        Location next = new Location(world, 257, 101, 256);
+        when(cache.getAt(next)).thenReturn(island);
+        IslandAccessListener access = new IslandAccessListener(plugin, config, cache, teleports);
+
+        access.onPlayerMove(new PlayerMoveEvent(player, location, next));
+        access.onPlayerMove(new PlayerMoveEvent(player, next, location.clone().add(2, 0, 0)));
+        when(cache.getAt(any(Location.class))).thenReturn(island);
+        access.onPlayerMove(new PlayerMoveEvent(player, next, location.clone().add(3, 0, 0)));
+
+        verify(api, times(1)).lobby(playerUuid);
+    }
+
+    @Test
+    void stepsOnAnIslandWhoseEntryIsUnavailableAreLeftAlone() {
+        when(cache.getIslandUuidAt(any(Location.class))).thenReturn(UUID.randomUUID());
+
+        new IslandAccessListener(plugin, config, cache, teleports).onPlayerMove(new PlayerMoveEvent(player, location, new Location(world, 257, 101, 256)));
+
+        verify(api, never()).lobby(any());
     }
 
     @Test
