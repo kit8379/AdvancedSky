@@ -10,6 +10,7 @@ import org.me.advancedsky.command.SubCommand;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.HomeLimitReachedException;
 import org.me.advancedsky.exceptions.HomeNameNotLegalException;
+import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.exceptions.LocationNotInIslandException;
 
 import java.util.Collections;
@@ -82,7 +83,9 @@ public class AdminSetHomeCommand implements SubCommand, AsyncTabComplete {
             return api.admin(sender).setHome(targetUuidOpt.get(), homeName, loc).thenRun(() -> sender.sendMessage(config.getAdminSetHomeSuccessMessage(homePlayerName, homeName)));
         }).exceptionally(ex -> {
             Throwable cause = ex.getCause();
-            if (cause instanceof LocationNotInIslandException) {
+            if (cause instanceof IslandDoesNotExistException) {
+                sender.sendMessage(config.getAdminNoIslandMessage(homePlayerName));
+            } else if (cause instanceof LocationNotInIslandException) {
                 sender.sendMessage(config.getAdminMustInIslandSetHomeMessage(homePlayerName));
             } else if (cause instanceof HomeNameNotLegalException) {
                 sender.sendMessage(config.getHomeNameNotLegalMessage());
