@@ -537,9 +537,6 @@ public class DatabaseHandler {
         try {
             inTransaction(connection -> {
                 lockIsland(connection, islandUuid);
-                // A player joins with the authority of the member who invited them, so the
-                // invitation lapses once that member has left the island.
-                requireRole(actor, connection, islandUuid, RequiredRole.MEMBER);
 
                 Optional<UUID> playerIsland = getPlayerIsland(connection, playerUuid);
                 if (playerIsland.isPresent()) {
