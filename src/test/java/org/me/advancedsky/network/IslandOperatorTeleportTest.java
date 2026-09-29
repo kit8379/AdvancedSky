@@ -11,6 +11,7 @@ import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.exceptions.TeleportCancelledException;
 import org.me.advancedsky.teleport.TeleportHandler;
 import org.me.advancedsky.thread.GlobalRegionExecutor;
+import org.mockito.InOrder;
 import org.mockito.MockedStatic;
 
 import java.util.UUID;
@@ -67,6 +68,10 @@ class IslandOperatorTeleportTest {
         when(player.teleportAsync(any(Location.class))).thenReturn(CompletableFuture.completedFuture(true));
 
         assertTrue(prepare().join());
+        // A rider is taken off their mount first, as Folia refuses to teleport a passenger.
+        InOrder order = inOrder(player);
+        order.verify(player).leaveVehicle();
+        order.verify(player).teleportAsync(any(Location.class));
     }
 
     private void runsTasks() {

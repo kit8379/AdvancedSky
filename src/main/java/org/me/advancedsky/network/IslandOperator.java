@@ -107,6 +107,8 @@ public class IslandOperator {
             CompletableFuture<Boolean> teleported = new CompletableFuture<>();
             if (player != null && player.getScheduler().run(plugin, task -> {
                 try {
+                    // Folia refuses to teleport a passenger; Paper dismounts one itself.
+                    player.leaveVehicle();
                     player.teleportAsync(location).whenComplete((moved, error) -> {
                         if (error != null) {
                             teleported.completeExceptionally(error);

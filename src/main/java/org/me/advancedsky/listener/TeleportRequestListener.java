@@ -43,6 +43,9 @@ public class TeleportRequestListener implements Listener {
             return;
         }
 
+        // A player may join still riding the vehicle they logged out on; Folia refuses to
+        // teleport a passenger, Paper dismounts one itself.
+        player.leaveVehicle();
         player.teleportAsync(pendingLocation).whenComplete((moved, error) -> {
             if (error == null && moved) {
                 plugin.debug("TeleportRequestListener", "Teleported " + player.getName() + " to pending location on join.");
