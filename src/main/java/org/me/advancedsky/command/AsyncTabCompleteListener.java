@@ -2,21 +2,33 @@ package org.me.advancedsky.command;
 
 import com.destroystokyo.paper.event.server.AsyncTabCompleteEvent;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.me.advancedsky.AdvancedSky;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 public class AsyncTabCompleteListener implements Listener {
 
     private static final long TAB_TIMEOUT_MILLIS = 200L;
+    private static final long CANDIDATES_TTL_NANOS = TimeUnit.SECONDS.toNanos(5);
 
     private final AdvancedSky plugin;
     private final Map<String, AsyncCommandTabRouter> routers = new HashMap<>();
+
+    // Every completion filters its candidates by what is typed of the last argument. Typing asks
+    // again on each keystroke and one completion can cost several database and Redis round trips,
+    // so the unfiltered candidates are kept for a few seconds per sender and everything typed
+    // before that argument, and the next keystrokes only filter them.
+    private final Map<String, Candidates> candidates = new ConcurrentHashMap<>();
 
     public AsyncTabCompleteListener(AdvancedSky plugin) {
         this.plugin = plugin;
@@ -52,17 +64,31 @@ public class AsyncTabCompleteListener implements Listener {
 
         CommandSender sender = event.getSender();
 
-        try {
-            List<String> suggestions = router.completeAsync(sender, parsed.label, parsed.args).orTimeout(TAB_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS).exceptionally(ex -> {
-                plugin.severe("Async tab complete exception for buffer '" + buffer + "'", ex);
-                return Collections.emptyList();
-            }).get(TAB_TIMEOUT_MILLIS + 50L, TimeUnit.MILLISECONDS);
+        if (parsed.args.length == 0) {
+            event.setCompletions(Collections.emptyList());
+            event.setHandled(true);
+            return;
+        }
 
-            if (suggestions == null) {
-                suggestions = Collections.emptyList();
+        String typed = parsed.args[parsed.args.length - 1].toLowerCase(Locale.ROOT);
+        String[] untyped = parsed.args.clone();
+        untyped[untyped.length - 1] = "";
+        // Arguments never hold a space, so spaces keep the parts of the key apart.
+        String key = senderKey(sender) + " " + parsed.label.toLowerCase(Locale.ROOT) + " " + String.join(" ", untyped);
+
+        try {
+            List<String> all;
+            try {
+                // A load slower than the wait keeps going and serves the next keystroke.
+                all = candidates(key, () -> router.completeAsync(sender, parsed.label, untyped).exceptionally(ex -> {
+                    plugin.severe("Async tab complete exception for buffer '" + buffer + "'", ex);
+                    return Collections.emptyList();
+                })).get(TAB_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException slow) {
+                all = Collections.emptyList();
             }
 
-            suggestions = suggestions.stream().filter(s -> s != null && !s.isEmpty()).distinct().collect(Collectors.toList());
+            List<String> suggestions = (all == null ? Collections.<String>emptyList() : all).stream().filter(s -> s != null && !s.isEmpty() && s.toLowerCase(Locale.ROOT).startsWith(typed)).distinct().collect(Collectors.toList());
 
             event.setCompletions(suggestions);
             event.setHandled(true);
@@ -71,6 +97,16 @@ public class AsyncTabCompleteListener implements Listener {
             event.setCompletions(Collections.emptyList());
             event.setHandled(true);
         }
+    }
+
+    private CompletableFuture<List<String>> candidates(String key, Supplier<CompletableFuture<List<String>>> loader) {
+        long now = System.nanoTime();
+        candidates.values().removeIf(cached -> now - cached.loadedAt() >= CANDIDATES_TTL_NANOS);
+        return candidates.computeIfAbsent(key, ignored -> new Candidates(loader.get(), now)).list();
+    }
+
+    private static String senderKey(CommandSender sender) {
+        return sender instanceof Player player ? player.getUniqueId().toString() : sender.getName();
     }
 
     private ParsedCommand parseCommandBuffer(String buffer) {
@@ -95,5 +131,8 @@ public class AsyncTabCompleteListener implements Listener {
     }
 
     private record ParsedCommand(String label, String[] args) {
+    }
+
+    private record Candidates(CompletableFuture<List<String>> list, long loadedAt) {
     }
 }
