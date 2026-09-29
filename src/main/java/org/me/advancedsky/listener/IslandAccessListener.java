@@ -87,7 +87,10 @@ public class IslandAccessListener implements Listener {
     }
 
     private void denyAccess(Player player, net.kyori.adventure.text.Component message) {
-        plugin.getApi().lobby(player.getUniqueId());
+        plugin.getApi().lobby(player.getUniqueId()).exceptionally(error -> {
+            plugin.severe("Failed to send player " + player.getName() + " to the lobby off an island they may not be on", error);
+            return null;
+        });
         plugin.getApi().sendPlayerMessage(player.getUniqueId(), message);
     }
 }
