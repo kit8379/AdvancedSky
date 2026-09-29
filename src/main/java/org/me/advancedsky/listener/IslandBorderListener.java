@@ -11,6 +11,7 @@ import org.bukkit.entity.Vehicle;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
@@ -64,9 +65,24 @@ public class IslandBorderListener implements Listener {
         showBorder(event.getPlayer(), event.getTo());
     }
 
+    /**
+     * A respawn sends the client its world's own border again, so the island's is resent even
+     * when it has not changed.
+     */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerPostRespawn(PlayerPostRespawnEvent event) {
+        shownBorders.remove(event.getPlayer().getUniqueId());
         showBorder(event.getPlayer(), event.getRespawnedLocation());
+    }
+
+    /**
+     * Joining a world sends the client that world's border, after the teleport there showed the
+     * island's, so it is sent again once the player is in the new world.
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onWorldChange(PlayerChangedWorldEvent event) {
+        shownBorders.remove(event.getPlayer().getUniqueId());
+        showBorder(event.getPlayer(), event.getPlayer().getLocation());
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -138,9 +154,12 @@ public class IslandBorderListener implements Listener {
             return;
         }
 
+        // The boundary runs from size/2 blocks before the centre block to size - size/2 - 1 after
+        // it, so an odd size is centred on the middle of that block, not on its corner.
         Location center = islandGrid.center(location.getWorld(), island.getSlot());
+        double offset = (size % 2) / 2.0;
         WorldBorder border = Bukkit.createWorldBorder();
-        border.setCenter(center.getBlockX(), center.getBlockZ());
+        border.setCenter(center.getBlockX() + offset, center.getBlockZ() + offset);
         border.setSize(size);
         border.setWarningDistance(0);
         player.setWorldBorder(border);
