@@ -6,7 +6,6 @@ import org.bukkit.ChunkSnapshot;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
-import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
@@ -243,26 +242,32 @@ public class WorldHandler {
     /**
      * Runs on the template chunk's thread: snapshots every non-air block inside the template box,
      * then places the snapshots on the threads owning the target chunks. Block states carry tile
-     * entity data, so chests keep their contents.
+     * entity data, so chests keep their contents. Air, most of the box, is found in a chunk
+     * snapshot, so only the blocks that are copied are looked up in the world.
      */
     private CompletableFuture<Void> copyTemplateChunk(Chunk chunk, int dx, int dy, int dz) {
         int fromX = Math.max(templateMin.getBlockX(), chunk.getX() << 4);
         int toX = Math.min(templateMax.getBlockX(), (chunk.getX() << 4) + 15);
         int fromZ = Math.max(templateMin.getBlockZ(), chunk.getZ() << 4);
         int toZ = Math.min(templateMax.getBlockZ(), (chunk.getZ() << 4) + 15);
-        int fromY = Math.max(templateMin.getBlockY(), templateWorld.getMinHeight());
+        int minHeight = templateWorld.getMinHeight();
+        int fromY = Math.max(templateMin.getBlockY(), minHeight);
         int toY = Math.min(templateMax.getBlockY(), templateWorld.getMaxHeight() - 1);
+        ChunkSnapshot snapshot = chunk.getChunkSnapshot(false, false, false, false);
 
         Map<ChunkPos, List<BlockState>> byTargetChunk = new HashMap<>();
-        for (int x = fromX; x <= toX; x++) {
-            for (int z = fromZ; z <= toZ; z++) {
-                for (int y = fromY; y <= toY; y++) {
-                    Block block = templateWorld.getBlockAt(x, y, z);
-                    if (block.getType().isAir()) {
+        for (int y = fromY; y <= toY; y++) {
+            // isSectionEmpty takes a 0-based index counted from the lowest section of the world.
+            if (snapshot.isSectionEmpty((y - minHeight) >> 4)) {
+                continue;
+            }
+            for (int x = fromX; x <= toX; x++) {
+                for (int z = fromZ; z <= toZ; z++) {
+                    if (snapshot.getBlockType(x & 15, y, z & 15).isAir()) {
                         continue;
                     }
                     Location target = new Location(world, x + dx, y + dy, z + dz);
-                    byTargetChunk.computeIfAbsent(new ChunkPos(target.getBlockX() >> 4, target.getBlockZ() >> 4), key -> new ArrayList<>()).add(block.getState().copy(target));
+                    byTargetChunk.computeIfAbsent(new ChunkPos(target.getBlockX() >> 4, target.getBlockZ() >> 4), key -> new ArrayList<>()).add(templateWorld.getBlockAt(x, y, z).getState().copy(target));
                 }
             }
         }

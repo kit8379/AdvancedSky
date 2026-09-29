@@ -1,8 +1,11 @@
 package org.me.advancedsky.world;
 
 import io.papermc.paper.threadedregions.scheduler.EntityScheduler;
+import io.papermc.paper.threadedregions.scheduler.RegionScheduler;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.Bukkit;
+import org.bukkit.Chunk;
+import org.bukkit.ChunkSnapshot;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
@@ -73,5 +76,39 @@ class WorldHandlerTest {
         order.verify(player, times(2)).getLocation();
         order.verify(world, atLeastOnce()).getChunkAtAsync(anyInt(), anyInt(), eq(false));
         verify(api, times(1)).lobby(playerUuid);
+    }
+
+    @Test
+    void thePasteLooksUpNoWorldBlockInSectionsHoldingOnlyAir() {
+        ConfigHandler config = mock(ConfigHandler.class);
+        when(config.getIslandWorldName()).thenReturn("islands");
+        when(config.getTemplateWorldName()).thenReturn("template");
+        when(config.getTemplateAnchorY()).thenReturn(64);
+        when(config.getTemplateMinY()).thenReturn(64);
+        when(config.getTemplateMaxY()).thenReturn(79);
+        World template = mock(World.class);
+        when(template.getMinHeight()).thenReturn(0);
+        when(template.getMaxHeight()).thenReturn(128);
+        Chunk templateChunk = mock(Chunk.class);
+        ChunkSnapshot snapshot = mock(ChunkSnapshot.class);
+        when(templateChunk.getChunkSnapshot(false, false, false, false)).thenReturn(snapshot);
+        when(snapshot.isSectionEmpty(4)).thenReturn(true);
+        when(template.getChunkAtAsync(0, 0, true)).thenReturn(CompletableFuture.completedFuture(templateChunk));
+        RegionScheduler regions = mock(RegionScheduler.class);
+        doAnswer(call -> {
+            call.<Consumer<ScheduledTask>>getArgument(4).accept(mock(ScheduledTask.class));
+            return mock(ScheduledTask.class);
+        }).when(regions).run(eq(plugin), any(World.class), anyInt(), anyInt(), any());
+
+        try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
+            bukkit.when(() -> Bukkit.getWorld("islands")).thenReturn(world);
+            bukkit.when(() -> Bukkit.getWorld("template")).thenReturn(template);
+            bukkit.when(Bukkit::getRegionScheduler).thenReturn(regions);
+
+            new WorldHandler(plugin, config, grid).createIsland(SLOT).join();
+        }
+
+        verify(snapshot, never()).getBlockType(anyInt(), anyInt(), anyInt());
+        verify(template, never()).getBlockAt(anyInt(), anyInt(), anyInt());
     }
 }
