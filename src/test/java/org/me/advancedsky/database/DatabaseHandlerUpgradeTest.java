@@ -60,9 +60,9 @@ class DatabaseHandlerUpgradeTest {
     @Test
     void islandReadsTheSavedIslandSizeAndDefaultsToTheFirstLevel() {
         assertEquals(1, database.getIsland(island).getSizeLevel());
-        database.updateIslandUpgradeLevel(admin, island, "island-size", 1, 2, Long.MAX_VALUE);
+        database.updateIslandUpgradeLevel(admin, island, "island-size", 1, 2);
         assertEquals(2, database.getIsland(island).getSizeLevel());
-        database.updateIslandUpgradeLevel(admin, island, "island-size", 2, 1, Long.MAX_VALUE);
+        database.updateIslandUpgradeLevel(admin, island, "island-size", 2, 1);
         assertEquals(1, database.getIsland(island).getSizeLevel());
     }
 
@@ -70,16 +70,16 @@ class DatabaseHandlerUpgradeTest {
     void missingRowIsTheBaseLevelAndTheWriteIsCompareAndSet() {
         assertEquals(1, database.getIslandUpgradeLevel(island, "coop-limit"));
 
-        database.updateIslandUpgradeLevel(admin, island, "coop-limit", 1, 2, Long.MAX_VALUE);
+        database.updateIslandUpgradeLevel(admin, island, "coop-limit", 1, 2);
         assertEquals(2, database.getIslandUpgradeLevel(island, "coop-limit"));
         assertEquals(1, database.getIslandUpgradeLevel(island, "warp-limit"));
 
-        assertThrows(UpgradeLevelChangedException.class, () -> database.updateIslandUpgradeLevel(admin, island, "coop-limit", 1, 2, Long.MAX_VALUE));
+        assertThrows(UpgradeLevelChangedException.class, () -> database.updateIslandUpgradeLevel(admin, island, "coop-limit", 1, 2));
         assertEquals(2, database.getIslandUpgradeLevel(island, "coop-limit"));
 
-        assertThrows(IslandDoesNotExistException.class, () -> database.updateIslandUpgradeLevel(admin, UUID.randomUUID(), "coop-limit", 1, 2, Long.MAX_VALUE));
-        assertThrows(IslandDoesNotExistException.class, () -> database.updateIslandUpgradeLevel(new Actor.Player(UUID.randomUUID()), island, "warp-limit", 1, 2, Long.MAX_VALUE));
-        database.updateIslandUpgradeLevel(new Actor.Player(owner), island, "warp-limit", 1, 2, Long.MAX_VALUE);
+        assertThrows(IslandDoesNotExistException.class, () -> database.updateIslandUpgradeLevel(admin, UUID.randomUUID(), "coop-limit", 1, 2));
+        assertThrows(IslandDoesNotExistException.class, () -> database.updateIslandUpgradeLevel(new Actor.Player(UUID.randomUUID()), island, "warp-limit", 1, 2));
+        database.updateIslandUpgradeLevel(new Actor.Player(owner), island, "warp-limit", 1, 2);
         assertEquals(2, database.getIslandUpgradeLevel(island, "warp-limit"));
     }
 
@@ -92,15 +92,9 @@ class DatabaseHandlerUpgradeTest {
         assertEquals("1", assertThrows(CoopLimitReachedException.class, () -> database.updateCoopPlayer(new Actor.Player(owner), island, second)).getMessage());
         assertThrows(PlayerAlreadyCoopedException.class, () -> database.updateCoopPlayer(new Actor.Player(owner), island, first));
 
-        database.updateIslandUpgradeLevel(admin, island, "coop-limit", 1, 2, Long.MAX_VALUE);
+        database.updateIslandUpgradeLevel(admin, island, "coop-limit", 1, 2);
         database.updateCoopPlayer(new Actor.Player(owner), island, second);
         assertEquals(2, database.getIslandCoops(island).size());
-    }
-
-    @Test
-    void aWritePastItsDeadlineRollsBack() {
-        assertThrows(IllegalStateException.class, () -> database.updateIslandUpgradeLevel(admin, island, "coop-limit", 1, 2, System.currentTimeMillis() - 1));
-        assertEquals(1, database.getIslandUpgradeLevel(island, "coop-limit"));
     }
 
     @Test
@@ -110,7 +104,7 @@ class DatabaseHandlerUpgradeTest {
 
         assertEquals("1", assertThrows(TeamLimitReachedException.class, () -> database.addIslandPlayer(new Actor.Player(owner), island, first, "member")).getMessage());
 
-        database.updateIslandUpgradeLevel(admin, island, "team-limit", 1, 2, Long.MAX_VALUE);
+        database.updateIslandUpgradeLevel(admin, island, "team-limit", 1, 2);
         database.addIslandPlayer(new Actor.Player(owner), island, first, "member");
         assertEquals("2", assertThrows(TeamLimitReachedException.class, () -> database.addIslandPlayer(new Actor.Player(first), island, second, "member")).getMessage());
         assertEquals(2, database.getIslandPlayers(island).size());
@@ -120,7 +114,7 @@ class DatabaseHandlerUpgradeTest {
     void joiningNeedsTheInviterOnTheIslandAndNoBanUnlessAnOperatorAddsThePlayer() {
         UUID invitee = UUID.randomUUID();
         UUID stranger = UUID.randomUUID();
-        database.updateIslandUpgradeLevel(admin, island, "team-limit", 1, 2, Long.MAX_VALUE);
+        database.updateIslandUpgradeLevel(admin, island, "team-limit", 1, 2);
 
         assertThrows(IslandDoesNotExistException.class, () -> database.addIslandPlayer(new Actor.Player(stranger), island, invitee, "member"));
 
@@ -142,11 +136,11 @@ class DatabaseHandlerUpgradeTest {
 
         // Another member's homes are their own count: the seeded default fills their base limit.
         UUID member = UUID.randomUUID();
-        database.updateIslandUpgradeLevel(admin, island, "team-limit", 1, 2, Long.MAX_VALUE);
+        database.updateIslandUpgradeLevel(admin, island, "team-limit", 1, 2);
         database.addIslandPlayer(new Actor.Player(owner), island, member, "member");
         assertThrows(HomeLimitReachedException.class, () -> database.updateHomePoint(new Actor.Player(member), island, member, "farm", "0,0,0,0,0"));
 
-        database.updateIslandUpgradeLevel(admin, island, "home-limit", 1, 2, Long.MAX_VALUE);
+        database.updateIslandUpgradeLevel(admin, island, "home-limit", 1, 2);
         database.updateHomePoint(new Actor.Player(owner), island, owner, "farm", "0,0,0,0,0");
         database.updateHomePoint(new Actor.Player(member), island, member, "farm", "0,0,0,0,0");
         assertEquals(2, database.getIslandHomes(island, owner).size());
@@ -160,7 +154,7 @@ class DatabaseHandlerUpgradeTest {
         assertEquals("1", assertThrows(WarpLimitReachedException.class, () -> database.updateWarpPoint(new Actor.Player(owner), island, "farm", "0,0,0,0,0")).getMessage());
         assertEquals("4,5,6,0,0", database.getIslandWarps(island).get("shop"));
 
-        database.updateIslandUpgradeLevel(admin, island, "warp-limit", 1, 2, Long.MAX_VALUE);
+        database.updateIslandUpgradeLevel(admin, island, "warp-limit", 1, 2);
         database.updateWarpPoint(new Actor.Player(owner), island, "farm", "0,0,0,0,0");
         assertEquals(2, database.getIslandWarps(island).size());
     }
@@ -214,7 +208,7 @@ class DatabaseHandlerUpgradeTest {
     @Test
     void islandCarriesTheGeneratorRatesLevel() {
         assertEquals(1, database.getIsland(island).getGeneratorLevel());
-        database.updateIslandUpgradeLevel(admin, island, "generator-rates", 1, 2, Long.MAX_VALUE);
+        database.updateIslandUpgradeLevel(admin, island, "generator-rates", 1, 2);
         assertEquals(2, database.getIsland(island).getGeneratorLevel());
     }
 }

@@ -25,12 +25,6 @@ public final class CrossServerMessenger {
     // A request is only started while its requester has most of its wait left, so the answer
     // reaches it before it gives up and acts on a failure the host never had.
     private static final long MAX_REQUEST_AGE_MILLIS = MAX_MESSAGE_AGE_MILLIS / 3;
-    /**
-     * How long after it starts a handler may still make a change its requester must learn about:
-     * a request starts at most {@link #MAX_REQUEST_AGE_MILLIS} after it was sent, so a change made
-     * by then leaves the answer five seconds to reach the requester before it stops waiting.
-     */
-    public static final long HANDLER_DEADLINE_MILLIS = REQUEST_TIMEOUT_SECONDS * 1000L - MAX_REQUEST_AGE_MILLIS - 5_000L;
     private static final int INBOX_MAX_LEN = 1000;
     private static final int READ_BLOCK_MILLIS = 1000;
     private static final int READ_COUNT = 10;

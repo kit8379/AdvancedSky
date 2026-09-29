@@ -271,11 +271,11 @@ public class IslandOperator {
 
     /**
      * The island size a new level may bring reaches players through their border on their next
-     * move; nothing else has to be pushed. The write does not commit after the deadline.
+     * move; nothing else has to be pushed.
      */
-    public CompletableFuture<Void> setUpgradeLevel(Actor actor, UUID islandUuid, String upgradeId, int expectedLevel, int newLevel, long deadlineMillis) {
+    public CompletableFuture<Void> setUpgradeLevel(Actor actor, UUID islandUuid, String upgradeId, int expectedLevel, int newLevel) {
         return updateCache(islandUuid, () -> {
-            database.updateIslandUpgradeLevel(actor, islandUuid, upgradeId, expectedLevel, newLevel, deadlineMillis);
+            database.updateIslandUpgradeLevel(actor, islandUuid, upgradeId, expectedLevel, newLevel);
             return null;
         });
     }
