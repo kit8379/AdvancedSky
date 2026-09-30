@@ -291,6 +291,7 @@ class LimitHandlerTest {
     }
 
     @Test
+    @SuppressWarnings("removal")
     void addingToABlockAlreadyThereIsNeitherCheckedNorCounted() {
         LimitHandler limits = mock(LimitHandler.class);
         when(limits.getBlockLimit(any())).thenReturn(LimitHandler.UNLIMITED);
