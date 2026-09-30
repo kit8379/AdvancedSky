@@ -80,20 +80,24 @@ public class PlayerAcceptInviteCommand implements SubCommand {
             player.sendMessage(config.getPlayerInviteAcceptedMessage());
             api.sendPlayerMessage(inviterUuid, config.getPlayerInviteAcceptedNotifyMessage(player.getName()));
 
-            return api.getIslandPlayers(islandUuid).thenCompose(islandPlayers -> {
+            api.getIslandPlayers(islandUuid).thenAccept(islandPlayers -> {
                 for (UUID uuid : islandPlayers) {
                     if (!uuid.equals(playerUuid) && !uuid.equals(inviterUuid)) {
                         api.sendPlayerMessage(uuid, config.getNewMemberNotificationMessage(player.getName()));
                     }
                 }
-                // The player has joined now; a failed trip there is reported as that, not as the join.
-                return api.player(playerUuid).home("default").exceptionally(ex -> {
-                    if (!(ex.getCause() instanceof TeleportCancelledException)) {
-                        player.sendMessage(config.getUnknownExceptionMessage());
-                        plugin.severe("Player " + player.getName() + " joined island " + islandUuid + " but could not be taken home", ex);
-                    }
-                    return null;
-                });
+            }).exceptionally(ex -> {
+                plugin.severe("Could not tell the members of island " + islandUuid + " that " + player.getName() + " joined", ex);
+                return null;
+            });
+
+            // The player has joined now; a failed trip there is reported as that, not as the join.
+            return api.player(playerUuid).home("default").exceptionally(ex -> {
+                if (!(ex.getCause() instanceof TeleportCancelledException)) {
+                    player.sendMessage(config.getUnknownExceptionMessage());
+                    plugin.severe("Player " + player.getName() + " joined island " + islandUuid + " but could not be taken home", ex);
+                }
+                return null;
             });
         }).exceptionally(ex -> {
             Throwable cause = ex.getCause();
