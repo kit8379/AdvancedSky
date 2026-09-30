@@ -259,8 +259,11 @@ public class LimitHandler {
 
         // An entity whose box only reaches over the boundary stands outside it.
         int count = world.getNearbyEntities(boundary, entity -> {
+            if (entity.getType() != type) {
+                return false;
+            }
             Location location = entity.getLocation();
-            return entity.getType() == type && islandGrid.isInsideIsland(island.getSlot(), size, location.getBlockX(), location.getBlockZ());
+            return islandGrid.isInsideIsland(island.getSlot(), size, location.getBlockX(), location.getBlockZ());
         }).size();
         return count < limit;
     }
