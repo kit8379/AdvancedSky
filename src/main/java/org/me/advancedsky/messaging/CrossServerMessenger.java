@@ -135,7 +135,13 @@ public final class CrossServerMessenger {
             long maxAge = CrossServerMessage.TYPE_REQUEST.equals(message.getType()) ? MAX_REQUEST_AGE_MILLIS : MAX_MESSAGE_AGE_MILLIS;
             if (age > maxAge) {
                 plugin.warning("Dropping stale cross-server " + message.getType() + " " + message.getAction() + " aged " + age + "ms from " + message.getSource());
-                deleteEntry(entry.getID());
+                if (CrossServerMessage.TYPE_REQUEST.equals(message.getType())) {
+                    // Its requester may still be waiting: it learns the request never ran instead
+                    // of timing out on an outcome it cannot know.
+                    sendAndDeleteAsync(entry.getID(), CrossServerMessage.failedResponse(message, "Request expired before it ran"));
+                } else {
+                    deleteEntry(entry.getID());
+                }
                 return;
             }
 
