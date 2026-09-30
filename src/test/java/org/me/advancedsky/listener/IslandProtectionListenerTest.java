@@ -1,10 +1,17 @@
 package org.me.advancedsky.listener;
 
+import com.google.common.base.Function;
+import com.google.common.base.Functions;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.BlockState;
+import org.bukkit.damage.DamageSource;
+import org.bukkit.entity.Cow;
+import org.bukkit.entity.LightningStrike;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Vehicle;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerPortalEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
@@ -18,6 +25,7 @@ import org.me.advancedsky.model.Island;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -95,6 +103,25 @@ class IslandProtectionListenerTest {
 
         assertTrue(event.isCancelled());
         assertTrue(mockingDetails(mount).getInvocations().stream().anyMatch(invocation -> invocation.getMethod().getName().equals("teleportAsync")));
+    }
+
+    @Test
+    void aVisitorsChannelingStrikeCannotHurtIslandAnimals() {
+        island(false, Set.of());
+        Cow cow = mock(Cow.class);
+        when(cow.getLocation()).thenReturn(inside);
+        LightningStrike strike = mock(LightningStrike.class);
+        Player caller = player(visitor, false);
+        when(strike.getCausingEntity()).thenReturn(caller);
+        Map<EntityDamageEvent.DamageModifier, Double> modifiers = new EnumMap<>(EntityDamageEvent.DamageModifier.class);
+        modifiers.put(EntityDamageEvent.DamageModifier.BASE, 5.0);
+        Map<EntityDamageEvent.DamageModifier, Function<? super Double, Double>> functions = new EnumMap<>(EntityDamageEvent.DamageModifier.class);
+        functions.put(EntityDamageEvent.DamageModifier.BASE, Functions.constant(-0.0));
+        EntityDamageByEntityEvent event = new EntityDamageByEntityEvent(strike, cow, EntityDamageEvent.DamageCause.LIGHTNING, mock(DamageSource.class), modifiers, functions, false);
+
+        listener.onEntityDamage(event);
+
+        assertTrue(event.isCancelled());
     }
 
     @Test

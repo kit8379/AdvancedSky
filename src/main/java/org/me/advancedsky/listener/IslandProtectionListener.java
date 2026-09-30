@@ -345,7 +345,7 @@ public class IslandProtectionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onEntityDamage(EntityDamageByEntityEvent event) {
-        Player damager = resolvePlayer(event.getDamager());
+        Player damager = resolveAttacker(event);
 
         if (damager == null) {
             return;
@@ -359,6 +359,22 @@ public class IslandProtectionListener implements Listener {
             event.setCancelled(true);
             deny(damager);
         }
+    }
+
+    /**
+     * The player behind the damage, also for primed TNT, a hit end crystal and a Channeling
+     * strike, which carries no causing entity in its damage source.
+     */
+    private Player resolveAttacker(EntityDamageByEntityEvent event) {
+        if (event.getDamageSource().getCausingEntity() instanceof Player player) {
+            return player;
+        }
+
+        if (event.getDamager() instanceof LightningStrike strike && strike.getCausingEntity() instanceof Player player) {
+            return player;
+        }
+
+        return resolvePlayer(event.getDamager());
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
