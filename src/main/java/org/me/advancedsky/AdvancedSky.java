@@ -289,7 +289,11 @@ public class AdvancedSky extends JavaPlugin {
         }
 
         if (onlinePlayerRegistry != null) {
-            onlinePlayerRegistry.removeAllOnServer(config.getServerName());
+            try {
+                onlinePlayerRegistry.removeAllOnServer(config.getServerName());
+            } catch (RuntimeException e) {
+                // The registry logged it; the pools below are closed all the same.
+            }
         }
 
         if (redisHandler != null) {
