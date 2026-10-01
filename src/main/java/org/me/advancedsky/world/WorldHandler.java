@@ -15,6 +15,7 @@ import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.grid.IslandGrid;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,9 +39,15 @@ import java.util.function.Supplier;
 public class WorldHandler {
 
     /**
-     * Chunks loaded and processed at the same time while clearing an island area.
+     * Chunks loaded and looked at the same time while clearing an island area.
      */
     private static final int CHUNKS_PER_BATCH = 32;
+
+    /**
+     * Blocks removed per tick while clearing an island area, one chunk at a time, so a built-up
+     * island does not stall the thread that owns it, which on Paper is the whole server's.
+     */
+    private static final int BLOCKS_PER_TICK = 4096;
 
     /**
      * How long a delete waits for the players it sent to the lobby to leave the island's area
@@ -292,31 +299,71 @@ public class WorldHandler {
         }
 
         int to = Math.min(from + CHUNKS_PER_BATCH, chunks.size());
+        List<ChunkPos> withBlocks = Collections.synchronizedList(new ArrayList<>());
         List<CompletableFuture<Void>> batch = new ArrayList<>();
         for (ChunkPos pos : chunks.subList(from, to)) {
             batch.add(onChunk(world, pos.x(), pos.z(), false, chunk -> {
-                clearChunk(chunk);
+                removeEntities(chunk);
+                if (hasBlocks(chunk)) {
+                    withBlocks.add(pos);
+                }
                 return CompletableFuture.completedFuture(null);
             }));
         }
-        return allOf(batch).thenCompose(v -> clearInBatches(chunks, to));
+        return allOf(batch).thenCompose(v -> clearChunks(withBlocks, 0)).thenCompose(v -> clearInBatches(chunks, to));
+    }
+
+    private CompletableFuture<Void> clearChunks(List<ChunkPos> chunks, int index) {
+        if (index >= chunks.size()) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        return clearChunk(chunks.get(index)).thenCompose(v -> clearChunks(chunks, index + 1));
     }
 
     /**
-     * Runs on the chunk's thread. Only sections that hold any block are visited, so void chunks cost nothing.
+     * Removes the chunk's blocks on its thread, {@link #BLOCKS_PER_TICK} each tick until none is left.
      */
-    private void clearChunk(Chunk chunk) {
+    private CompletableFuture<Void> clearChunk(ChunkPos pos) {
+        return onChunk(world, pos.x(), pos.z(), false, chunk -> removeBlocks(chunk) ? CompletableFuture.completedFuture(null) : clearChunk(pos));
+    }
+
+    /**
+     * Runs on the chunk's thread.
+     */
+    private static void removeEntities(Chunk chunk) {
         for (Entity entity : chunk.getEntities()) {
             if (!(entity instanceof Player)) {
                 entity.remove();
             }
         }
+    }
 
+    /**
+     * Runs on the chunk's thread.
+     */
+    private static boolean hasBlocks(Chunk chunk) {
+        ChunkSnapshot snapshot = chunk.getChunkSnapshot(false, false, false, false);
+        int sectionCount = (chunk.getWorld().getMaxHeight() - chunk.getWorld().getMinHeight()) >> 4;
+        for (int section = 0; section < sectionCount; section++) {
+            if (!snapshot.isSectionEmpty(section)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Runs on the chunk's thread: removes up to {@link #BLOCKS_PER_TICK} of its blocks, and
+     * tells whether that left none. Only sections that hold any block are visited.
+     */
+    private static boolean removeBlocks(Chunk chunk) {
         World chunkWorld = chunk.getWorld();
         int minHeight = chunkWorld.getMinHeight();
         int sectionCount = (chunkWorld.getMaxHeight() - minHeight) >> 4;
         ChunkSnapshot snapshot = chunk.getChunkSnapshot(false, false, false, false);
 
+        int removed = 0;
         // isSectionEmpty takes a 0-based index counted from the lowest section of the world.
         for (int section = 0; section < sectionCount; section++) {
             if (snapshot.isSectionEmpty(section)) {
@@ -327,12 +374,17 @@ public class WorldHandler {
                 for (int x = 0; x < 16; x++) {
                     for (int z = 0; z < 16; z++) {
                         if (!snapshot.getBlockType(x, y, z).isAir()) {
+                            if (removed == BLOCKS_PER_TICK) {
+                                return false;
+                            }
                             chunk.getBlock(x, y, z).setType(Material.AIR, false);
+                            removed++;
                         }
                     }
                 }
             }
         }
+        return true;
     }
 
     // ===================================================================
