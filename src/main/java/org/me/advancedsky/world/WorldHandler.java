@@ -117,14 +117,6 @@ public class WorldHandler {
     }
 
     /**
-     * Whether the slot's area still holds a deleted island, whose region files go at the next
-     * startup.
-     */
-    public boolean isPurgePending(int slot) {
-        return regionFiles(slot).stream().anyMatch(regionPurge::isScheduled);
-    }
-
-    /**
      * The region, entity and point-of-interest files holding the island's area, which is exactly
      * one 512x512 region file.
      */

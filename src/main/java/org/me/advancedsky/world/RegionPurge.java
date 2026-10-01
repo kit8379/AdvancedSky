@@ -9,8 +9,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Region files of deleted islands, deleted at the next startup before any world loads. An
@@ -25,18 +23,9 @@ public class RegionPurge {
     private static final String LIST_FILE = "region-purge.txt";
 
     private final Path listFile;
-    private final Set<Path> listed = ConcurrentHashMap.newKeySet();
 
-    public RegionPurge(Path dataDirectory) throws IOException {
+    public RegionPurge(Path dataDirectory) {
         this.listFile = dataDirectory.resolve(LIST_FILE);
-        // Files the last startup could not delete stay listed.
-        if (Files.exists(listFile)) {
-            for (String line : Files.readAllLines(listFile, StandardCharsets.UTF_8)) {
-                if (!line.isBlank()) {
-                    listed.add(Path.of(line));
-                }
-            }
-        }
     }
 
     /**
@@ -45,14 +34,6 @@ public class RegionPurge {
     public synchronized void schedule(List<Path> files) throws IOException {
         Files.createDirectories(listFile.getParent());
         Files.write(listFile, files.stream().map(Path::toString).toList(), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-        listed.addAll(files);
-    }
-
-    /**
-     * Whether the file is listed for deletion at the next startup.
-     */
-    public boolean isScheduled(Path file) {
-        return listed.contains(file);
     }
 
     /**

@@ -65,9 +65,7 @@ area's region, entity and point-of-interest files in `plugins/AdvancedSky/region
 island area is exactly one region file, so nothing is cleared block by block: the next startup
 deletes the listed files before any world loads, while nothing can have them open or cached, and
 a file it cannot delete stays listed for the startup after. Until then the old blocks stay on a
-slot nobody may stand on. Slots are never handed out twice; should one be handed out again
-anyway (an `AUTO_INCREMENT` that MySQL before 8.0 resets on restart), the host refuses to build
-on it while its old files wait for deletion.
+slot nobody may stand on. Slots are never handed out twice.
 
 ## Features
 

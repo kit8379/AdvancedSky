@@ -66,14 +66,12 @@ class WorldHandlerTest {
         when(player.getUniqueId()).thenReturn(playerUuid);
         when(player.getLocation()).thenReturn(grid.center(world, SLOT));
 
-        WorldHandler handler;
         try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
             bukkit.when(() -> Bukkit.getWorld("islands")).thenReturn(world);
             bukkit.when(() -> Bukkit.getWorld("template")).thenReturn(mock(World.class));
             bukkit.when(Bukkit::getOnlinePlayers).thenAnswer(call -> List.of(player));
 
-            handler = new WorldHandler(plugin, config, grid, new RegionPurge(folder.resolve("plugin")));
-            handler.deleteIsland(SLOT).join();
+            new WorldHandler(plugin, config, grid, new RegionPurge(folder.resolve("plugin"))).deleteIsland(SLOT).join();
         }
 
         verify(api).lobby(playerUuid);
@@ -82,8 +80,6 @@ class WorldHandlerTest {
         String name = "r." + Math.floorDiv(center.getBlockX(), 512) + "." + Math.floorDiv(center.getBlockZ(), 512) + ".mca";
         Path islands = folder.resolve("islands").toAbsolutePath();
         assertEquals(List.of(islands.resolve("region").resolve(name).toString(), islands.resolve("entities").resolve(name).toString(), islands.resolve("poi").resolve(name).toString()), Files.readAllLines(folder.resolve("plugin").resolve("region-purge.txt")));
-        assertTrue(handler.isPurgePending(SLOT));
-        assertFalse(handler.isPurgePending(SLOT + 1));
     }
 
     @Test
@@ -106,7 +102,7 @@ class WorldHandlerTest {
     }
 
     @Test
-    void thePasteLooksUpNoWorldBlockInSectionsHoldingOnlyAir() throws IOException {
+    void thePasteLooksUpNoWorldBlockInSectionsHoldingOnlyAir() {
         when(config.getTemplateAnchorY()).thenReturn(64);
         when(config.getTemplateMinY()).thenReturn(64);
         when(config.getTemplateMaxY()).thenReturn(79);

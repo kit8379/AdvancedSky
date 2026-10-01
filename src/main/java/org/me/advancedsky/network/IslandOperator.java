@@ -57,11 +57,6 @@ public class IslandOperator {
             int slot = database.addIslandData(islandUuid, ownerUuid, serverID);
 
             return islandCache.load(islandUuid).thenCompose(v -> {
-                // A slot handed out again (an AUTO_INCREMENT that restarted below a deleted
-                // island's slot) is not built on: the next startup deletes its region files.
-                if (worldHandler.isPurgePending(slot)) {
-                    throw new IllegalStateException("Slot " + slot + " still holds a deleted island until the next restart");
-                }
                 return worldHandler.createIsland(slot);
             }).thenRunAsync(() -> {
                 plugin.debug("IslandOperator", "Created island " + islandUuid + " at slot " + slot + " on server: " + serverID);

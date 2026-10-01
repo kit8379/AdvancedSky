@@ -34,11 +34,10 @@ class RegionPurgeTest {
         assertFalse(Files.exists(entities));
         assertTrue(Files.exists(neighbour));
         assertFalse(Files.exists(data.resolve("region-purge.txt")));
-        assertFalse(new RegionPurge(data).isScheduled(region));
     }
 
     @Test
-    void aFileThatCannotBeDeletedStaysListedAndItsAreaStaysTaken() throws IOException {
+    void aFileThatCannotBeDeletedStaysListed() throws IOException {
         Path data = folder.resolve("plugin");
         Path deletable = Files.writeString(folder.resolve("r.4.4.mca"), "chunks");
         // A directory with something in it cannot be deleted like a file.
@@ -50,8 +49,5 @@ class RegionPurgeTest {
 
         assertFalse(Files.exists(deletable));
         assertEquals(List.of(stuck.toString()), Files.readAllLines(data.resolve("region-purge.txt")));
-        RegionPurge afterRestart = new RegionPurge(data);
-        assertTrue(afterRestart.isScheduled(stuck));
-        assertFalse(afterRestart.isScheduled(deletable));
     }
 }
