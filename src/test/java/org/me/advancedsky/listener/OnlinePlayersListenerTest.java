@@ -18,6 +18,9 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 class OnlinePlayersListenerTest {
@@ -77,6 +80,42 @@ class OnlinePlayersListenerTest {
 
         verify(registry, times(2)).addOnlinePlayer(playerUuid, "Steve", "sky1");
         assertTrue(retries.isEmpty());
+    }
+
+    @Test
+    void aQuitThatFailedToUnregisterIsTriedAgainAndStillComesBeforeTheNextJoin() throws Exception {
+        AdvancedSky plugin = mock(AdvancedSky.class);
+        // The retry is handed over from the delay's own thread.
+        BlockingQueue<Runnable> queued = new LinkedBlockingQueue<>();
+        BukkitAsyncExecutor executor = mock(BukkitAsyncExecutor.class);
+        doAnswer(call -> queued.add(call.getArgument(0))).when(executor).execute(any());
+        when(plugin.getBukkitAsyncExecutor()).thenReturn(executor);
+        OnlinePlayerRegistry registry = mock(OnlinePlayerRegistry.class);
+        OnlinePlayersListener listener = new OnlinePlayersListener(plugin, registry, "sky1");
+        UUID playerUuid = UUID.randomUUID();
+        Player player = mock(Player.class);
+        when(player.getUniqueId()).thenReturn(playerUuid);
+        when(player.getName()).thenReturn("Steve");
+        doThrow(new RuntimeException("redis down")).doNothing().when(registry).removeOnlinePlayer(playerUuid, "sky1");
+
+        invoke(listener, "onPlayerQuit", new PlayerQuitEvent(player, Component.empty(), PlayerQuitEvent.QuitReason.DISCONNECTED));
+        invoke(listener, "onPlayerJoin", new PlayerJoinEvent(player, Component.empty()));
+        runNext(queued);
+        // The retry, once its delay is over, then the removal it makes, then the join.
+        runNext(queued);
+        runNext(queued);
+        runNext(queued);
+
+        InOrder order = inOrder(registry);
+        order.verify(registry, times(2)).removeOnlinePlayer(playerUuid, "sky1");
+        order.verify(registry).addOnlinePlayer(playerUuid, "Steve", "sky1");
+        assertTrue(queued.isEmpty());
+    }
+
+    private static void runNext(BlockingQueue<Runnable> queued) throws InterruptedException {
+        Runnable next = queued.poll(5, TimeUnit.SECONDS);
+        assertNotNull(next, "nothing was queued");
+        next.run();
     }
 
     private static void invoke(OnlinePlayersListener listener, String handler, Object event) throws Exception {
