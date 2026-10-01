@@ -160,6 +160,17 @@ class IslandSizeTest {
         verify(plugin).severe(eq("Island data saved but could not refresh the island cache: " + islandId), any(Throwable.class));
     }
 
+    @Test
+    void anIslandWhoseEntryLoadsAgainIsNotScanned() {
+        when(cache.isUnavailable(islandId)).thenReturn(true);
+        WorldHandler worlds = mock(WorldHandler.class);
+
+        CompletionException error = assertThrows(CompletionException.class, () -> new LevelHandler(plugin, config, database, mock(LimitHandler.class), worlds, cache, grid).calIslandLevel(islandId).join());
+        assertInstanceOf(IllegalStateException.class, error.getCause());
+        verifyNoInteractions(worlds);
+        verify(database, never()).getIslandLevel(islandId);
+    }
+
     @ParameterizedTest
     @ValueSource(ints = {1, 2, 3, 4, 5})
     @SuppressWarnings("unchecked")

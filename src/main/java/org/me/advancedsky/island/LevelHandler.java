@@ -74,6 +74,12 @@ public class LevelHandler {
     public CompletableFuture<Integer> calIslandLevel(UUID islandUuid) {
         Island island = islandCache.get(islandUuid);
 
+        // No scan while its entry loads again: failing makes the scheduler retry in seconds, with
+        // the island's capped blocks still waiting for their counts, instead of in minutes.
+        if (island == null && islandCache.isUnavailable(islandUuid)) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Island " + islandUuid + " cannot be scanned while its cache entry loads again"));
+        }
+
         if (island == null) {
             return getIslandLevel(islandUuid).thenApply(cachedLevel -> {
                 plugin.debug("LevelHandler", "Island " + islandUuid + " is not available here, returning cached level: " + cachedLevel);

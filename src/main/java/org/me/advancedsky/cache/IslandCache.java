@@ -54,6 +54,13 @@ public class IslandCache {
     }
 
     /**
+     * Whether the island is hosted here but its entry is unavailable while it loads again.
+     */
+    public boolean isUnavailable(UUID islandUuid) {
+        return dirty.containsKey(islandUuid);
+    }
+
+    /**
      * The island whose area holds the location, or null in the gap, on a free slot, for an
      * island not hosted here, and while its entry is unavailable (see {@link #get}). The
      * caller checks that the location is in the island world.
