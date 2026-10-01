@@ -8,15 +8,14 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
-import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.vehicle.VehicleMoveEvent;
 import org.bukkit.util.Vector;
-import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.grid.IslandGrid;
@@ -34,7 +33,6 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class IslandBorderListener implements Listener {
 
-    private final AdvancedSky plugin;
     private final ConfigHandler config;
     private final IslandCache islandCache;
     private final IslandGrid islandGrid;
@@ -44,8 +42,7 @@ public class IslandBorderListener implements Listener {
      */
     private final Map<UUID, Long> shownBorders = new ConcurrentHashMap<>();
 
-    public IslandBorderListener(AdvancedSky plugin, ConfigHandler config, IslandCache islandCache, IslandGrid islandGrid) {
-        this.plugin = plugin;
+    public IslandBorderListener(ConfigHandler config, IslandCache islandCache, IslandGrid islandGrid) {
         this.config = config;
         this.islandCache = islandCache;
         this.islandGrid = islandGrid;
@@ -67,13 +64,15 @@ public class IslandBorderListener implements Listener {
     }
 
     /**
-     * Once the respawn is over, a tick later on the player's scheduler: Folia fires no
-     * PlayerPostRespawnEvent.
+     * A respawn makes the client show its world's own border, and Folia fires no respawn event, so
+     * the border is dropped at death and the first move or teleport after the respawn sends it again.
      */
-    @EventHandler(priority = EventPriority.MONITOR)
-    public void onPlayerRespawn(PlayerRespawnEvent event) {
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPlayerDeath(PlayerDeathEvent event) {
         Player player = event.getPlayer();
-        player.getScheduler().runDelayed(plugin, task -> resendBorder(player, player.getLocation()), null, 1L);
+        if (shownBorders.remove(player.getUniqueId()) != null) {
+            player.setWorldBorder(null);
+        }
     }
 
     /**
@@ -181,8 +180,8 @@ public class IslandBorderListener implements Listener {
     }
 
     /**
-     * A respawn or a world change makes the client show its world's own border, so the island's
-     * is sent again even when it has not changed, and one sent before is cleared off an island.
+     * A world change makes the client show its world's own border, so the island's is sent again
+     * even when it has not changed, and one sent before is cleared off an island.
      */
     private void resendBorder(Player player, Location location) {
         boolean shown = shownBorders.remove(player.getUniqueId()) != null;

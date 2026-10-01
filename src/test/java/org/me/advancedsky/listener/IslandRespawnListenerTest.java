@@ -2,17 +2,23 @@ package org.me.advancedsky.listener;
 
 import io.papermc.paper.threadedregions.scheduler.EntityScheduler;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
+import net.kyori.adventure.text.Component;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
+import org.bukkit.damage.DamageSource;
 import org.bukkit.entity.Player;
-import org.bukkit.event.player.PlayerRespawnEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.api.AdvancedSkyAPI;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.model.Island;
+import org.mockito.ArgumentCaptor;
+import org.mockito.MockedStatic;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -28,10 +34,9 @@ class IslandRespawnListenerTest {
     private final IslandCache cache = mock(IslandCache.class);
     private final World world = mock(World.class);
     private final Player player = mock(Player.class);
+    private final EntityScheduler scheduler = mock(EntityScheduler.class);
     private final UUID playerUuid = UUID.randomUUID();
-    // Died in the gap; the bed they respawn at is on an island.
-    private final Location gap = new Location(world, 1024, 70, 1024);
-    private final Location bed = new Location(world, 256, 70, 256);
+    private final Location deathLocation = new Location(world, 2304, 40, 256);
     private final IslandRespawnListener listener = new IslandRespawnListener(plugin, config, cache);
 
     IslandRespawnListenerTest() {
@@ -40,41 +45,63 @@ class IslandRespawnListenerTest {
         when(config.getIslandWorldName()).thenReturn("skyblock");
         when(world.getName()).thenReturn("skyblock");
         when(player.getUniqueId()).thenReturn(playerUuid);
-        when(player.getLocation()).thenReturn(gap);
-        // The lobby trip waits a tick after the respawn; run it at once here.
-        EntityScheduler scheduler = mock(EntityScheduler.class);
+        when(player.getLocation()).thenReturn(deathLocation);
         when(player.getScheduler()).thenReturn(scheduler);
-        when(scheduler.runDelayed(any(), any(), any(), anyLong())).thenAnswer(call -> {
-            call.<Consumer<ScheduledTask>>getArgument(1).accept(mock(ScheduledTask.class));
-            return mock(ScheduledTask.class);
-        });
     }
 
     @Test
-    void aGapDeathRespawningOnAnIslandThatBannedThePlayerGoesToTheLobby() {
-        island(Set.of(playerUuid));
+    void aMemberIsTakenHomeOnceAliveAgain() {
+        island(UUID.randomUUID(), Set.of(playerUuid), Set.of(), Map.of(playerUuid, "2304.5,101.0,256.5,0.0,0.0"), null);
+        ArgumentCaptor<Consumer<ScheduledTask>> check = captor();
 
-        respawn();
+        try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
+            bukkit.when(() -> Bukkit.getWorld("skyblock")).thenReturn(world);
+            die();
+        }
+        verify(scheduler).runAtFixedRate(eq(plugin), check.capture(), isNull(), eq(1L), eq(1L));
 
-        verify(api).lobby(playerUuid);
-    }
+        ScheduledTask task = mock(ScheduledTask.class);
+        when(player.isDead()).thenReturn(true);
+        check.getValue().accept(task);
+        verify(player, never()).teleportAsync(any(Location.class));
 
-    @Test
-    void aGapDeathRespawningOnAnIslandThePlayerMayBeOnStaysThere() {
-        island(Set.of());
-
-        respawn();
-
+        when(player.isDead()).thenReturn(false);
+        check.getValue().accept(task);
+        verify(task).cancel();
+        verify(player).teleportAsync(new Location(world, 2304.5, 101.0, 256.5, 0, 0));
         verify(api, never()).lobby(any());
     }
 
-    private void island(Set<UUID> bans) {
-        Island island = new Island(UUID.randomUUID(), 1, false, false, UUID.randomUUID(), Set.of(), Set.of(), bans, Map.of(), null, 1, 1);
-        when(cache.getIslandUuidAt(bed)).thenReturn(island.getIslandUuid());
-        when(cache.getAt(bed)).thenReturn(island);
+    @Test
+    void aBannedPlayerGoesToTheLobby() {
+        island(UUID.randomUUID(), Set.of(), Set.of(playerUuid), Map.of(), "2304.5,101.0,256.5,0.0,0.0");
+
+        die();
+
+        verify(api).lobby(playerUuid);
+        verifyNoInteractions(scheduler);
     }
 
-    private void respawn() {
-        listener.onRespawn(new PlayerRespawnEvent(player, bed, true, false, false, PlayerRespawnEvent.RespawnReason.DEATH));
+    @Test
+    void aDeathInTheGapGoesToTheLobby() {
+        die();
+
+        verify(api).lobby(playerUuid);
+        verifyNoInteractions(scheduler);
+    }
+
+    private void island(UUID owner, Set<UUID> members, Set<UUID> bans, Map<UUID, String> homes, String warp) {
+        Island island = new Island(UUID.randomUUID(), 1, false, false, owner, members, Set.of(), bans, homes, warp, 1, 1);
+        when(cache.getIslandUuidAt(deathLocation)).thenReturn(island.getIslandUuid());
+        when(cache.getAt(deathLocation)).thenReturn(island);
+    }
+
+    private void die() {
+        listener.onDeath(new PlayerDeathEvent(player, mock(DamageSource.class), List.of(), 0, Component.empty(), false));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static ArgumentCaptor<Consumer<ScheduledTask>> captor() {
+        return ArgumentCaptor.forClass(Consumer.class);
     }
 }

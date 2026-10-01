@@ -1,19 +1,18 @@
 package org.me.advancedsky.listener;
 
-import io.papermc.paper.threadedregions.scheduler.EntityScheduler;
-import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
+import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.WorldBorder;
 import org.bukkit.entity.Player;
+import org.bukkit.damage.DamageSource;
 import org.bukkit.entity.Vehicle;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
-import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.junit.jupiter.api.Test;
-import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.grid.IslandGrid;
@@ -24,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
@@ -38,7 +36,7 @@ class IslandBorderListenerTest {
     private final Player player = mock(Player.class);
     private final WorldBorder border = mock(WorldBorder.class);
     private final Location center = grid.center(world, SLOT);
-    private final IslandBorderListener listener = new IslandBorderListener(mock(AdvancedSky.class), config, cache, grid);
+    private final IslandBorderListener listener = new IslandBorderListener(config, cache, grid);
 
     IslandBorderListenerTest() {
         when(world.getName()).thenReturn("islands");
@@ -66,23 +64,17 @@ class IslandBorderListenerTest {
     }
 
     @Test
-    void aRespawnSendsTheSameBorderAgain() {
+    void aDeathClearsTheBorderSoTheNextTeleportSendsItAgain() {
         when(config.getUpgradeLimit("island-size", 1)).thenReturn(75);
-        when(player.getLocation()).thenReturn(center);
-        // The resend waits a tick after the respawn; run it at once here.
-        EntityScheduler scheduler = mock(EntityScheduler.class);
-        when(player.getScheduler()).thenReturn(scheduler);
-        when(scheduler.runDelayed(any(), any(), any(), anyLong())).thenAnswer(call -> {
-            call.<Consumer<ScheduledTask>>getArgument(1).accept(mock(ScheduledTask.class));
-            return mock(ScheduledTask.class);
-        });
         withBorders(() -> {
             listener.onPlayerTeleport(new PlayerTeleportEvent(player, center, center));
             listener.onPlayerTeleport(new PlayerTeleportEvent(player, center, center));
-            listener.onPlayerRespawn(new PlayerRespawnEvent(player, center, false, false, false, PlayerRespawnEvent.RespawnReason.DEATH));
+            listener.onPlayerDeath(new PlayerDeathEvent(player, mock(DamageSource.class), List.of(), 0, Component.empty(), false));
+            listener.onPlayerTeleport(new PlayerTeleportEvent(player, center, center));
         });
 
-        // The second teleport found it already shown; the respawn did not.
+        // The second teleport found it already shown; the one after the death did not.
+        verify(player).setWorldBorder(null);
         verify(player, times(2)).setWorldBorder(border);
     }
 
