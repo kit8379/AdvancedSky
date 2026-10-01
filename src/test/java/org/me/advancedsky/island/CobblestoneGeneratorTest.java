@@ -68,7 +68,7 @@ class CobblestoneGeneratorTest {
 
     @Test
     void rollsFollowTheConfiguredWeights() throws Exception {
-        CobblestoneGeneratorHandler generator = new CobblestoneGeneratorHandler(plugin, defaultUpgrades());
+        CobblestoneGeneratorHandler generator = new CobblestoneGeneratorHandler(plugin, defaultUpgrades(), material -> true);
         for (double roll : new double[]{0.0, 0.5, 0.999}) {
             assertEquals(Material.COBBLESTONE, generator.roll(1, roll));
         }
@@ -84,14 +84,15 @@ class CobblestoneGeneratorTest {
 
     @Test
     void unknownLevelAndBadConfigFailLoudly() throws Exception {
-        CobblestoneGeneratorHandler generator = new CobblestoneGeneratorHandler(plugin, defaultUpgrades());
+        CobblestoneGeneratorHandler generator = new CobblestoneGeneratorHandler(plugin, defaultUpgrades(), material -> true);
         assertThrows(IllegalStateException.class, () -> generator.roll(6, 0.5));
 
         ConfigHandler config = mock(ConfigHandler.class);
         when(config.getUpgradeLevels("generator-rates")).thenReturn(List.of(1));
-        for (Map<String, Double> rates : List.of(Map.of("NOT_A_MATERIAL", 1.0), Map.of("COBBLESTONE", 0.0), Map.<String, Double>of())) {
+        // An item cannot be formed: DIAMOND stands for one here, where no server tells them apart.
+        for (Map<String, Double> rates : List.of(Map.of("NOT_A_MATERIAL", 1.0), Map.of("COBBLESTONE", 0.0), Map.<String, Double>of(), Map.of("DIAMOND", 1.0))) {
             when(config.getUpgradeGeneratorRates(1)).thenReturn(rates);
-            assertThrows(IllegalStateException.class, () -> new CobblestoneGeneratorHandler(plugin, config), rates.toString());
+            assertThrows(IllegalStateException.class, () -> new CobblestoneGeneratorHandler(plugin, config, material -> material != Material.DIAMOND), rates.toString());
         }
     }
 

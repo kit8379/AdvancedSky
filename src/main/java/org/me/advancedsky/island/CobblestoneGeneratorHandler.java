@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Predicate;
 
 /**
  * Weighted block tables of the generator-rates upgrade, one per configured level. Built from
@@ -20,19 +21,28 @@ public class CobblestoneGeneratorHandler {
 
     private final AdvancedSky plugin;
     private final ConfigHandler config;
+    private final Predicate<Material> isBlock;
 
     private volatile Map<Integer, WeightedTable> tables = Map.of();
 
     public CobblestoneGeneratorHandler(AdvancedSky plugin, ConfigHandler config) {
+        this(plugin, config, Material::isBlock);
+    }
+
+    /**
+     * Tests have no server to tell blocks from items.
+     */
+    CobblestoneGeneratorHandler(AdvancedSky plugin, ConfigHandler config, Predicate<Material> isBlock) {
         this.plugin = plugin;
         this.config = config;
+        this.isBlock = isBlock;
         startup();
     }
 
     public void startup() {
         Map<Integer, WeightedTable> built = new HashMap<>();
         for (int level : config.getUpgradeLevels("generator-rates")) {
-            built.put(level, WeightedTable.of(level, config.getUpgradeGeneratorRates(level)));
+            built.put(level, WeightedTable.of(level, config.getUpgradeGeneratorRates(level), isBlock));
         }
 
         this.tables = Map.copyOf(built);
@@ -57,13 +67,17 @@ public class CobblestoneGeneratorHandler {
     /** Materials with the running share of the total weight at which each one ends. */
     private record WeightedTable(Material[] materials, double[] cumulativeShares) {
 
-        static WeightedTable of(int level, Map<String, Double> rates) {
+        static WeightedTable of(int level, Map<String, Double> rates, Predicate<Material> isBlock) {
             List<Material> materials = new ArrayList<>();
             List<Double> weights = new ArrayList<>();
             for (Map.Entry<String, Double> rate : rates.entrySet()) {
                 Material material = Material.matchMaterial(rate.getKey());
                 if (material == null) {
                     throw new IllegalStateException("Generator rates level " + level + ": '" + rate.getKey() + "' is not a material");
+                }
+
+                if (!isBlock.test(material)) {
+                    throw new IllegalStateException("Generator rates level " + level + ": " + rate.getKey() + " is an item, not a block");
                 }
 
                 if (rate.getValue() <= 0) {
