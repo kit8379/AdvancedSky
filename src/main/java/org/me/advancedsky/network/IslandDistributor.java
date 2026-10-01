@@ -1,5 +1,6 @@
 package org.me.advancedsky.network;
 
+import org.bukkit.Bukkit;
 import org.json.JSONObject;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cluster.CreateReservations;
@@ -137,8 +138,15 @@ public class IslandDistributor {
 
             // The registry read must stay off the global region thread; a local prepare completes there.
             return CompletableFuture.completedFuture(null).thenComposeAsync(v -> {
-                String playerServer = onlinePlayerRegistry.getOnlinePlayerServer(playerUuid);
+                String registered = onlinePlayerRegistry.getOnlinePlayerServer(playerUuid);
+                if (registered != null) {
+                    return CompletableFuture.completedFuture(registered);
+                }
 
+                // No entry reads as offline, but a join's entry may not be written yet: a player
+                // here is on this server whatever the registry says.
+                return CompletableFuture.supplyAsync(() -> Bukkit.getPlayer(playerUuid) != null ? serverID : null, plugin.getGlobalRegionExecutor());
+            }, plugin.getBukkitAsyncExecutor()).thenComposeAsync(playerServer -> {
                 // Already on the host (arrived since the prepare step): nothing to do.
                 // Offline: the pending teleport fires on their next join to the host.
                 if (playerServer == null || playerServer.equals(hostServer)) {

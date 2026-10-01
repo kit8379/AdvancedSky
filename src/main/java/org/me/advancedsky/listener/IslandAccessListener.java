@@ -65,6 +65,9 @@ public class IslandAccessListener implements Listener {
         Island island = islandCache.getAt(event.getTo());
         if (island != null) {
             denyIfBarred(player, island);
+        } else if (islandCache.getIslandUuidAt(event.getTo()) == null) {
+            // The gap or a free slot, as on a join; an island whose entry is unavailable is left alone.
+            denyAccess(player, null);
         }
     }
 

@@ -122,6 +122,14 @@ class IslandAccessListenerTest {
     }
 
     @Test
+    void stepsInTheGapSendThePlayerToTheLobbySilently() {
+        new IslandAccessListener(plugin, config, cache).onPlayerMove(new PlayerMoveEvent(player, location, new Location(world, 257, 101, 256)));
+
+        verify(api).lobby(playerUuid);
+        verify(api, never()).sendPlayerMessage(any(), any());
+    }
+
+    @Test
     void stepsOnAnIslandWhoseEntryIsUnavailableAreLeftAlone() {
         when(cache.getIslandUuidAt(any(Location.class))).thenReturn(UUID.randomUUID());
 
