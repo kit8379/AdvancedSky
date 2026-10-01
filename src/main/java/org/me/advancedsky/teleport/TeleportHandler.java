@@ -36,11 +36,6 @@ public class TeleportHandler {
         return pending == null || isExpired(pending, clock.getAsLong()) ? null : pending.location();
     }
 
-    public boolean hasPendingTeleport(UUID playerUuid) {
-        PendingTeleport pending = pendingTeleports.get(playerUuid);
-        return pending != null && !isExpired(pending, clock.getAsLong());
-    }
-
     private static boolean isExpired(PendingTeleport pending, long now) {
         return now - pending.storedAt() > PENDING_TTL_MILLIS;
     }

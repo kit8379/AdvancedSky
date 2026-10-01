@@ -1,58 +1,42 @@
 package org.me.advancedsky.listener;
 
+import com.destroystokyo.paper.profile.PlayerProfile;
+import io.papermc.paper.event.player.AsyncPlayerSpawnLocationEvent;
 import org.bukkit.Location;
-import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.player.PlayerJoinEvent;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.teleport.TeleportHandler;
-
-import java.util.UUID;
 
 public class TeleportRequestListener implements Listener {
 
     private final AdvancedSky plugin;
     private final TeleportHandler teleportHandler;
-    private final IslandAccessListener islandAccessListener;
 
-    public TeleportRequestListener(AdvancedSky plugin, TeleportHandler teleportHandler, IslandAccessListener islandAccessListener) {
+    public TeleportRequestListener(AdvancedSky plugin, TeleportHandler teleportHandler) {
         this.plugin = plugin;
         this.teleportHandler = teleportHandler;
-        this.islandAccessListener = islandAccessListener;
     }
 
     /**
-     * The access check on join leaves a player with a pending teleport to the rule where it takes
-     * them. A teleport that does not happen leaves them where they logged out, so that spot is
-     * checked instead.
+     * A player arriving through a pending teleport spawns at its location instead of being
+     * teleported from the join event, which Folia refuses: the player is not in the world yet.
      */
     @EventHandler(priority = EventPriority.HIGHEST)
-    public void onPlayerJoin(PlayerJoinEvent event) {
-        Player player = event.getPlayer();
-        UUID playerUuid = player.getUniqueId();
-        Location pendingLocation = teleportHandler.removePendingTeleport(playerUuid);
+    public void onSpawnLocation(AsyncPlayerSpawnLocationEvent event) {
+        PlayerProfile profile = event.getConnection().getProfile();
+        Location pendingLocation = teleportHandler.removePendingTeleport(profile.getId());
         if (pendingLocation == null) {
             return;
         }
 
         if (!pendingLocation.isWorldLoaded()) {
-            plugin.warning("Dropping pending teleport for " + player.getName() + ": target world is no longer loaded.");
-            islandAccessListener.checkAccess(player);
+            plugin.warning("Dropping pending teleport for " + profile.getName() + ": target world is no longer loaded.");
             return;
         }
 
-        // A player may join still riding the vehicle they logged out on; Folia refuses to
-        // teleport a passenger, Paper dismounts one itself.
-        player.leaveVehicle();
-        player.teleportAsync(pendingLocation).whenComplete((moved, error) -> {
-            if (error == null && moved) {
-                plugin.debug("TeleportRequestListener", "Teleported " + player.getName() + " to pending location on join.");
-                return;
-            }
-
-            player.getScheduler().run(plugin, task -> islandAccessListener.checkAccess(player), null);
-        });
+        event.setSpawnLocation(pendingLocation);
+        plugin.debug("TeleportRequestListener", "Spawning " + profile.getName() + " at pending location.");
     }
 }

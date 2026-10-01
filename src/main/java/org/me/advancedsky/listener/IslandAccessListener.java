@@ -14,7 +14,6 @@ import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.model.Island;
-import org.me.advancedsky.teleport.TeleportHandler;
 
 import java.util.Set;
 import java.util.UUID;
@@ -25,29 +24,22 @@ public class IslandAccessListener implements Listener {
     private final AdvancedSky plugin;
     private final ConfigHandler config;
     private final IslandCache islandCache;
-    private final TeleportHandler teleportHandler;
 
     // Players already sent to the lobby off an island, so the steps they take before the move
     // happens do not send them again.
     private final Set<UUID> sentAway = ConcurrentHashMap.newKeySet();
 
-    public IslandAccessListener(AdvancedSky plugin, ConfigHandler config, IslandCache islandCache, TeleportHandler teleportHandler) {
+    public IslandAccessListener(AdvancedSky plugin, ConfigHandler config, IslandCache islandCache) {
         this.plugin = plugin;
         this.config = config;
         this.islandCache = islandCache;
-        this.teleportHandler = teleportHandler;
     }
 
     /**
-     * Runs before the pending teleport is taken at HIGHEST. A player arriving through one is
-     * checked where it takes them, as a teleport, not where they last logged out here.
+     * A player arriving through a pending teleport has already spawned where it takes them.
      */
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerJoin(PlayerJoinEvent event) {
-        if (teleportHandler.hasPendingTeleport(event.getPlayer().getUniqueId())) {
-            return;
-        }
-
         checkAccess(event.getPlayer());
     }
 
@@ -83,7 +75,7 @@ public class IslandAccessListener implements Listener {
      * Sends the player to the lobby if they stand on an island they may not be on. Runs on the
      * player's thread.
      */
-    void checkAccess(Player player) {
+    private void checkAccess(Player player) {
         if (player.isOp()) {
             return;
         }

@@ -48,7 +48,7 @@ class IslandOperatorTeleportTest {
 
         CompletionException error = assertThrows(CompletionException.class, () -> prepare().join());
         assertInstanceOf(TeleportCancelledException.class, error.getCause());
-        assertFalse(teleports.hasPendingTeleport(playerUuid));
+        assertNull(teleports.removePendingTeleport(playerUuid));
     }
 
     @Test
@@ -59,7 +59,7 @@ class IslandOperatorTeleportTest {
         });
 
         assertFalse(prepare().join());
-        assertTrue(teleports.hasPendingTeleport(playerUuid));
+        assertNotNull(teleports.removePendingTeleport(playerUuid));
     }
 
     @Test

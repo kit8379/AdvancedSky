@@ -18,9 +18,7 @@ class TeleportHandlerTest {
         teleports.addPendingTeleport(player, target);
         now.addAndGet(60_000L);
 
-        assertTrue(teleports.hasPendingTeleport(player));
         assertSame(target, teleports.removePendingTeleport(player));
-        assertFalse(teleports.hasPendingTeleport(player));
         assertNull(teleports.removePendingTeleport(player));
     }
 
@@ -29,7 +27,6 @@ class TeleportHandlerTest {
         teleports.addPendingTeleport(player, target);
         now.addAndGet(60_001L);
 
-        assertFalse(teleports.hasPendingTeleport(player));
         assertNull(teleports.removePendingTeleport(player));
     }
 }
