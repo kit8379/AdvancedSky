@@ -37,7 +37,11 @@ public class ConfigHandler {
         reload();
     }
 
-    public void reload() {
+    /**
+     * One reload at a time: each rewrites the files it reads, and one reading a file another is
+     * rewriting would find it empty and write the defaults over it.
+     */
+    public synchronized void reload() {
         this.config = load("config.yml");
         this.messages = load("messages.yml");
         this.commands = load("commands.yml");
