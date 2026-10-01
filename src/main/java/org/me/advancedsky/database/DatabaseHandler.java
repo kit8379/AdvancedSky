@@ -16,6 +16,13 @@ import java.util.*;
 
 public class DatabaseHandler {
 
+    /**
+     * Two players' transactions on one row, such as a create and an invite accept by the same
+     * player, can deadlock; InnoDB then rolls one back with this SQL state.
+     */
+    private static final String DEADLOCK_SQL_STATE = "40001";
+    private static final int DEADLOCK_ATTEMPTS = 3;
+
     private final AdvancedSky plugin;
     private final ConfigHandler config;
     private final IslandGrid islandGrid;
@@ -76,34 +83,42 @@ public class DatabaseHandler {
     }
 
     private <T> T inTransaction(ConnectionFunction<T> work) {
-        try (Connection connection = dataSource.getConnection()) {
-            connection.setAutoCommit(false);
+        for (int attempt = 1; ; attempt++) {
+            try (Connection connection = dataSource.getConnection()) {
+                connection.setAutoCommit(false);
 
-            try {
-                T result = work.apply(connection);
-                connection.commit();
-                return result;
-            } catch (SQLException | RuntimeException e) {
                 try {
-                    connection.rollback();
-                } catch (SQLException rollbackError) {
-                    e.addSuppressed(rollbackError);
-                }
+                    T result = work.apply(connection);
+                    connection.commit();
+                    return result;
+                } catch (SQLException | RuntimeException e) {
+                    try {
+                        connection.rollback();
+                    } catch (SQLException rollbackError) {
+                        e.addSuppressed(rollbackError);
+                    }
 
-                if (e instanceof SQLIntegrityConstraintViolationException) {
-                    throw new ConstraintViolationException(e);
-                }
+                    // InnoDB rolled this side of a deadlock back. Run again, it sees what the other
+                    // side did and ends in its own outcome, such as a duplicate.
+                    if (e instanceof SQLException sqlError && DEADLOCK_SQL_STATE.equals(sqlError.getSQLState()) && attempt < DEADLOCK_ATTEMPTS) {
+                        continue;
+                    }
 
-                if (e instanceof SQLException) {
-                    plugin.severe("Database transaction failed.", e);
-                    throw new RuntimeException(e);
-                }
+                    if (e instanceof SQLIntegrityConstraintViolationException) {
+                        throw new ConstraintViolationException(e);
+                    }
 
-                throw (RuntimeException) e;
+                    if (e instanceof SQLException) {
+                        plugin.severe("Database transaction failed.", e);
+                        throw new RuntimeException(e);
+                    }
+
+                    throw (RuntimeException) e;
+                }
+            } catch (SQLException e) {
+                plugin.severe("Database transaction connection failed.", e);
+                throw new RuntimeException(e);
             }
-        } catch (SQLException e) {
-            plugin.severe("Database transaction connection failed.", e);
-            throw new RuntimeException(e);
         }
     }
 

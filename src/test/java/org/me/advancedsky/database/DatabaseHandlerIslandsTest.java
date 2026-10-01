@@ -20,6 +20,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.sql.SQLTransactionRollbackException;
+import java.lang.reflect.Proxy;
+import java.lang.reflect.InvocationTargetException;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -136,6 +140,38 @@ class DatabaseHandlerIslandsTest {
             assertSameIsland(hosted.get(islandUuid), database.getIsland(islandUuid));
         }
         assertNull(database.getIsland(UUID.randomUUID()));
+    }
+
+    @Test
+    void aTransactionRolledBackForADeadlockRunsAgain() throws Exception {
+        String url = "jdbc:h2:mem:deadlock-" + UUID.randomUUID() + ";MODE=MySQL";
+        connection = DriverManager.getConnection(url);
+        HikariDataSource dataSource = mock(HikariDataSource.class);
+        AtomicInteger commits = new AtomicInteger();
+        // The first commit is the side InnoDB picks to roll back; every later one goes through.
+        when(dataSource.getConnection()).thenAnswer(ignored -> {
+            Connection real = DriverManager.getConnection(url);
+            return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(), new Class<?>[]{Connection.class}, (proxy, method, args) -> {
+                if (method.getName().equals("commit") && commits.incrementAndGet() == 1) {
+                    throw new SQLTransactionRollbackException("Deadlock found when trying to get lock", "40001", 1213);
+                }
+                try {
+                    return method.invoke(real, args);
+                } catch (InvocationTargetException e) {
+                    throw e.getCause();
+                }
+            });
+        });
+        field("dataSource", dataSource);
+        Method createTables = DatabaseHandler.class.getDeclaredMethod("createTables");
+        createTables.setAccessible(true);
+        createTables.invoke(database);
+        sql("INSERT INTO test_islands (island_uuid, server) VALUES (?, 'a')", full);
+        sql("INSERT INTO test_island_players (player_uuid, island_uuid, role) VALUES (?, ?, 'owner')", owner, full);
+
+        assertTrue(database.toggleIslandPvp(new Actor.Player(owner), full));
+        assertTrue(database.isIslandPvp(full));
+        assertEquals(2, commits.get());
     }
 
     @Test
