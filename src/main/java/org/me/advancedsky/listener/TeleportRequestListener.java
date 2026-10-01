@@ -3,9 +3,11 @@ package org.me.advancedsky.listener;
 import com.destroystokyo.paper.profile.PlayerProfile;
 import io.papermc.paper.event.player.AsyncPlayerSpawnLocationEvent;
 import org.bukkit.Location;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.teleport.TeleportHandler;
 
@@ -38,5 +40,21 @@ public class TeleportRequestListener implements Listener {
 
         event.setSpawnLocation(pendingLocation);
         plugin.debug("TeleportRequestListener", "Spawning " + profile.getName() + " at pending location.");
+    }
+
+    /**
+     * A teleport stored after the player's spawn location was chosen, while they were still
+     * logging in, runs once they are in: a tick after the join, as Folia teleports nobody during it.
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        Location pendingLocation = teleportHandler.removePendingTeleport(player.getUniqueId());
+        if (pendingLocation == null || !pendingLocation.isWorldLoaded()) {
+            return;
+        }
+
+        player.getScheduler().runDelayed(plugin, task -> player.teleportAsync(pendingLocation), null, 1L);
+        plugin.debug("TeleportRequestListener", "Teleporting " + player.getName() + " to a pending location stored while logging in.");
     }
 }
