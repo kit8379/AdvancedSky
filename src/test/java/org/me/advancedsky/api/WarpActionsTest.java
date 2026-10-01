@@ -41,12 +41,12 @@ class WarpActionsTest {
         UUID island = UUID.randomUUID();
         CoreHandler core = mock(CoreHandler.class);
         WarpHandler warps = mock(WarpHandler.class);
-        when(warps.warp(island, "shop", player)).thenReturn(CompletableFuture.completedFuture(null));
+        when(warps.warp(any(Actor.Player.class), eq(island), eq("shop"), eq(player))).thenReturn(CompletableFuture.completedFuture(null));
         PlayerActions actions = new PlayerActions(player, core, null, null, warps, null, null, null, null);
 
         actions.warp(island, "shop").join();
 
-        verify(warps).warp(island, "shop", player);
+        verify(warps).warp(any(Actor.Player.class), eq(island), eq("shop"), eq(player));
         verifyNoInteractions(core);
     }
 
@@ -58,7 +58,7 @@ class WarpActionsTest {
         WarpHandler warps = mock(WarpHandler.class);
         when(warps.setWarp(any(), any(), anyString(), any(Location.class))).thenReturn(CompletableFuture.completedFuture(null));
         when(warps.delWarp(any(), any(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
-        when(warps.warp(any(), anyString(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(warps.warp(any(), any(), anyString(), any())).thenReturn(CompletableFuture.completedFuture(null));
         AdminActions actions = new AdminActions("test", core, null, null, warps, null, null, null, null);
 
         actions.setWarp(island, "shop", location).join();
@@ -67,7 +67,7 @@ class WarpActionsTest {
 
         verify(warps).setWarp(new Actor.Bypass("test"), island, "shop", location);
         verify(warps).delWarp(new Actor.Bypass("test"), island, "shop");
-        verify(warps).warp(island, "shop", traveler);
+        verify(warps).warp(any(Actor.Bypass.class), eq(island), eq("shop"), eq(traveler));
         verifyNoInteractions(core);
     }
 }

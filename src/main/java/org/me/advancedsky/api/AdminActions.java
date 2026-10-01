@@ -119,7 +119,7 @@ public final class AdminActions {
     }
 
     public CompletableFuture<Void> warp(UUID islandUuid, String warpName, UUID teleportPlayerUuid) {
-        return warpHandler.warp(islandUuid, warpName, teleportPlayerUuid);
+        return warpHandler.warp(actor, islandUuid, warpName, teleportPlayerUuid);
     }
 
     // ---- world ------------------------------------------------------------------------------

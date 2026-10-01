@@ -124,8 +124,8 @@ class WarpHandlerTest {
         when(players.isOnline(visitor)).thenReturn(true);
         when(distributor.teleportIsland(any(), any(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
-        handler.warp(island, "default", visitor).join();
-        handler.warp(island, "DEFAULT", visitor).join();
+        handler.warp(new Actor.Player(visitor), island, "default", visitor).join();
+        handler.warp(new Actor.Player(visitor), island, "DEFAULT", visitor).join();
         verify(database, never()).getIslandUuid(any());
         verify(distributor, times(2)).teleportIsland(island, visitor, WORLD, "1.0,70.0,3.0,0.0,0.0");
     }
@@ -204,14 +204,26 @@ class WarpHandlerTest {
         set(owner, "shop", 1);
         when(players.isOnline(visitor)).thenReturn(true);
         sql("UPDATE test_islands SET `lock` = TRUE WHERE island_uuid = ?", island);
-        assertFailure(IslandLockedException.class, handler.warp(island, "shop", visitor));
+        assertFailure(IslandLockedException.class, handler.warp(new Actor.Player(visitor), island, "shop", visitor));
         sql("INSERT INTO test_island_coops VALUES (?, ?)", island, visitor);
         when(distributor.teleportIsland(any(), any(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
-        handler.warp(island, "shop", visitor).join();
+        handler.warp(new Actor.Player(visitor), island, "shop", visitor).join();
         sql("INSERT INTO test_island_bans VALUES (?, ?)", island, visitor);
-        assertFailure(PlayerBannedException.class, handler.warp(island, "shop", visitor));
+        assertFailure(PlayerBannedException.class, handler.warp(new Actor.Player(visitor), island, "shop", visitor));
         verify(distributor, times(1)).teleportIsland(any(), any(), anyString(), anyString());
+    }
+
+    @Test
+    void anAdminWarpIsHeldToNeitherTheLockNorBans() throws Exception {
+        set(owner, "shop", 1);
+        when(players.isOnline(visitor)).thenReturn(true);
+        sql("UPDATE test_islands SET `lock` = TRUE WHERE island_uuid = ?", island);
+        sql("INSERT INTO test_island_bans VALUES (?, ?)", island, visitor);
+        when(distributor.teleportIsland(any(), any(), anyString(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
+
+        handler.warp(admin, island, "shop", visitor).join();
+        verify(distributor).teleportIsland(eq(island), eq(visitor), anyString(), anyString());
     }
 
     @Test

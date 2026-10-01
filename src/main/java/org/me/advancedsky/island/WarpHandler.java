@@ -64,17 +64,21 @@ public class WarpHandler {
         return CompletableFuture.supplyAsync(() -> islandDistributor.deleteWarp(actor, islandUuid, warpName.toLowerCase(Locale.ROOT)), plugin.getBukkitAsyncExecutor()).thenCompose(future -> future);
     }
 
-    public CompletableFuture<Void> warp(UUID islandUuid, String warpName, UUID targetPlayerUuid) {
+    /**
+     * Bans and the lock bar players; an admin's warp, like an admin's home, is not held to them.
+     */
+    public CompletableFuture<Void> warp(Actor actor, UUID islandUuid, String warpName, UUID targetPlayerUuid) {
         return CompletableFuture.supplyAsync(() -> {
             if (!onlinePlayerRegistry.isOnline(targetPlayerUuid)) {
                 throw new PlayerNotOnlineException();
             }
 
-            if (database.getIslandBans(islandUuid).contains(targetPlayerUuid)) {
+            boolean bypass = actor instanceof Actor.Bypass;
+            if (!bypass && database.getIslandBans(islandUuid).contains(targetPlayerUuid)) {
                 throw new PlayerBannedException();
             }
 
-            if (database.isIslandLock(islandUuid)) {
+            if (!bypass && database.isIslandLock(islandUuid)) {
                 boolean allowed = database.getIslandPlayers(islandUuid).containsKey(targetPlayerUuid) || database.getIslandCoops(islandUuid).contains(targetPlayerUuid);
                 if (!allowed) {
                     throw new IslandLockedException();

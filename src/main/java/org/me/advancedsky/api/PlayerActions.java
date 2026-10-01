@@ -199,7 +199,7 @@ public final class PlayerActions {
      * Visit the specified island's shared warp as this player.
      */
     public CompletableFuture<Void> warp(UUID islandUuid, String warpName) {
-        return warpHandler.warp(islandUuid, warpName, playerUuid);
+        return warpHandler.warp(actor, islandUuid, warpName, playerUuid);
     }
 
     // ---- world ------------------------------------------------------------------------------
