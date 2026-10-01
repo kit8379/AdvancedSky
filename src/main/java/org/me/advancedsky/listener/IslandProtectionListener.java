@@ -1,5 +1,7 @@
 package org.me.advancedsky.listener;
 
+import io.papermc.paper.event.entity.EntityKnockbackEvent;
+import io.papermc.paper.event.entity.EntityPushedByEntityAttackEvent;
 import org.bukkit.ExplosionResult;
 import org.bukkit.FluidCollisionMode;
 import org.bukkit.Location;
@@ -359,6 +361,21 @@ public class IslandProtectionListener implements Listener {
         if (!canPlayerEdit(damager, event.getEntity().getLocation())) {
             event.setCancelled(true);
             deny(damager);
+        }
+    }
+
+    /**
+     * A push follows the damage rule, also one without damage such as a wind charge's burst.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onEntityPushed(EntityKnockbackEvent event) {
+        if (!(event instanceof EntityPushedByEntityAttackEvent pushed) || event.getEntity() instanceof Player || event.getEntity() instanceof Enemy) {
+            return;
+        }
+
+        Player player = resolvePlayer(pushed.getPushedBy());
+        if (player != null && !canPlayerEdit(player, event.getEntity().getLocation())) {
+            event.setCancelled(true);
         }
     }
 

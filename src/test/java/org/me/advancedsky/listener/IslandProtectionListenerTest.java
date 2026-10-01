@@ -1,6 +1,8 @@
 package org.me.advancedsky.listener;
 
 import com.google.common.base.Function;
+import io.papermc.paper.event.entity.EntityKnockbackEvent;
+import io.papermc.paper.event.entity.EntityPushedByEntityAttackEvent;
 import com.google.common.base.Functions;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -19,6 +21,7 @@ import org.bukkit.event.player.PlayerPortalEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.vehicle.VehicleMoveEvent;
 import org.bukkit.event.world.PortalCreateEvent;
+import org.bukkit.util.Vector;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
@@ -127,6 +130,14 @@ class IslandProtectionListenerTest {
     }
 
     @Test
+    void aVisitorsWindChargeCannotPushIslandAnimals() {
+        island(false, Set.of());
+
+        assertTrue(push(visitor));
+        assertFalse(push(member));
+    }
+
+    @Test
     void netherPortalArrivalsFollowTheTeleportRule() {
         island(false, Set.of(banned));
         Location nether = new Location(mock(World.class), 0, 70, 0);
@@ -173,6 +184,17 @@ class IslandProtectionListenerTest {
         when(block.getLocation()).thenReturn(at);
         PortalCreateEvent event = new PortalCreateEvent(List.of(block), world, player(playerUuid, false), PortalCreateEvent.CreateReason.NETHER_PAIR);
         listener.onPortalCreate(event);
+        return event.isCancelled();
+    }
+
+    /**
+     * Whether the push of an island cow by the player's wind charge burst was cancelled.
+     */
+    private boolean push(UUID playerUuid) {
+        Cow cow = mock(Cow.class);
+        when(cow.getLocation()).thenReturn(inside);
+        EntityPushedByEntityAttackEvent event = new EntityPushedByEntityAttackEvent(cow, EntityKnockbackEvent.Cause.EXPLOSION, player(playerUuid, false), new Vector(0, 0.5, 0.5));
+        listener.onEntityPushed(event);
         return event.isCancelled();
     }
 
