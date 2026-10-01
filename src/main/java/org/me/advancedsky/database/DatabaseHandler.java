@@ -145,7 +145,8 @@ public class DatabaseHandler {
     private void createTables() {
         // server: the island server hosting the island for its whole life.
         // slot: the island's position on the grid, the same on every server. AUTO_INCREMENT never hands
-        // out a value twice, so a deleted island's area is never reused while it may still be clearing.
+        // out a value twice, so a deleted island's area is never reused while its region files wait
+        // for deletion at the next startup.
         executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "islands (" + "island_uuid CHAR(36) NOT NULL," + "server VARCHAR(64) NOT NULL," + "slot INT NOT NULL AUTO_INCREMENT," + "`lock` BOOLEAN NOT NULL DEFAULT FALSE," + "pvp BOOLEAN NOT NULL DEFAULT FALSE," + "PRIMARY KEY (island_uuid)," + "UNIQUE KEY uq_islands_slot (slot)," + "KEY idx_islands_server (server)" + ") ENGINE=InnoDB;", stmt -> {
         });
 
