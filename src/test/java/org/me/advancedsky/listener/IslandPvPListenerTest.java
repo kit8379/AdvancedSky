@@ -2,7 +2,11 @@ package org.me.advancedsky.listener;
 
 import com.google.common.base.Function;
 import com.google.common.base.Functions;
+import io.papermc.paper.event.entity.EntityKnockbackEvent;
+import io.papermc.paper.event.entity.EntityPushedByEntityAttackEvent;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.damage.DamageSource;
 import org.bukkit.entity.Entity;
@@ -12,11 +16,15 @@ import org.bukkit.entity.Player;
 import org.bukkit.entity.TNTPrimed;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.util.Vector;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.model.Island;
+import org.mockito.MockedStatic;
 
 import java.util.EnumMap;
 import java.util.Map;
@@ -61,6 +69,47 @@ class IslandPvPListenerTest {
         assertFalse(damage(mock(LightningStrike.class), null));
     }
 
+    @Test
+    void theMaceSmashPushOnPlayersNearItsTargetIsHeldToThePvpSetting() {
+        island(false);
+        assertTrue(knockback(EntityKnockbackEvent.Cause.PUSH, attacker));
+        assertFalse(knockback(EntityKnockbackEvent.Cause.PUSH, victim));
+
+        island(true);
+        assertFalse(knockback(EntityKnockbackEvent.Cause.PUSH, attacker));
+    }
+
+    @Test
+    void theWindBurstOfAMaceHitIsHeldToThePvpSetting() {
+        island(false);
+        try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
+            bukkit.when(Bukkit::getCurrentTick).thenReturn(100);
+
+            // An explosion the attacker set off without a wind burst stays vanilla, as TNT does.
+            assertFalse(knockback(EntityKnockbackEvent.Cause.EXPLOSION, attacker));
+
+            ItemStack mace = mock(ItemStack.class);
+            when(mace.getType()).thenReturn(Material.MACE);
+            PlayerInventory inventory = mock(PlayerInventory.class);
+            when(inventory.getItemInMainHand()).thenReturn(mace);
+            when(attacker.getInventory()).thenReturn(inventory);
+            listener.onMaceHit(damageEvent(attacker, mock(Entity.class)));
+            assertTrue(knockback(EntityKnockbackEvent.Cause.EXPLOSION, attacker));
+
+            bukkit.when(Bukkit::getCurrentTick).thenReturn(101);
+            assertFalse(knockback(EntityKnockbackEvent.Cause.EXPLOSION, attacker));
+        }
+    }
+
+    /**
+     * Whether the knockback the pusher gave the victim was cancelled.
+     */
+    private boolean knockback(EntityKnockbackEvent.Cause cause, Entity pushedBy) {
+        EntityPushedByEntityAttackEvent event = new EntityPushedByEntityAttackEvent(victim, cause, pushedBy, new Vector(1, 0, 0));
+        listener.onKnockback(event);
+        return event.isCancelled();
+    }
+
     private void island(boolean pvp) {
         Island island = new Island(UUID.randomUUID(), 1, false, pvp, UUID.randomUUID(), Set.of(), Set.of(), Set.of(), Map.of(), null, 1, 1);
         when(cache.getAt(any(Location.class))).thenReturn(island);
@@ -70,15 +119,19 @@ class IslandPvPListenerTest {
      * Whether the damage the damager dealt the victim, caused by the given entity, was cancelled.
      */
     private boolean damage(Entity damager, Entity causing) {
+        EntityDamageByEntityEvent event = damageEvent(damager, victim);
+        when(event.getDamageSource().getCausingEntity()).thenReturn(causing);
+        listener.onEntityDamageByEntity(event);
+        return event.isCancelled();
+    }
+
+    private static EntityDamageByEntityEvent damageEvent(Entity damager, Entity damaged) {
         DamageSource source = mock(DamageSource.class);
-        when(source.getCausingEntity()).thenReturn(causing);
         Map<EntityDamageEvent.DamageModifier, Double> modifiers = new EnumMap<>(EntityDamageEvent.DamageModifier.class);
         modifiers.put(EntityDamageEvent.DamageModifier.BASE, 4.0);
         Map<EntityDamageEvent.DamageModifier, Function<? super Double, Double>> functions = new EnumMap<>(EntityDamageEvent.DamageModifier.class);
         functions.put(EntityDamageEvent.DamageModifier.BASE, Functions.constant(-0.0));
-        EntityDamageByEntityEvent event = new EntityDamageByEntityEvent(damager, victim, EntityDamageEvent.DamageCause.ENTITY_EXPLOSION, source, modifiers, functions, false);
-        listener.onEntityDamageByEntity(event);
-        return event.isCancelled();
+        return new EntityDamageByEntityEvent(damager, damaged, EntityDamageEvent.DamageCause.ENTITY_EXPLOSION, source, modifiers, functions, false);
     }
 
     private Player player() {
