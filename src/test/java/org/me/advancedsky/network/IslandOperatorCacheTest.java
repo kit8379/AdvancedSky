@@ -53,6 +53,29 @@ class IslandOperatorCacheTest {
         verify(world).deleteIsland(5);
     }
 
+    @Test
+    void aCreateStillBuildingWhenThePluginDisablesIsRolledBack() {
+        UUID owner = UUID.randomUUID();
+        UUID built = UUID.randomUUID();
+        WorldHandler world = mock(WorldHandler.class);
+        when(world.createIsland(5)).thenReturn(new CompletableFuture<>());
+        when(world.createIsland(6)).thenReturn(CompletableFuture.completedFuture(null));
+        when(database.addIslandData(island, owner, "local")).thenReturn(5);
+        when(database.addIslandData(built, owner, "local")).thenReturn(6);
+        when(cache.load(any())).thenReturn(CompletableFuture.completedFuture(null));
+        inlineAsync();
+        IslandOperator operator = new IslandOperator(plugin, database, world, null, cache, null, null, "local");
+        operator.createIsland(island, owner);
+        operator.createIsland(built, owner).join();
+
+        operator.abortCreates();
+
+        verify(database).deleteIsland(any(Actor.Bypass.class), eq(island));
+        verify(world).purgeArea(5);
+        verify(database, never()).deleteIsland(any(), eq(built));
+        verify(world, never()).purgeArea(6);
+    }
+
     private void inlineAsync() {
         BukkitAsyncExecutor async = mock(BukkitAsyncExecutor.class);
         doAnswer(call -> { call.<Runnable>getArgument(0).run(); return null; }).when(async).execute(any());

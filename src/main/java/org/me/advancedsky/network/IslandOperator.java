@@ -41,6 +41,8 @@ public class IslandOperator {
     private final String serverID;
 
     private final Map<UUID, CompletableFuture<Void>> chains = new ConcurrentHashMap<>();
+    // Creates past their insert and not yet done, by island: the slot each is building.
+    private final Map<UUID, Integer> creating = new ConcurrentHashMap<>();
 
     public IslandOperator(AdvancedSky plugin, DatabaseHandler database, WorldHandler worldHandler, TeleportHandler teleportHandler, IslandCache islandCache, LimitHandler limitHandler, EconomyHandler economy, String serverID) {
         this.plugin = plugin;
@@ -67,6 +69,7 @@ public class IslandOperator {
                 slot = database.getIslandSlot(islandUuid).orElseThrow(() -> e);
             }
             int createdSlot = slot;
+            creating.put(islandUuid, createdSlot);
 
             return islandCache.load(islandUuid).thenCompose(v -> {
                 return worldHandler.createIsland(createdSlot);
@@ -76,8 +79,26 @@ public class IslandOperator {
                 return cleanupFailedCreate(islandUuid, createdSlot).thenCompose(v -> {
                     return CompletableFuture.failedFuture(e);
                 });
-            }, plugin.getBukkitAsyncExecutor());
+            }, plugin.getBukkitAsyncExecutor()).whenComplete((v, e) -> creating.remove(islandUuid));
         });
+    }
+
+    /**
+     * Rolls back the creates still building when the plugin disables: no scheduler is left to
+     * finish or clean them up, and a half-pasted island would stay. Their rows go now and their
+     * areas at the next startup.
+     */
+    public void abortCreates() {
+        creating.forEach((islandUuid, slot) -> {
+            try {
+                database.deleteIsland(new Actor.Bypass("island create interrupted by shutdown"), islandUuid);
+            } catch (RuntimeException e) {
+                plugin.severe("Could not roll back the island create interrupted by shutdown: " + islandUuid, e);
+            }
+            worldHandler.purgeArea(slot);
+            plugin.warning("Rolled back the create of island " + islandUuid + " at slot " + slot + ", interrupted by shutdown");
+        });
+        creating.clear();
     }
 
     /**

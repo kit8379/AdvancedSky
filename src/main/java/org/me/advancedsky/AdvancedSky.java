@@ -52,6 +52,7 @@ public class AdvancedSky extends JavaPlugin {
     private LimitHandler limitHandler;
     private LevelHandler levelHandler;
     private CobblestoneGeneratorHandler cobblestoneGeneratorHandler;
+    private IslandOperator islandOperator;
     private AdvancedSkyAPI api;
     private AdvancedSkyExpansion placeholderExpansion;
     private BukkitAsyncExecutor bukkitAsyncExecutor;
@@ -133,7 +134,7 @@ public class AdvancedSky extends JavaPlugin {
             crossServerMessenger = new CrossServerMessenger(this, redisHandler, serverID);
             limitHandler = new LimitHandler(this, config, islandGrid);
             EconomyHandler economyHandler = new EconomyHandler(this);
-            IslandOperator islandOperator = new IslandOperator(this, databaseHandler, worldHandler, teleportHandler, islandCache, limitHandler, economyHandler, serverID);
+            islandOperator = new IslandOperator(this, databaseHandler, worldHandler, teleportHandler, islandCache, limitHandler, economyHandler, serverID);
             IslandDistributor islandDistributor = new IslandDistributor(this, databaseHandler, islandOperator, onlinePlayerRegistry, crossServerMessenger, new CreateReservations(this, redisHandler), config.getIslandServerNames(), serverID);
             registerCrossServerHandlers(crossServerMessenger, islandOperator);
             info("All handlers for remote requests loaded");
@@ -286,6 +287,10 @@ public class AdvancedSky extends JavaPlugin {
 
         if (crossServerMessenger != null) {
             crossServerMessenger.stop();
+        }
+
+        if (islandOperator != null) {
+            islandOperator.abortCreates();
         }
 
         if (onlinePlayerRegistry != null) {

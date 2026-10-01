@@ -107,13 +107,20 @@ public class WorldHandler {
      * nobody may stand on and that is never handed out again.
      */
     public CompletableFuture<Void> deleteIsland(int slot) {
+        purgeArea(slot);
+        return removePlayersFromIsland(slot, player -> true);
+    }
+
+    /**
+     * Lists the region files of the island's area for deletion at the next startup. Needs no
+     * scheduler, so it also runs while the plugin disables.
+     */
+    public void purgeArea(int slot) {
         try {
             regionPurge.schedule(regionFiles(slot));
         } catch (IOException e) {
             plugin.severe("Could not list the region files of the island area at slot " + slot + " for deletion; its blocks stay in the world", e);
         }
-
-        return removePlayersFromIsland(slot, player -> true);
     }
 
     /**
