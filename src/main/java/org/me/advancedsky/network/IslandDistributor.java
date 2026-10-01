@@ -2,6 +2,7 @@ package org.me.advancedsky.network;
 
 import org.json.JSONObject;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.cluster.CreateReservations;
 import org.me.advancedsky.cluster.OnlinePlayerRegistry;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
@@ -9,9 +10,7 @@ import org.me.advancedsky.messaging.CrossServerMessenger;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.util.ServerUtil;
 
-import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadLocalRandom;
@@ -53,15 +52,17 @@ public class IslandDistributor {
     private final IslandOperator islandOperator;
     private final OnlinePlayerRegistry onlinePlayerRegistry;
     private final CrossServerMessenger messenger;
+    private final CreateReservations createReservations;
     private final List<String> islandServerNames;
     private final String serverID;
 
-    public IslandDistributor(AdvancedSky plugin, DatabaseHandler database, IslandOperator islandOperator, OnlinePlayerRegistry onlinePlayerRegistry, CrossServerMessenger messenger, List<String> islandServerNames, String serverID) {
+    public IslandDistributor(AdvancedSky plugin, DatabaseHandler database, IslandOperator islandOperator, OnlinePlayerRegistry onlinePlayerRegistry, CrossServerMessenger messenger, CreateReservations createReservations, List<String> islandServerNames, String serverID) {
         this.plugin = plugin;
         this.database = database;
         this.islandOperator = islandOperator;
         this.onlinePlayerRegistry = onlinePlayerRegistry;
         this.messenger = messenger;
+        this.createReservations = createReservations;
         this.islandServerNames = List.copyOf(islandServerNames);
         this.serverID = serverID;
     }
@@ -70,18 +71,32 @@ public class IslandDistributor {
     // Island lifecycle
     // =====================================================================================
 
+    /**
+     * On the listed island server with the fewest islands, counting the creates still under way
+     * on each, so concurrent creates spread instead of all picking the same one.
+     */
     public CompletableFuture<Void> createIsland(UUID islandUuid, UUID ownerUuid) {
         return supply(() -> {
-            String targetServer = selectServer();
+            String targetServer = createReservations.reserve(islandServerNames, database.getIslandCountByServer(), islandUuid);
 
+            CompletableFuture<Void> created;
             if (targetServer.equals(serverID)) {
-                return islandOperator.createIsland(islandUuid, ownerUuid);
+                created = islandOperator.createIsland(islandUuid, ownerUuid);
+            } else {
+                JSONObject payload = new JSONObject();
+                payload.put("islandUuid", islandUuid.toString());
+                payload.put("ownerUuid", ownerUuid.toString());
+                created = messenger.requestVoid(targetServer, ACTION_ISLAND_CREATE, payload);
             }
 
-            JSONObject payload = new JSONObject();
-            payload.put("islandUuid", islandUuid.toString());
-            payload.put("ownerUuid", ownerUuid.toString());
-            return messenger.requestVoid(targetServer, ACTION_ISLAND_CREATE, payload);
+            // Counted by the database from now on, or never.
+            return created.whenCompleteAsync((v, error) -> {
+                try {
+                    createReservations.release(targetServer, islandUuid);
+                } catch (RuntimeException releaseError) {
+                    // Already logged; the reservation expires on its own.
+                }
+            }, plugin.getBukkitAsyncExecutor());
         });
     }
 
@@ -278,14 +293,6 @@ public class IslandDistributor {
         payload.put("islandUuid", islandUuid.toString());
         payload.put(Actor.FIELD, Actor.toJson(actor));
         return payload;
-    }
-
-    /**
-     * The listed island server with the fewest islands.
-     */
-    private String selectServer() {
-        Map<String, Integer> counts = database.getIslandCountByServer();
-        return islandServerNames.stream().min(Comparator.comparingInt(server -> counts.getOrDefault(server, 0))).orElseThrow();
     }
 
     private static <T> CompletableFuture<T> supply(Supplier<CompletableFuture<T>> operation) {

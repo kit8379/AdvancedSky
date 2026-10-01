@@ -26,7 +26,7 @@ class AdminLimitRoutingTest {
         DatabaseHandler database = mock(DatabaseHandler.class);
         when(database.getIslandServer(island)).thenReturn(Optional.of("remote"));
         CrossServerMessenger messenger = mock(CrossServerMessenger.class);
-        IslandDistributor distributor = new IslandDistributor(plugin, database, mock(IslandOperator.class), null, messenger, List.of("local", "remote"), "local");
+        IslandDistributor distributor = new IslandDistributor(plugin, database, mock(IslandOperator.class), null, messenger, null, List.of("local", "remote"), "local");
 
         for (Actor actor : new Actor[]{new Actor.Bypass("console"), new Actor.Player(player)}) {
             when(messenger.request(eq("remote"), anyString(), any())).thenAnswer(call -> {

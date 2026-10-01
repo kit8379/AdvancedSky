@@ -8,6 +8,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.json.JSONObject;
 import org.me.advancedsky.api.AdvancedSkyAPI;
 import org.me.advancedsky.cache.IslandCache;
+import org.me.advancedsky.cluster.CreateReservations;
 import org.me.advancedsky.cluster.InvitationStore;
 import org.me.advancedsky.cluster.OnlinePlayerRegistry;
 import org.me.advancedsky.command.AsyncTabCompleteListener;
@@ -134,7 +135,7 @@ public class AdvancedSky extends JavaPlugin {
             limitHandler = new LimitHandler(this, config, islandGrid);
             EconomyHandler economyHandler = new EconomyHandler(this);
             IslandOperator islandOperator = new IslandOperator(this, databaseHandler, worldHandler, teleportHandler, islandCache, limitHandler, economyHandler, serverID);
-            IslandDistributor islandDistributor = new IslandDistributor(this, databaseHandler, islandOperator, onlinePlayerRegistry, crossServerMessenger, config.getIslandServerNames(), serverID);
+            IslandDistributor islandDistributor = new IslandDistributor(this, databaseHandler, islandOperator, onlinePlayerRegistry, crossServerMessenger, new CreateReservations(this, redisHandler), config.getIslandServerNames(), serverID);
             registerCrossServerHandlers(crossServerMessenger, islandOperator);
             info("All handlers for remote requests loaded");
 
