@@ -28,6 +28,10 @@ import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.vehicle.VehicleMoveEvent;
 import org.bukkit.event.world.PortalCreateEvent;
 import org.bukkit.util.Vector;
+import org.bukkit.block.data.type.Dispenser;
+import org.bukkit.event.block.BlockDispenseEvent;
+import org.bukkit.event.weather.LightningStrikeEvent;
+import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
@@ -98,6 +102,50 @@ class IslandProtectionListenerTest {
         assertTrue(ride(visitor, outside, inside));
         assertFalse(ride(member, outside, inside));
         assertFalse(ride(visitor, inside, inside.clone().add(1, 0, 0)));
+    }
+
+    @Test
+    void aDispenserFacingOutOfTheBoundaryDoesNothing() {
+        island(false, Set.of());
+        assertTrue(dispense(inside, outside));
+        assertFalse(dispense(inside, inside.clone().add(1, 0, 0)));
+    }
+
+    @Test
+    void aChannelingBoltStrikesOnlyWhereItsThrowerMayEdit() {
+        island(false, Set.of());
+        assertTrue(strike(player(visitor, false), LightningStrikeEvent.Cause.TRIDENT));
+        assertFalse(strike(player(member, false), LightningStrikeEvent.Cause.TRIDENT));
+        assertFalse(strike(null, LightningStrikeEvent.Cause.WEATHER));
+    }
+
+    /**
+     * Whether a dispenser at the location facing the target was stopped.
+     */
+    private boolean dispense(Location at, Location target) {
+        Block dispenser = mock(Block.class);
+        Block front = mock(Block.class);
+        Dispenser data = mock(Dispenser.class);
+        when(data.getFacing()).thenReturn(BlockFace.WEST);
+        when(dispenser.getBlockData()).thenReturn(data);
+        when(dispenser.getLocation()).thenReturn(at);
+        when(dispenser.getRelative(BlockFace.WEST)).thenReturn(front);
+        when(front.getLocation()).thenReturn(target);
+        BlockDispenseEvent event = new BlockDispenseEvent(dispenser, mock(ItemStack.class), new Vector());
+        listener.onDispense(event);
+        return event.isCancelled();
+    }
+
+    /**
+     * Whether a bolt the thrower called on the island was stopped.
+     */
+    private boolean strike(Player thrower, LightningStrikeEvent.Cause cause) {
+        LightningStrike bolt = mock(LightningStrike.class);
+        when(bolt.getCausingEntity()).thenReturn(thrower);
+        when(bolt.getLocation()).thenReturn(inside);
+        LightningStrikeEvent event = new LightningStrikeEvent(world, bolt, cause);
+        listener.onLightningStrike(event);
+        return event.isCancelled();
     }
 
     @Test

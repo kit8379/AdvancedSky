@@ -10,6 +10,7 @@ import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
+import org.bukkit.block.data.Directional;
 import org.bukkit.entity.*;
 import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
@@ -27,6 +28,7 @@ import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.*;
 import org.bukkit.event.vehicle.VehicleDamageEvent;
 import org.bukkit.event.vehicle.VehicleMoveEvent;
+import org.bukkit.event.weather.LightningStrikeEvent;
 import org.bukkit.event.world.PortalCreateEvent;
 import org.bukkit.event.world.StructureGrowEvent;
 import org.bukkit.inventory.ItemStack;
@@ -284,6 +286,30 @@ public class IslandProtectionListener implements Listener {
         Player player = event.getPlayer() != null ? event.getPlayer() : resolvePlayer(event.getIgnitingEntity());
         Location location = event.getBlock().getLocation();
         if (player != null ? !canPlayerEdit(player, location) : !isAllowedByBoundary(location)) {
+            event.setCancelled(true);
+        }
+    }
+
+    /**
+     * A dispenser or dropper acts on the block in front of it: one facing out of the boundary does
+     * nothing, so it places no block or fluid where no member may edit.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDispense(BlockDispenseEvent event) {
+        Block block = event.getBlock();
+        if (block.getBlockData() instanceof Directional directional && !isAllowedByBoundary(block.getRelative(directional.getFacing()).getLocation())) {
+            event.setCancelled(true);
+        }
+    }
+
+    /**
+     * A Channeling bolt strikes only where its thrower may edit: it burns, converts and damages
+     * what it hits before any of that names the thrower.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onLightningStrike(LightningStrikeEvent event) {
+        LightningStrike strike = event.getLightning();
+        if (event.getCause() == LightningStrikeEvent.Cause.TRIDENT && strike.getCausingEntity() instanceof Player player && !canPlayerEdit(player, strike.getLocation())) {
             event.setCancelled(true);
         }
     }
