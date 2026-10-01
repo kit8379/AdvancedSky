@@ -124,7 +124,6 @@ class LimitHandlerTest {
         assertTrue(limits.isReady(island));
         assertTrue(place(limits, Material.HOPPER, 0, 0));
         assertFalse(place(limits, Material.HOPPER, 0, 0));
-        assertEquals(50, counts[Material.HOPPER.ordinal()]);
 
         limits.decrement(island, Material.HOPPER, 0, 0);
         assertTrue(place(limits, Material.HOPPER, 0, 0));
@@ -133,6 +132,30 @@ class LimitHandlerTest {
         limits.unload(island);
         assertFalse(limits.isReady(island));
         assertFalse(place(limits, Material.HOPPER, 0, 0));
+    }
+
+    @Test
+    void aReloadKeepsTheCountsUnlessItLimitsOtherBlocks() throws Exception {
+        ConfigHandler config = defaultLimits();
+        LimitHandler limits = new LimitHandler(plugin, config, grid);
+        int[] counts = new int[Material.values().length];
+        counts[Material.HOPPER.ordinal()] = 10;
+        counted(limits, counts);
+
+        doReturn(Map.of("HOPPER", 20, "DISPENSER", 100, "DROPPER", 100, "OBSERVER", 100, "PISTON", 500)).when(config).getBlockLimits();
+        limits.startup();
+        assertTrue(limits.isReady(island));
+        assertEquals(10, room(limits, Material.HOPPER));
+
+        doReturn(Map.of("HOPPER", 20, "CHEST", 5)).when(config).getBlockLimits();
+        limits.startup();
+        assertFalse(limits.isReady(island));
+        assertFalse(place(limits, Material.CHEST, 0, 0));
+
+        counted(limits, counts);
+        assertTrue(limits.isReady(island));
+        assertEquals(10, room(limits, Material.HOPPER));
+        assertEquals(5, room(limits, Material.CHEST));
     }
 
     @Test
@@ -161,7 +184,7 @@ class LimitHandlerTest {
         int[] histogram = new int[Material.values().length];
         histogram[Material.HOPPER.ordinal()] = 1;
         limits.finishScan(island, scan, histogram);
-        assertEquals(2, histogram[Material.HOPPER.ordinal()]);
+        assertEquals(48, room(limits, Material.HOPPER));
 
         LimitHandler.Scan rescan = limits.beginScan(island);
         limits.chunkScanned(island, rescan, 0, 0);
@@ -169,7 +192,7 @@ class LimitHandlerTest {
         int[] rescanned = new int[Material.values().length];
         rescanned[Material.HOPPER.ordinal()] = 2;
         limits.finishScan(island, rescan, rescanned);
-        assertEquals(1, rescanned[Material.HOPPER.ordinal()]);
+        assertEquals(49, room(limits, Material.HOPPER));
     }
 
     @Test
@@ -212,6 +235,20 @@ class LimitHandlerTest {
         assertEquals(center.getBlockX() - SIZE / 2, boundary.getMinX());
         assertEquals(SIZE, boundary.getWidthX());
         assertEquals(SIZE, boundary.getWidthZ());
+    }
+
+    /**
+     * How many more of that block the island takes, left as it was.
+     */
+    private int room(LimitHandler limits, Material type) {
+        int placed = 0;
+        while (place(limits, type, 0, 0)) {
+            placed++;
+        }
+        for (int i = 0; i < placed; i++) {
+            limits.decrement(island, type, 0, 0);
+        }
+        return placed;
     }
 
     /**

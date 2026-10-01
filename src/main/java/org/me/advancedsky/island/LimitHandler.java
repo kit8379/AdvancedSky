@@ -39,6 +39,10 @@ public class LimitHandler {
     private final ConcurrentHashMap<UUID, IslandCounts> countsByIsland = new ConcurrentHashMap<>();
 
     private volatile int[] blockLimitByOrdinal;
+    // Where each limited block is counted in an island's counts, -1 for a block without a limit:
+    // only limited blocks are counted. The same array while the set of limited blocks stays the
+    // same, so the counts built with it stay usable across a reload.
+    private volatile int[] countSlotByOrdinal;
     private volatile int[] entityLimitByOrdinal;
 
     public LimitHandler(AdvancedSky plugin, ConfigHandler config, IslandGrid islandGrid) {
@@ -81,7 +85,16 @@ public class LimitHandler {
             entityLimits[type.ordinal()] = limit.getValue();
         }
 
+        int[] countSlots = new int[blockLimits.length];
+        int counted = 0;
+        for (int ordinal = 0; ordinal < blockLimits.length; ordinal++) {
+            countSlots[ordinal] = blockLimits[ordinal] == UNLIMITED ? -1 : counted++;
+        }
+
         this.blockLimitByOrdinal = blockLimits;
+        if (!Arrays.equals(countSlots, countSlotByOrdinal)) {
+            this.countSlotByOrdinal = countSlots;
+        }
         this.entityLimitByOrdinal = entityLimits;
         plugin.debug("LimitHandler", "Loaded block limits " + config.getBlockLimits() + " and entity limits " + config.getEntityLimits());
     }
@@ -92,9 +105,11 @@ public class LimitHandler {
      * for it until it finishes.
      */
     public Scan beginScan(UUID islandUuid) {
-        IslandCounts island = countsByIsland.computeIfAbsent(islandUuid, key -> new IslandCounts());
+        // Counts laid out for another set of limited blocks are replaced by the ones this scan builds.
+        int[] countSlots = countSlotByOrdinal;
+        IslandCounts island = countsByIsland.compute(islandUuid, (key, current) -> current == null || current.countSlots != countSlots ? new IslandCounts(countSlots) : current);
         synchronized (island) {
-            island.scan = new Scan();
+            island.scan = new Scan(island.countSlots);
             return island.scan;
         }
     }
@@ -132,10 +147,14 @@ public class LimitHandler {
                 return;
             }
 
-            for (int i = 0; i < countsByMaterialOrdinal.length; i++) {
-                countsByMaterialOrdinal[i] = Math.max(0, countsByMaterialOrdinal[i] + scan.changes[i]);
+            int[] counts = new int[scan.changes.length];
+            for (int ordinal = 0; ordinal < island.countSlots.length; ordinal++) {
+                int slot = island.countSlots[ordinal];
+                if (slot >= 0) {
+                    counts[slot] = Math.max(0, countsByMaterialOrdinal[ordinal] + scan.changes[slot]);
+                }
             }
-            island.counts = countsByMaterialOrdinal;
+            island.counts = counts;
             island.scan = null;
         }
     }
@@ -162,7 +181,7 @@ public class LimitHandler {
     }
 
     /**
-     * Whether a scan has produced counts for the island yet.
+     * Whether a scan has produced counts for the island yet, for the blocks limited now.
      */
     public boolean isReady(UUID islandUuid) {
         IslandCounts island = countsByIsland.get(islandUuid);
@@ -171,7 +190,7 @@ public class LimitHandler {
         }
 
         synchronized (island) {
-            return island.counts != null;
+            return island.isCurrent(countSlotByOrdinal);
         }
     }
 
@@ -191,7 +210,8 @@ public class LimitHandler {
         }
 
         synchronized (island) {
-            return island.counts != null && island.counts[type.ordinal()] < limit;
+            int slot = island.countSlots[type.ordinal()];
+            return island.isCurrent(countSlotByOrdinal) && slot >= 0 && island.counts[slot] < limit;
         }
     }
 
@@ -210,10 +230,14 @@ public class LimitHandler {
         }
 
         synchronized (island) {
-            if (island.counts != null) {
-                island.counts[type.ordinal()]++;
+            int slot = island.countSlots[type.ordinal()];
+            if (slot < 0) {
+                return;
             }
-            island.record(type, 1, chunkX, chunkZ);
+            if (island.counts != null) {
+                island.counts[slot]++;
+            }
+            island.record(slot, 1, chunkX, chunkZ);
         }
     }
 
@@ -232,10 +256,14 @@ public class LimitHandler {
         }
 
         synchronized (island) {
-            if (island.counts != null && island.counts[type.ordinal()] > 0) {
-                island.counts[type.ordinal()]--;
+            int slot = island.countSlots[type.ordinal()];
+            if (slot < 0) {
+                return;
             }
-            island.record(type, -1, chunkX, chunkZ);
+            if (island.counts != null && island.counts[slot] > 0) {
+                island.counts[slot]--;
+            }
+            island.record(slot, -1, chunkX, chunkZ);
         }
     }
 
@@ -273,16 +301,29 @@ public class LimitHandler {
     }
 
     /**
-     * An island's block counts, null until its first scan finishes, and the scan in progress.
-     * Guarded by its own monitor: events adjust it while a scan snapshots and hands over.
+     * An island's counts of its limited blocks, null until its first scan finishes, laid out by
+     * the count slots it was made with, and the scan in progress. Guarded by its own monitor:
+     * events adjust it while a scan snapshots and hands over.
      */
     private static final class IslandCounts {
+        private final int[] countSlots;
         private int[] counts;
         private Scan scan;
 
-        private void record(Material type, int change, int chunkX, int chunkZ) {
+        private IslandCounts(int[] countSlots) {
+            this.countSlots = countSlots;
+        }
+
+        /**
+         * Counted, and for the blocks limited now: a reload that limits other blocks needs a scan first.
+         */
+        private boolean isCurrent(int[] currentCountSlots) {
+            return counts != null && countSlots == currentCountSlots;
+        }
+
+        private void record(int slot, int change, int chunkX, int chunkZ) {
             if (scan != null && scan.chunks.contains(chunkKey(chunkX, chunkZ))) {
-                scan.changes[type.ordinal()] += change;
+                scan.changes[slot] += change;
             }
         }
     }
@@ -293,9 +334,10 @@ public class LimitHandler {
      */
     public static final class Scan {
         private final Set<Long> chunks = new HashSet<>();
-        private final int[] changes = new int[Material.values().length];
+        private final int[] changes;
 
-        private Scan() {
+        private Scan(int[] countSlots) {
+            this.changes = new int[(int) Arrays.stream(countSlots).filter(slot -> slot >= 0).count()];
         }
     }
 }
