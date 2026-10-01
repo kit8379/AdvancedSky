@@ -70,6 +70,23 @@ class ConfigHandlerTest {
         assertEquals("150", config.getUpgradeValue("island-size", 4));
     }
 
+    @Test
+    void aReloadLeavesTheStartupSettingsAndTheCommandsAsTheyWere() throws IOException {
+        ConfigHandler config = new ConfigHandler(plugin());
+
+        write("config.yml", read("config.yml").replace("name: sky1", "name: sky2").replace("world: skyblock\n", "world: other\n").replace("debug: false", "debug: true"));
+        write("commands.yml", read("commands.yml").replaceFirst("(?m)^( {4}invite:\\r?\\n {6}aliases: )\\[\\]", "$1[add]"));
+        config.reload();
+        assertTrue(read("config.yml").contains("name: sky2"));
+        assertTrue(read("commands.yml").contains("aliases: [add]"));
+
+        assertEquals("sky1", config.getServerName());
+        assertEquals("skyblock", config.getIslandWorldName());
+        assertFalse(config.isLobbyOnly());
+        assertArrayEquals(new String[0], config.getPlayerInviteAliases());
+        assertTrue(config.isDebug());
+    }
+
     private AdvancedSky plugin() {
         AdvancedSky plugin = mock(AdvancedSky.class);
         when(plugin.getDataFolder()).thenReturn(dataFolder.toFile());

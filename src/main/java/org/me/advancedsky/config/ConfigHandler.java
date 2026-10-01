@@ -29,14 +29,20 @@ public class ConfigHandler {
 
     private volatile FileConfiguration config;
     private volatile FileConfiguration messages;
-    private volatile FileConfiguration commands;
+    private final FileConfiguration commands;
     private volatile FileConfiguration levels;
     private volatile FileConfiguration upgrades;
     private volatile FileConfiguration limits;
 
+    // Read once at startup, as the other New plugins do: which server this is, the servers of the
+    // network and the island world stay as they were for the whole run, like the commands.
+    private final String serverName;
+    private final List<String> islandServerNames;
+    private final List<String> lobbyServerNames;
+    private final String islandWorldName;
+
     // Read on every move, block change and hit, so kept from the last load rather than looked up
     // in the YAML tree each time.
-    private volatile String islandWorldName;
     private volatile Map<String, Map<Integer, Integer>> upgradeLimits;
     // Read on every upgrade placeholder request and upgrade check, so kept the same way.
     private volatile Map<String, List<Integer>> upgradeLevels;
@@ -44,21 +50,26 @@ public class ConfigHandler {
 
     public ConfigHandler(AdvancedSky plugin) {
         this.plugin = plugin;
+        this.commands = load("commands.yml");
         reload();
+        this.serverName = config.getString("server.name");
+        this.islandServerNames = List.copyOf(config.getStringList("servers.island"));
+        this.lobbyServerNames = List.copyOf(config.getStringList("servers.lobby"));
+        this.islandWorldName = config.getString("island.world");
     }
 
     /**
-     * One reload at a time: each rewrites the files it reads, and one reading a file another is
-     * rewriting would find it empty and write the defaults over it.
+     * Loads the files again, all but commands.yml, which like the settings read once at startup
+     * stays as it was until a restart. One reload at a time: each rewrites the files it reads,
+     * and one reading a file another is rewriting would find it empty and write the defaults over
+     * it.
      */
     public synchronized void reload() {
         this.config = load("config.yml");
         this.messages = load("messages.yml");
-        this.commands = load("commands.yml");
         this.levels = load("levels.yml");
         this.upgrades = load("upgrades.yml");
         this.limits = load("limits.yml");
-        this.islandWorldName = config.getString("island.world");
         this.upgradeLevels = loadUpgradeLevels();
         this.upgradeLimits = loadUpgradeLimits();
         this.upgradeValues = loadUpgradeValues();
@@ -217,11 +228,11 @@ public class ConfigHandler {
     // ================================================================================================================
 
     public String getServerName() {
-        return config.getString("server.name");
+        return serverName;
     }
 
     public boolean isLobbyOnly() {
-        return getLobbyServerNames().contains(getServerName());
+        return lobbyServerNames.contains(serverName);
     }
 
     public String getMySQLHost() {
@@ -273,11 +284,11 @@ public class ConfigHandler {
     }
 
     public List<String> getIslandServerNames() {
-        return config.getStringList("servers.island");
+        return islandServerNames;
     }
 
     public List<String> getLobbyServerNames() {
-        return config.getStringList("servers.lobby");
+        return lobbyServerNames;
     }
 
     public String getLobbyWorldName() {

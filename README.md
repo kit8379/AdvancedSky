@@ -193,7 +193,7 @@ the server hosting it, inside its 512x512 area.
 | `/isadmin upgrade <player> <id> [set <level>]` | `.upgrade` | View or set an upgrade level |
 | `/isadmin biome <biome>` | `.biome` | Set the biome of the chunk you stand in |
 | `/isadmin lobby <player>` | `.lobby` | Send a player to the lobby |
-| `/isadmin reload` | `.reload` | Reload the config files |
+| `/isadmin reload` | `.reload` | Reload the config files; `server.name`, the server lists, `island.world`, the database and Redis settings and `commands.yml` take a restart |
 | `/isadmin help [page]` | `.help` | Admin command list |
 
 NewSky's `load` and `unload` do not exist: islands never leave their host.
