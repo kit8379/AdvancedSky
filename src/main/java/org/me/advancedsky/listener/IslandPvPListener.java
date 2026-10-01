@@ -48,13 +48,13 @@ public class IslandPvPListener implements Listener {
         this.islandCache = islandCache;
     }
 
-    private UUID resolvePlayerUuid(Entity entity) {
+    private Player resolvePlayer(Entity entity) {
         if (entity instanceof Player player) {
-            return player.getUniqueId();
+            return player;
         }
 
         if (entity instanceof Projectile projectile && projectile.getShooter() instanceof Player player) {
-            return player.getUniqueId();
+            return player;
         }
 
         return null;
@@ -111,13 +111,6 @@ public class IslandPvPListener implements Listener {
         return basePotionType != null && isHarmful(basePotionType.getPotionEffects());
     }
 
-    private void notifyAttacker(Entity damager) {
-        Entity attacker = damager instanceof Projectile projectile && projectile.getShooter() instanceof Player shooter ? shooter : damager;
-        if (attacker instanceof Player player) {
-            player.sendMessage(config.getIslandPvpDisabledMessage());
-        }
-    }
-
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onEntityDamageByEntity(EntityDamageByEntityEvent event) {
         if (!(event.getEntity() instanceof Player victim)) {
@@ -139,25 +132,26 @@ public class IslandPvPListener implements Listener {
     }
 
     /**
-     * The knockback event carries the causing player for wind bursts and player-lit TNT/crystals
-     * alike, so they are indistinguishable there. A wind charge's hit marks the tick and its
+     * The knockback event carries the causing player for wind charges and player-lit TNT/crystals
+     * alike, and none at all for a mace's Wind Burst. A wind charge's hit marks the tick and its
      * shooter, and only explosion knockback matching that mark is treated as a wind burst — TNT
      * and crystal knockback stays fully vanilla.
      */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onWindChargeHit(ProjectileHitEvent event) {
         if (event.getEntity() instanceof AbstractWindCharge windCharge && windCharge.getShooter() instanceof Player shooter) {
-            windBurst.set(new WindBurst(Bukkit.getCurrentTick(), shooter.getUniqueId()));
+            windBurst.set(new WindBurst(Bukkit.getCurrentTick(), shooter));
         }
     }
 
     /**
-     * A mace hit marks its attacker the same way: Wind Burst on the mace bursts around them.
+     * A mace hit marks its attacker the same way: Wind Burst on the mace bursts around them once
+     * the hit lands.
      */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onMaceHit(EntityDamageByEntityEvent event) {
         if (event.getDamager() instanceof Player attacker && attacker.getInventory().getItemInMainHand().getType() == Material.MACE) {
-            windBurst.set(new WindBurst(Bukkit.getCurrentTick(), attacker.getUniqueId()));
+            windBurst.set(new WindBurst(Bukkit.getCurrentTick(), attacker));
         }
     }
 
@@ -176,20 +170,18 @@ public class IslandPvPListener implements Listener {
             return;
         }
 
-        if (!(event instanceof EntityPushedByEntityAttackEvent pushed)) {
-            return;
-        }
-
-        UUID attackerUuid = resolvePlayerUuid(pushed.getPushedBy());
-        if (attackerUuid == null || attackerUuid.equals(victim.getUniqueId())) {
-            return;
-        }
-
+        Entity pushedBy = event instanceof EntityPushedByEntityAttackEvent pushed ? pushed.getPushedBy() : null;
+        Player attacker = resolvePlayer(pushedBy);
         if (cause == EntityKnockbackEvent.Cause.EXPLOSION) {
             WindBurst burst = windBurst.get();
-            if (burst == null || burst.tick() != Bukkit.getCurrentTick() || !burst.playerUuid().equals(attackerUuid)) {
+            if (burst == null || burst.tick() != Bukkit.getCurrentTick() || (pushedBy != null && (attacker == null || !attacker.getUniqueId().equals(burst.player().getUniqueId())))) {
                 return;
             }
+            attacker = burst.player();
+        }
+
+        if (attacker == null || attacker.getUniqueId().equals(victim.getUniqueId())) {
+            return;
         }
 
         if (isPvpAllowed(victim)) {
@@ -197,8 +189,8 @@ public class IslandPvPListener implements Listener {
         }
 
         event.setCancelled(true);
-        notifyAttacker(pushed.getPushedBy());
-        plugin.debug("IslandPvPListener", "Cancelled " + cause + " knockback from " + attackerUuid + " against " + victim.getName() + " in island world: " + victim.getWorld().getName());
+        attacker.sendMessage(config.getIslandPvpDisabledMessage());
+        plugin.debug("IslandPvPListener", "Cancelled " + cause + " knockback from " + attacker.getUniqueId() + " against " + victim.getName() + " in island world: " + victim.getWorld().getName());
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -253,6 +245,6 @@ public class IslandPvPListener implements Listener {
         }
     }
 
-    private record WindBurst(int tick, UUID playerUuid) {
+    private record WindBurst(int tick, Player player) {
     }
 }

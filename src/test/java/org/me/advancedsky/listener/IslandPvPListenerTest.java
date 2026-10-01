@@ -85,8 +85,9 @@ class IslandPvPListenerTest {
         try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
             bukkit.when(Bukkit::getCurrentTick).thenReturn(100);
 
-            // An explosion the attacker set off without a wind burst stays vanilla, as TNT does.
+            // Explosions the attacker set off without a wind burst stay vanilla, as TNT does.
             assertFalse(knockback(EntityKnockbackEvent.Cause.EXPLOSION, attacker));
+            assertFalse(knockback(EntityKnockbackEvent.Cause.EXPLOSION, null));
 
             ItemStack mace = mock(ItemStack.class);
             when(mace.getType()).thenReturn(Material.MACE);
@@ -94,10 +95,13 @@ class IslandPvPListenerTest {
             when(inventory.getItemInMainHand()).thenReturn(mace);
             when(attacker.getInventory()).thenReturn(inventory);
             listener.onMaceHit(damageEvent(attacker, mock(Entity.class)));
-            assertTrue(knockback(EntityKnockbackEvent.Cause.EXPLOSION, attacker));
+            // The burst names no one; it is the mace player's, and lifts the player themself as usual.
+            assertTrue(knockback(EntityKnockbackEvent.Cause.EXPLOSION, null));
+            assertFalse(knockback(attacker, EntityKnockbackEvent.Cause.EXPLOSION, null));
+            assertFalse(knockback(EntityKnockbackEvent.Cause.EXPLOSION, mock(Entity.class)));
 
             bukkit.when(Bukkit::getCurrentTick).thenReturn(101);
-            assertFalse(knockback(EntityKnockbackEvent.Cause.EXPLOSION, attacker));
+            assertFalse(knockback(EntityKnockbackEvent.Cause.EXPLOSION, null));
         }
     }
 
@@ -105,7 +109,14 @@ class IslandPvPListenerTest {
      * Whether the knockback the pusher gave the victim was cancelled.
      */
     private boolean knockback(EntityKnockbackEvent.Cause cause, Entity pushedBy) {
-        EntityPushedByEntityAttackEvent event = new EntityPushedByEntityAttackEvent(victim, cause, pushedBy, new Vector(1, 0, 0));
+        return knockback(victim, cause, pushedBy);
+    }
+
+    /**
+     * Whether the knockback the pusher, or no one when null, gave the player was cancelled.
+     */
+    private boolean knockback(Player pushed, EntityKnockbackEvent.Cause cause, Entity pushedBy) {
+        EntityKnockbackEvent event = pushedBy == null ? new EntityKnockbackEvent(pushed, cause, new Vector(1, 0, 0)) : new EntityPushedByEntityAttackEvent(pushed, cause, pushedBy, new Vector(1, 0, 0));
         listener.onKnockback(event);
         return event.isCancelled();
     }
