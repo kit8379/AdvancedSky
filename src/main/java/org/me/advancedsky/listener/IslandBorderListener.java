@@ -33,6 +33,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class IslandBorderListener implements Listener {
 
+    private static final long NO_BOUNDARY = -1L;
+
     private final ConfigHandler config;
     private final IslandCache islandCache;
     private final IslandGrid islandGrid;
@@ -103,8 +105,8 @@ public class IslandBorderListener implements Listener {
             }
         } else {
             // Leaving the boundary of the island they stand on is refused, as a world border would.
-            Island island = getIsland(from);
-            if (island != null && !player.isOp() && isInside(island, from) && !isInside(island, to)) {
+            long boundary = boundaryAt(player, from);
+            if (boundary != NO_BOUNDARY && !player.isOp() && isInside(boundary, from) && !isInside(boundary, to)) {
                 event.setCancelled(true);
                 return;
             }
@@ -130,16 +132,14 @@ public class IslandBorderListener implements Listener {
             return false;
         }
 
-        Island island = getIsland(from);
-        if (island == null || !isInside(island, from) || isInside(island, to)) {
-            return false;
-        }
-
         for (Entity passenger : vehicle.getPassengers()) {
             if (passenger instanceof Player player && !player.isOp()) {
-                vehicle.setVelocity(new Vector());
-                vehicle.teleportAsync(from, PlayerTeleportEvent.TeleportCause.PLUGIN);
-                return true;
+                long boundary = boundaryAt(player, from);
+                if (boundary != NO_BOUNDARY && isInside(boundary, from) && !isInside(boundary, to)) {
+                    vehicle.setVelocity(new Vector());
+                    vehicle.teleportAsync(from, PlayerTeleportEvent.TeleportCause.PLUGIN);
+                    return true;
+                }
             }
         }
         return false;
@@ -152,6 +152,11 @@ public class IslandBorderListener implements Listener {
     private void showBorder(Player player, Location location) {
         Island island = getIsland(location);
         UUID playerUuid = player.getUniqueId();
+
+        // While the island's cache entry loads again, the border it showed stays.
+        if (island == null && isIslandWorld(location) && islandCache.getIslandUuidAt(location) != null) {
+            return;
+        }
 
         if (island == null) {
             if (shownBorders.remove(playerUuid) != null) {
@@ -192,15 +197,37 @@ public class IslandBorderListener implements Listener {
     }
 
     private Island getIsland(Location location) {
-        if (location == null || location.getWorld() == null || !location.getWorld().getName().equals(config.getIslandWorldName())) {
+        if (!isIslandWorld(location)) {
             return null;
         }
 
         return islandCache.getAt(location);
     }
 
-    private boolean isInside(Island island, Location location) {
-        int size = config.getUpgradeLimit("island-size", island.getSizeLevel());
-        return location.getWorld() != null && location.getWorld().getName().equals(config.getIslandWorldName()) && islandGrid.isInsideIsland(island.getSlot(), size, location.getBlockX(), location.getBlockZ());
+    private boolean isIslandWorld(Location location) {
+        return location != null && location.getWorld() != null && location.getWorld().getName().equals(config.getIslandWorldName());
+    }
+
+    /**
+     * The boundary the player is held to at the location, as slot and size keyed like
+     * {@link #shownBorders}: that of the island there or, while its cache entry loads again, the
+     * one last sent to them for it. None in the gap, on a free slot or off the island world.
+     */
+    private long boundaryAt(Player player, Location location) {
+        Island island = getIsland(location);
+        if (island != null) {
+            return ((long) island.getSlot() << 32) | config.getUpgradeLimit("island-size", island.getSizeLevel());
+        }
+
+        if (!isIslandWorld(location) || islandCache.getIslandUuidAt(location) == null) {
+            return NO_BOUNDARY;
+        }
+
+        Long shown = shownBorders.get(player.getUniqueId());
+        return shown != null && (int) (shown >>> 32) == islandGrid.slotAt(location.getX(), location.getZ()) ? shown : NO_BOUNDARY;
+    }
+
+    private boolean isInside(long boundary, Location location) {
+        return isIslandWorld(location) && islandGrid.isInsideIsland((int) (boundary >>> 32), (int) boundary, location.getBlockX(), location.getBlockZ());
     }
 }

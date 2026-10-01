@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
@@ -107,6 +108,25 @@ class IslandBorderListenerTest {
 
         assertTrue(event.isCancelled());
         verify(mount).teleportAsync(inside, PlayerTeleportEvent.TeleportCause.PLUGIN);
+    }
+
+    @Test
+    void whileTheIslandsEntryLoadsAgainTheBorderLastSentStillHoldsThePlayer() {
+        when(config.getUpgradeLimit("island-size", 1)).thenReturn(75);
+        withBorders(() -> listener.onPlayerTeleport(new PlayerTeleportEvent(player, center, center)));
+        when(cache.getAt(any(Location.class))).thenReturn(null);
+        when(cache.getIslandUuidAt(any(Location.class))).thenReturn(UUID.randomUUID());
+        Location inside = center.clone().add(-37, 0, 0);
+        Location outside = center.clone().add(-38, 0, 0);
+
+        PlayerMoveEvent leaving = new PlayerMoveEvent(player, inside, outside);
+        listener.onPlayerMove(leaving);
+        PlayerMoveEvent within = new PlayerMoveEvent(player, center, inside);
+        listener.onPlayerMove(within);
+
+        assertTrue(leaving.isCancelled());
+        assertFalse(within.isCancelled());
+        verify(player, never()).setWorldBorder(null);
     }
 
     private void withBorders(Runnable run) {
