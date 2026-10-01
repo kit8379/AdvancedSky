@@ -177,7 +177,7 @@ class IslandSizeTest {
             when(snapshot.getX()).thenReturn(call.getArgument(1));
             when(snapshot.getZ()).thenReturn(call.getArgument(2));
             when(snapshot.getBlockType(anyInt(), eq(0), anyInt())).thenReturn(Material.STONE);
-            when(chunk.getChunkSnapshot(false, false, false)).thenReturn(snapshot);
+            when(chunk.getChunkSnapshot(false, false, false, false)).thenReturn(snapshot);
             return call.<Function<Chunk, CompletableFuture<Void>>>getArgument(4).apply(chunk);
         });
         LimitHandler limits = mock(LimitHandler.class);
@@ -206,7 +206,7 @@ class IslandSizeTest {
             // Were the empty middle section read, its stone would count too.
             when(snapshot.getBlockType(anyInt(), anyInt(), anyInt())).thenReturn(Material.STONE);
             when(snapshot.isSectionEmpty(1)).thenReturn(true);
-            when(chunk.getChunkSnapshot(false, false, false)).thenReturn(snapshot);
+            when(chunk.getChunkSnapshot(false, false, false, false)).thenReturn(snapshot);
             return call.<Function<Chunk, CompletableFuture<Void>>>getArgument(4).apply(chunk);
         });
 
@@ -236,7 +236,7 @@ class IslandSizeTest {
             when(snapshot.getBlockType(anyInt(), anyInt(), anyInt())).thenReturn(Material.OAK_DOOR);
             when(snapshot.getBlockData(anyInt(), eq(0), anyInt())).thenReturn(lower);
             when(snapshot.getBlockData(anyInt(), eq(1), anyInt())).thenReturn(upper);
-            when(chunk.getChunkSnapshot(false, false, false)).thenReturn(snapshot);
+            when(chunk.getChunkSnapshot(false, false, false, false)).thenReturn(snapshot);
             return call.<Function<Chunk, CompletableFuture<Void>>>getArgument(4).apply(chunk);
         });
         LimitHandler limits = mock(LimitHandler.class);

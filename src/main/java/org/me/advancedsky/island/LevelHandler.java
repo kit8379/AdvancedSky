@@ -146,7 +146,7 @@ public class LevelHandler {
             // gen=false: a never-generated chunk holds nothing and scores zero, so skip it
             // instead of generating and persisting it just to scan.
             taken.add(worldHandler.onChunk(world, coord[0], coord[1], false, chunk -> {
-                snapshots.add(chunk.getChunkSnapshot(false, false, false));
+                snapshots.add(chunk.getChunkSnapshot(false, false, false, false));
                 limitHandler.chunkScanned(islandUuid, scan, chunk.getX(), chunk.getZ());
                 return CompletableFuture.completedFuture(null);
             }));
