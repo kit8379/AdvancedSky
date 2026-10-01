@@ -7,11 +7,13 @@ import org.bukkit.World;
 import org.bukkit.block.BlockState;
 import org.bukkit.damage.DamageSource;
 import org.bukkit.entity.Cow;
+import org.bukkit.entity.EnderPearl;
 import org.bukkit.entity.LightningStrike;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Vehicle;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerPortalEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
@@ -143,6 +145,15 @@ class IslandProtectionListenerTest {
         assertTrue(portalCreate(owner, outside));
     }
 
+    @Test
+    void anEnderPearlLandingFollowsTheTeleportRule() {
+        island(false, Set.of(banned));
+
+        assertFalse(pearl(visitor, inside));
+        assertTrue(pearl(visitor, outside));
+        assertTrue(pearl(banned, inside));
+    }
+
     private void island(boolean locked, Set<UUID> bans) {
         Island island = new Island(UUID.randomUUID(), SLOT, locked, false, owner, Set.of(member), Set.of(), bans, Map.of(), null, 1, 1);
         when(cache.getAt(any(Location.class))).thenAnswer(call -> {
@@ -162,6 +173,22 @@ class IslandProtectionListenerTest {
         when(block.getLocation()).thenReturn(at);
         PortalCreateEvent event = new PortalCreateEvent(List.of(block), world, player(playerUuid, false), PortalCreateEvent.CreateReason.NETHER_PAIR);
         listener.onPortalCreate(event);
+        return event.isCancelled();
+    }
+
+    /**
+     * Whether the landing was refused and the pearl removed.
+     */
+    private boolean pearl(UUID playerUuid, Location at) {
+        EnderPearl pearl = mock(EnderPearl.class);
+        Player thrower = player(playerUuid, false);
+        when(pearl.getShooter()).thenReturn(thrower);
+        when(pearl.getLocation()).thenReturn(at);
+        ProjectileHitEvent event = new ProjectileHitEvent(pearl);
+        listener.onEnderPearlLand(event);
+        if (event.isCancelled()) {
+            verify(pearl).remove();
+        }
         return event.isCancelled();
     }
 

@@ -19,6 +19,7 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.EntityInteractEvent;
 import org.bukkit.event.entity.EntityPlaceEvent;
+import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.event.hanging.HangingBreakByEntityEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.*;
@@ -462,27 +463,45 @@ public class IslandProtectionListener implements Listener {
         }
     }
 
-    private void checkArrival(PlayerTeleportEvent event) {
-        Player player = event.getPlayer();
-        Location to = event.getTo();
+    /**
+     * An ender pearl takes its thrower where it lands, which on Folia is no teleport event, so
+     * the landing follows the teleport rule on both platforms.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onEnderPearlLand(ProjectileHitEvent event) {
+        if (event.getEntity() instanceof EnderPearl pearl && pearl.getShooter() instanceof Player player && refusesArrival(player, pearl.getLocation())) {
+            event.setCancelled(true);
+            pearl.remove();
+        }
+    }
 
+    private void checkArrival(PlayerTeleportEvent event) {
+        if (refusesArrival(event.getPlayer(), event.getTo())) {
+            event.setCancelled(true);
+        }
+    }
+
+    /**
+     * Whether the player may not arrive at the location, telling them why: outside every island
+     * boundary, or on an island that bars them.
+     */
+    private boolean refusesArrival(Player player, Location to) {
         if (!isIslandWorld(to)) {
-            return;
+            return false;
         }
 
         Island island = islandCache.getAt(to);
         if (!isInsideIslandBoundary(island, to)) {
-            event.setCancelled(true);
             deny(player);
-            return;
+            return true;
         }
 
         if (player.isOp() || mayEnter(player, island)) {
-            return;
+            return false;
         }
 
-        event.setCancelled(true);
         player.sendMessage(island.getBans().contains(player.getUniqueId()) ? config.getPlayerBannedMessage() : config.getIslandLockedMessage());
+        return true;
     }
 
     /**
