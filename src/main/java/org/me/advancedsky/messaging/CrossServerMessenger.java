@@ -226,13 +226,13 @@ public final class CrossServerMessenger {
 
     private RuntimeException instantiateRemoteException(Class<? extends RuntimeException> clazz, String errorMessage) throws Exception {
         try {
-            Constructor<? extends RuntimeException> constructor = clazz.getDeclaredConstructor();
-            constructor.setAccessible(true);
-            return constructor.newInstance();
-        } catch (NoSuchMethodException ignored) {
             Constructor<? extends RuntimeException> constructor = clazz.getDeclaredConstructor(String.class);
             constructor.setAccessible(true);
             return constructor.newInstance(errorMessage);
+        } catch (NoSuchMethodException ignored) {
+            Constructor<? extends RuntimeException> constructor = clazz.getDeclaredConstructor();
+            constructor.setAccessible(true);
+            return constructor.newInstance();
         }
     }
 

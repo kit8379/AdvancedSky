@@ -5,6 +5,8 @@ import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cluster.ClusterKeys;
+import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.TeamLimitReachedException;
 import org.me.advancedsky.redis.RedisHandler;
 import org.me.advancedsky.thread.BukkitAsyncExecutor;
 import org.mockito.ArgumentCaptor;
@@ -18,6 +20,7 @@ import java.lang.reflect.Method;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.mockito.Mockito.*;
 
 class CrossServerMessengerTest {
@@ -76,5 +79,23 @@ class CrossServerMessengerTest {
         assertEquals(CrossServerMessage.TYPE_RESPONSE, response.getString("type"));
         assertEquals(CrossServerMessage.STATUS_FAILED, response.getString("status"));
         assertEquals(stale.getString("messageId"), response.getString("correlationId"));
+    }
+
+    @Test
+    void aRemoteFailureComesBackWithItsTypeAndMessage() throws Exception {
+        CrossServerMessenger messenger = new CrossServerMessenger(mock(AdvancedSky.class), mock(RedisHandler.class), "sky1");
+        Method restore = CrossServerMessenger.class.getDeclaredMethod("restoreRemoteException", CrossServerMessage.class);
+        restore.setAccessible(true);
+        CrossServerMessage request = CrossServerMessage.request("sky1", "sky2", "island.home.set", new JSONObject());
+
+        Throwable notFound = (Throwable) restore.invoke(messenger, CrossServerMessage.failedResponse(request, new IllegalStateException("Player not found: Steve")));
+        assertInstanceOf(IllegalStateException.class, notFound);
+        assertEquals("Player not found: Steve", notFound.getMessage());
+
+        Throwable limit = (Throwable) restore.invoke(messenger, CrossServerMessage.failedResponse(request, new TeamLimitReachedException("4")));
+        assertInstanceOf(TeamLimitReachedException.class, limit);
+        assertEquals("4", limit.getMessage());
+
+        assertInstanceOf(IslandDoesNotExistException.class, restore.invoke(messenger, CrossServerMessage.failedResponse(request, new IslandDoesNotExistException())));
     }
 }
