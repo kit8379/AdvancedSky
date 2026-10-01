@@ -15,6 +15,9 @@ import org.bukkit.entity.EnderPearl;
 import org.bukkit.entity.LightningStrike;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Vehicle;
+import org.bukkit.event.block.BlockGrowEvent;
+import org.bukkit.event.block.BlockIgniteEvent;
+import org.bukkit.event.block.BlockSpreadEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
@@ -140,6 +143,33 @@ class IslandProtectionListenerTest {
     }
 
     @Test
+    void growthAndSpreadStayInsideTheBoundary() {
+        island(false, Set.of());
+
+        BlockGrowEvent fruitOutside = new BlockGrowEvent(block(outside), mock(BlockState.class));
+        listener.onBlockGrow(fruitOutside);
+        assertTrue(fruitOutside.isCancelled());
+
+        BlockGrowEvent fruitInside = new BlockGrowEvent(block(inside), mock(BlockState.class));
+        listener.onBlockGrow(fruitInside);
+        assertFalse(fruitInside.isCancelled());
+
+        BlockSpreadEvent vineOutside = new BlockSpreadEvent(block(outside), block(inside), mock(BlockState.class));
+        listener.onBlockSpread(vineOutside);
+        assertTrue(vineOutside.isCancelled());
+    }
+
+    @Test
+    void aVisitorsChannelingStrikeCannotSetIslandFire() {
+        island(false, Set.of());
+
+        assertTrue(ignite(player(visitor, false), inside));
+        assertFalse(ignite(player(member, false), inside));
+        assertFalse(ignite(null, inside));
+        assertTrue(ignite(null, outside));
+    }
+
+    @Test
     void netherPortalArrivalsFollowTheTeleportRule() {
         island(false, Set.of(banned));
         Location nether = new Location(mock(World.class), 0, 70, 0);
@@ -186,6 +216,24 @@ class IslandProtectionListenerTest {
         when(block.getLocation()).thenReturn(at);
         PortalCreateEvent event = new PortalCreateEvent(List.of(block), world, player(playerUuid, false), PortalCreateEvent.CreateReason.NETHER_PAIR);
         listener.onPortalCreate(event);
+        return event.isCancelled();
+    }
+
+    private static Block block(Location at) {
+        Block block = mock(Block.class);
+        when(block.getLocation()).thenReturn(at);
+        return block;
+    }
+
+    /**
+     * Whether the fire a strike called down by the player, or a natural one when null, would
+     * light was cancelled.
+     */
+    private boolean ignite(Player caller, Location at) {
+        LightningStrike strike = mock(LightningStrike.class);
+        when(strike.getCausingEntity()).thenReturn(caller);
+        BlockIgniteEvent event = new BlockIgniteEvent(block(at), BlockIgniteEvent.IgniteCause.LIGHTNING, strike);
+        listener.onBlockIgnite(event);
         return event.isCancelled();
     }
 

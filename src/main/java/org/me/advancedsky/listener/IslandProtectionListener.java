@@ -138,6 +138,10 @@ public class IslandProtectionListener implements Listener {
             return player;
         }
 
+        if (entity instanceof LightningStrike strike && strike.getCausingEntity() instanceof Player player) {
+            return player;
+        }
+
         return null;
     }
 
@@ -248,6 +252,37 @@ public class IslandProtectionListener implements Listener {
         }
 
         if (!isAllowedByBoundary(event.getBlock().getLocation())) {
+            event.setCancelled(true);
+        }
+    }
+
+    /**
+     * Growing and spreading have handler lists of their own, apart from forming, so a stem's
+     * fruit, a vine, a chorus branch or fire is held to the boundary here.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onBlockGrow(BlockGrowEvent event) {
+        if (!isAllowedByBoundary(event.getBlock().getLocation())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onBlockSpread(BlockSpreadEvent event) {
+        if (!isAllowedByBoundary(event.getBlock().getLocation())) {
+            event.setCancelled(true);
+        }
+    }
+
+    /**
+     * Fire a player starts, also through their Channeling strike, only where they may edit; any
+     * other fire only inside a boundary.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onBlockIgnite(BlockIgniteEvent event) {
+        Player player = event.getPlayer() != null ? event.getPlayer() : resolvePlayer(event.getIgnitingEntity());
+        Location location = event.getBlock().getLocation();
+        if (player != null ? !canPlayerEdit(player, location) : !isAllowedByBoundary(location)) {
             event.setCancelled(true);
         }
     }
@@ -385,10 +420,6 @@ public class IslandProtectionListener implements Listener {
      */
     private Player resolveAttacker(EntityDamageByEntityEvent event) {
         if (event.getDamageSource().getCausingEntity() instanceof Player player) {
-            return player;
-        }
-
-        if (event.getDamager() instanceof LightningStrike strike && strike.getCausingEntity() instanceof Player player) {
             return player;
         }
 
