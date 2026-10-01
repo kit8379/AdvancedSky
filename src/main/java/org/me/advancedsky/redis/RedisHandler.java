@@ -29,7 +29,10 @@ public class RedisHandler {
         poolConfig.setMaxIdle(32);
         poolConfig.setMaxWait(Duration.ofSeconds(5));
 
-        DefaultJedisClientConfig.Builder clientConfigBuilder = DefaultJedisClientConfig.builder().connectionTimeoutMillis(2000).socketTimeoutMillis(2000);
+        // A blocking command (the stream consumer's XREAD blocks for a second) waits on its own
+        // timeout, unlimited by default; bounded, a connection that died silently fails it
+        // instead of holding the consumer forever.
+        DefaultJedisClientConfig.Builder clientConfigBuilder = DefaultJedisClientConfig.builder().connectionTimeoutMillis(2000).socketTimeoutMillis(2000).blockingSocketTimeoutMillis(5000);
 
         if (password != null && !password.isEmpty()) {
             clientConfigBuilder.password(password);
