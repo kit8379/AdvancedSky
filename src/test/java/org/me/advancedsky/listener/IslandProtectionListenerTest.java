@@ -6,6 +6,8 @@ import io.papermc.paper.event.entity.EntityPushedByEntityAttackEvent;
 import com.google.common.base.Functions;
 import org.bukkit.Location;
 import org.bukkit.World;
+import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
 import org.bukkit.damage.DamageSource;
 import org.bukkit.entity.Cow;
@@ -206,7 +208,7 @@ class IslandProtectionListenerTest {
         Player thrower = player(playerUuid, false);
         when(pearl.getShooter()).thenReturn(thrower);
         when(pearl.getLocation()).thenReturn(at);
-        ProjectileHitEvent event = new ProjectileHitEvent(pearl);
+        ProjectileHitEvent event = new ProjectileHitEvent(pearl, null, mock(Block.class), BlockFace.UP);
         listener.onEnderPearlLand(event);
         if (event.isCancelled()) {
             verify(pearl).remove();
