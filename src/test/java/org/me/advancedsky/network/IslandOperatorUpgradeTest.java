@@ -107,6 +107,24 @@ class IslandOperatorUpgradeTest {
     }
 
     @Test
+    void aWriteWhoseCommitAnswerWasLostIsPaidForWhenItLanded() {
+        doThrow(new RuntimeException("connection reset during commit")).when(database).updateIslandUpgradeLevel(actor, island, "coop-limit", 1, 2);
+        when(database.getIslandUpgradeLevel(island, "coop-limit")).thenReturn(2);
+
+        assertDoesNotThrow(() -> operator.buyUpgrade(actor, island, buyer, "coop-limit", 1, 2, 25000.0).join());
+        verify(economy, never()).depositPlayer(any(OfflinePlayer.class), anyDouble());
+    }
+
+    @Test
+    void aWriteWhoseCommitAnswerWasLostIsRefundedWhenItDidNotLand() {
+        doThrow(new RuntimeException("connection reset during commit")).when(database).updateIslandUpgradeLevel(actor, island, "coop-limit", 1, 2);
+        when(database.getIslandUpgradeLevel(island, "coop-limit")).thenReturn(1);
+
+        assertFailure(RuntimeException.class, operator.buyUpgrade(actor, island, buyer, "coop-limit", 1, 2, 25000.0));
+        verify(economy).depositPlayer(payer, 25000.0);
+    }
+
+    @Test
     void insufficientFundsWritesNothing() {
         when(economy.withdrawPlayer(payer, 25000.0)).thenReturn(response(EconomyResponse.ResponseType.FAILURE));
 

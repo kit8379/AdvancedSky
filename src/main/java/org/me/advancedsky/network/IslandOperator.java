@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
@@ -54,14 +55,25 @@ public class IslandOperator {
 
     public CompletableFuture<Void> createIsland(UUID islandUuid, UUID ownerUuid) {
         return serialized(islandUuid, () -> {
-            int slot = database.addIslandData(islandUuid, ownerUuid, serverID);
+            int slot;
+            try {
+                slot = database.addIslandData(islandUuid, ownerUuid, serverID);
+            } catch (RuntimeException e) {
+                // A commit whose answer was lost may still have landed: then the island exists and
+                // is built like any other.
+                if (isRuleRejection(e)) {
+                    throw e;
+                }
+                slot = database.getIslandSlot(islandUuid).orElseThrow(() -> e);
+            }
+            int createdSlot = slot;
 
             return islandCache.load(islandUuid).thenCompose(v -> {
-                return worldHandler.createIsland(slot);
+                return worldHandler.createIsland(createdSlot);
             }).thenRunAsync(() -> {
-                plugin.debug("IslandOperator", "Created island " + islandUuid + " at slot " + slot + " on server: " + serverID);
+                plugin.debug("IslandOperator", "Created island " + islandUuid + " at slot " + createdSlot + " on server: " + serverID);
             }, plugin.getBukkitAsyncExecutor()).exceptionallyComposeAsync(e -> {
-                return cleanupFailedCreate(islandUuid, slot).thenCompose(v -> {
+                return cleanupFailedCreate(islandUuid, createdSlot).thenCompose(v -> {
                     return CompletableFuture.failedFuture(e);
                 });
             }, plugin.getBukkitAsyncExecutor());
@@ -76,7 +88,14 @@ public class IslandOperator {
     public CompletableFuture<Void> deleteIsland(Actor actor, UUID islandUuid) {
         return serialized(islandUuid, () -> {
             int slot = getIslandSlot(islandUuid);
-            database.deleteIsland(actor, islandUuid);
+            try {
+                database.deleteIsland(actor, islandUuid);
+            } catch (RuntimeException e) {
+                // A commit whose answer was lost may still have landed: then the island is gone.
+                if (isRuleRejection(e) || database.getIslandSlot(islandUuid).isPresent()) {
+                    throw e;
+                }
+            }
             islandCache.unload(islandUuid);
             limitHandler.unload(islandUuid);
 
@@ -291,8 +310,24 @@ public class IslandOperator {
      */
     public CompletableFuture<Void> buyUpgrade(Actor actor, UUID islandUuid, UUID payerUuid, String upgradeId, int expectedLevel, int newLevel, double price) {
         return economy.withdraw(payerUuid, price).thenComposeAsync(v -> setUpgradeLevel(actor, islandUuid, upgradeId, expectedLevel, newLevel).exceptionallyComposeAsync(error -> {
+            // A write whose commit answer was lost may still have landed: then it is paid for.
+            Throwable cause = error instanceof CompletionException && error.getCause() != null ? error.getCause() : error;
+            if (!isRuleRejection(cause) && hasLevel(islandUuid, upgradeId, newLevel)) {
+                return CompletableFuture.completedFuture(null);
+            }
             return refund(payerUuid, price, upgradeId).thenCompose(refunded -> CompletableFuture.failedFuture(error));
         }, plugin.getBukkitAsyncExecutor()), plugin.getBukkitAsyncExecutor());
+    }
+
+    /**
+     * Whether the upgrade stands at the level; false when the database cannot tell.
+     */
+    private boolean hasLevel(UUID islandUuid, String upgradeId, int level) {
+        try {
+            return database.getIslandUpgradeLevel(islandUuid, upgradeId) == level;
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     private CompletableFuture<Void> refund(UUID payerUuid, double amount, String upgradeId) {
