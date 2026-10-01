@@ -25,6 +25,8 @@ public class IslandAccessListener implements Listener {
     private final ConfigHandler config;
     private final IslandCache islandCache;
 
+    private static final long RESEND_AFTER_TICKS = 100L;
+
     // Players already sent to the lobby off an island, so the steps they take before the move
     // happens do not send them again.
     private final Set<UUID> sentAway = ConcurrentHashMap.newKeySet();
@@ -119,11 +121,16 @@ public class IslandAccessListener implements Listener {
             return;
         }
 
-        plugin.getApi().lobby(playerUuid).exceptionally(error -> {
-            // Sent again on their next step or join.
-            sentAway.remove(playerUuid);
-            plugin.severe("Failed to send player " + player.getName() + " to the lobby off an island they may not be on", error);
-            return null;
+        plugin.getApi().lobby(playerUuid).whenComplete((v, error) -> {
+            if (error != null) {
+                // Sent again on their next step or join.
+                sentAway.remove(playerUuid);
+                plugin.severe("Failed to send player " + player.getName() + " to the lobby off an island they may not be on", error);
+                return;
+            }
+
+            // Still here once the move should have happened, the proxy refused it: their next step sends them again.
+            player.getScheduler().runDelayed(plugin, task -> sentAway.remove(playerUuid), null, RESEND_AFTER_TICKS);
         });
         plugin.getApi().sendPlayerMessage(playerUuid, message);
     }

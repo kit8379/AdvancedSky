@@ -1,5 +1,7 @@
 package org.me.advancedsky.listener;
 
+import io.papermc.paper.threadedregions.scheduler.EntityScheduler;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
@@ -15,10 +17,13 @@ import org.me.advancedsky.model.Island;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 class IslandAccessListenerTest {
     private final AdvancedSky plugin = mock(AdvancedSky.class);
@@ -81,6 +86,29 @@ class IslandAccessListenerTest {
         access.onPlayerMove(new PlayerMoveEvent(player, next, location.clone().add(3, 0, 0)));
 
         verify(api, times(1)).lobby(playerUuid);
+    }
+
+    @Test
+    void aSendTheProxyDidNotCarryOutIsMadeAgainOnALaterStep() {
+        Island island = new Island(UUID.randomUUID(), 1, false, false, UUID.randomUUID(), Set.of(), Set.of(), Set.of(playerUuid), Map.of(), null, 1, 1);
+        when(cache.getAt(any(Location.class))).thenReturn(island);
+        EntityScheduler scheduler = mock(EntityScheduler.class);
+        when(player.getScheduler()).thenReturn(scheduler);
+        List<Consumer<ScheduledTask>> delayed = new ArrayList<>();
+        when(scheduler.runDelayed(any(), any(), any(), anyLong())).thenAnswer(call -> {
+            delayed.add(call.getArgument(1));
+            return mock(ScheduledTask.class);
+        });
+        IslandAccessListener access = new IslandAccessListener(plugin, config, cache);
+
+        access.onPlayerMove(new PlayerMoveEvent(player, location, new Location(world, 257, 101, 256)));
+        access.onPlayerMove(new PlayerMoveEvent(player, location, new Location(world, 258, 101, 256)));
+        verify(api, times(1)).lobby(playerUuid);
+
+        // Still on the island when the move should have happened.
+        delayed.forEach(task -> task.accept(mock(ScheduledTask.class)));
+        access.onPlayerMove(new PlayerMoveEvent(player, location, new Location(world, 259, 101, 256)));
+        verify(api, times(2)).lobby(playerUuid);
     }
 
     @Test
