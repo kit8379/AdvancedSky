@@ -135,6 +135,28 @@ class LevelUpdateSchedulerTest {
         verify(levelHandler, times(1)).calIslandLevel(island);
     }
 
+    @Test
+    void aReloadRescansTheIslandsInUseAtTheNextPoll() {
+        CompletableFuture<Integer> first = new CompletableFuture<>();
+        CompletableFuture<Integer> second = new CompletableFuture<>();
+        when(levelHandler.calIslandLevel(island)).thenReturn(first, second, new CompletableFuture<>());
+        Runnable tick = startAndCaptureTick();
+
+        // Scheduled minutes ahead: brought forward.
+        scheduler.playerEnter(island);
+        tick.run();
+        first.complete(7);
+        scheduler.rescanOccupied();
+        tick.run();
+        verify(levelHandler, times(2)).calIslandLevel(island);
+
+        // Scanning right now: scanned again as soon as that scan is done.
+        scheduler.rescanOccupied();
+        second.complete(7);
+        tick.run();
+        verify(levelHandler, times(3)).calIslandLevel(island);
+    }
+
     private static void finish(CompletableFuture<Integer> scan, boolean succeeds) {
         if (succeeds) {
             scan.complete(7);

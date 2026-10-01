@@ -311,6 +311,7 @@ public class AdvancedSky extends JavaPlugin {
         limitHandler.startup();
         levelHandler.startup();
         cobblestoneGeneratorHandler.startup();
+        levelUpdateScheduler.rescanOccupied();
         info("Plugin configs reloaded!");
     }
 

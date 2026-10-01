@@ -102,13 +102,30 @@ public final class LevelUpdateScheduler {
     }
 
     /**
-     * Brings the island's scheduled scan forward to the next poll. A scan in progress is left
-     * to reschedule the island itself when it finishes.
+     * Brings the scans of the islands in use forward to the next poll, so the limits and block
+     * points a reload brings reach them at once rather than at their next periodic scan.
+     */
+    public void rescanOccupied() {
+        plugin.getGlobalRegionExecutor().execute(() -> {
+            for (UUID islandUuid : List.copyOf(playerCounts.keySet())) {
+                scanAtNextPoll(islandUuid);
+            }
+        });
+    }
+
+    /**
+     * Brings the island's scheduled scan forward to the next poll. A scan in progress takes it
+     * as a request for another one right after it.
      */
     private void scanAtNextPoll(UUID islandUuid) {
         long now = System.currentTimeMillis();
         Entry current = entries.get(islandUuid);
-        if (current == null || current.running || current.nextRunAtMs <= now) {
+        if (current != null && current.running) {
+            current.scanAgain = true;
+            return;
+        }
+
+        if (current == null || current.nextRunAtMs <= now) {
             return;
         }
 
@@ -218,8 +235,8 @@ public final class LevelUpdateScheduler {
         }
 
         long delay;
-        if (!playerCounts.containsKey(finished.islandUuid)) {
-            // Emptied while this scan ran: its last scan starts at the next poll.
+        if (!playerCounts.containsKey(finished.islandUuid) || finished.scanAgain) {
+            // Emptied while this scan ran, its last scan, or asked to scan again: at the next poll.
             delay = 0L;
         } else {
             delay = (succeeded ? BASE_INTERVAL_MS : Math.max(5_000L, BASE_INTERVAL_MS / 10)) + nextJitterMs();
@@ -241,6 +258,7 @@ public final class LevelUpdateScheduler {
         private final long nextRunAtMs;
         private boolean cancelled;
         private boolean running;
+        private boolean scanAgain;
 
         private Entry(UUID islandUuid, long nextRunAtMs) {
             this.islandUuid = islandUuid;
