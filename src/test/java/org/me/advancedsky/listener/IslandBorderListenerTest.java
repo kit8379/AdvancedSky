@@ -5,6 +5,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.WorldBorder;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.damage.DamageSource;
 import org.bukkit.entity.Vehicle;
@@ -12,6 +13,7 @@ import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
+import org.bukkit.event.vehicle.VehicleMoveEvent;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
@@ -108,6 +110,21 @@ class IslandBorderListenerTest {
 
         assertTrue(event.isCancelled());
         verify(mount).teleportAsync(inside, PlayerTeleportEvent.TeleportCause.PLUGIN);
+    }
+
+    @Test
+    void aRiderOnAMobInAMinecartRollingOutOfTheBoundaryIsPutBackWithTheMinecart() {
+        when(config.getUpgradeLimit("island-size", 1)).thenReturn(75);
+        Vehicle minecart = mock(Vehicle.class);
+        Entity pig = mock(Entity.class);
+        when(minecart.getPassengers()).thenReturn(List.of(pig));
+        when(pig.getPassengers()).thenReturn(List.of(player));
+        Location inside = center.clone().add(-37, 0, 0);
+        Location outside = center.clone().add(-38, 0, 0);
+
+        listener.onVehicleMove(new VehicleMoveEvent(minecart, inside, outside));
+
+        verify(minecart).teleportAsync(inside, PlayerTeleportEvent.TeleportCause.PLUGIN);
     }
 
     @Test

@@ -12,6 +12,7 @@ import org.bukkit.block.BlockState;
 import org.bukkit.damage.DamageSource;
 import org.bukkit.entity.Cow;
 import org.bukkit.entity.EnderPearl;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.LightningStrike;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Vehicle;
@@ -97,6 +98,20 @@ class IslandProtectionListenerTest {
         assertTrue(ride(visitor, outside, inside));
         assertFalse(ride(member, outside, inside));
         assertFalse(ride(visitor, inside, inside.clone().add(1, 0, 0)));
+    }
+
+    @Test
+    void aRiderOnAMobInAMinecartIsPutBackWithTheMinecart() {
+        island(true, Set.of());
+        Vehicle minecart = mock(Vehicle.class);
+        Entity pig = mock(Entity.class);
+        Player rider = player(visitor, false);
+        when(minecart.getPassengers()).thenReturn(List.of(pig));
+        when(pig.getPassengers()).thenReturn(List.of(rider));
+
+        listener.onVehicleMove(new VehicleMoveEvent(minecart, outside, inside));
+
+        verify(minecart).teleportAsync(outside, PlayerTeleportEvent.TeleportCause.PLUGIN);
     }
 
     @Test

@@ -36,6 +36,7 @@ import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.model.Island;
+import org.me.advancedsky.util.EntityUtils;
 
 import java.util.UUID;
 
@@ -602,7 +603,8 @@ public class IslandProtectionListener implements Listener {
      * player who may not enter onto an island.
      */
     private boolean putBack(Entity vehicle, Location from, Location to) {
-        if ((from.getBlockX() == to.getBlockX() && from.getBlockZ() == to.getBlockZ()) || !isIslandWorld(to)) {
+        // A vehicle that itself rides one moves with it, and the one at the bottom is put back.
+        if ((from.getBlockX() == to.getBlockX() && from.getBlockZ() == to.getBlockZ()) || !isIslandWorld(to) || vehicle.getVehicle() != null) {
             return false;
         }
 
@@ -611,8 +613,8 @@ public class IslandProtectionListener implements Listener {
             return false;
         }
 
-        for (Entity passenger : vehicle.getPassengers()) {
-            if (passenger instanceof Player player && !player.isOp() && !mayEnter(player, island)) {
+        for (Player player : EntityUtils.riders(vehicle)) {
+            if (!player.isOp() && !mayEnter(player, island)) {
                 vehicle.setVelocity(new Vector());
                 vehicle.teleportAsync(from, PlayerTeleportEvent.TeleportCause.PLUGIN);
                 return true;

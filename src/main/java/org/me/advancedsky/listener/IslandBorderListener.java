@@ -20,6 +20,7 @@ import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.model.Island;
+import org.me.advancedsky.util.EntityUtils;
 
 import java.util.Map;
 import java.util.UUID;
@@ -128,12 +129,13 @@ public class IslandBorderListener implements Listener {
      * player out of the boundary of the island it is on.
      */
     private boolean putBack(Entity vehicle, Location from, Location to) {
-        if (from.getBlockX() == to.getBlockX() && from.getBlockZ() == to.getBlockZ()) {
+        // A vehicle that itself rides one moves with it, and the one at the bottom is put back.
+        if ((from.getBlockX() == to.getBlockX() && from.getBlockZ() == to.getBlockZ()) || vehicle.getVehicle() != null) {
             return false;
         }
 
-        for (Entity passenger : vehicle.getPassengers()) {
-            if (passenger instanceof Player player && !player.isOp()) {
+        for (Player player : EntityUtils.riders(vehicle)) {
+            if (!player.isOp()) {
                 long boundary = boundaryAt(player, from);
                 if (boundary != NO_BOUNDARY && isInside(boundary, from) && !isInside(boundary, to)) {
                     vehicle.setVelocity(new Vector());
