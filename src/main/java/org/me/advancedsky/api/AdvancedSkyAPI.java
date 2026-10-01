@@ -13,6 +13,7 @@ import org.me.advancedsky.uuid.UuidHandler;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The plugin's public surface. One rule, no exceptions:
@@ -43,6 +44,8 @@ public class AdvancedSkyAPI {
     private final BiomeHandler biomeHandler;
     private final UuidHandler uuidHandler;
     private final UpgradeHandler upgradeHandler;
+    // Each player's actions in the order they asked for them; see PlayerActions.
+    private final Map<UUID, CompletableFuture<Void>> playerChains = new ConcurrentHashMap<>();
 
     public AdvancedSkyAPI(AdvancedSky plugin, CoreHandler coreHandler, PlayerHandler playerHandler, HomeHandler homeHandler, WarpHandler warpHandler, LevelHandler levelHandler, BanHandler banHandler, CoopHandler coopHandler, LobbyHandler lobbyHandler, PlayerMessageHandler playerMessageHandler, UuidHandler uuidHandler, BiomeHandler biomeHandler, UpgradeHandler upgradeHandler) {
         this.plugin = plugin;
@@ -67,7 +70,7 @@ public class AdvancedSkyAPI {
     /** Act as this player: own identity, own island, player rules apply. */
     @SuppressWarnings("unused")
     public PlayerActions player(UUID playerUuid) {
-        return new PlayerActions(playerUuid, coreHandler, playerHandler, homeHandler, warpHandler, banHandler, coopHandler, biomeHandler, upgradeHandler);
+        return new PlayerActions(playerUuid, playerChains, coreHandler, playerHandler, homeHandler, warpHandler, banHandler, coopHandler, biomeHandler, upgradeHandler);
     }
 
     /** Act as an operator: arbitrary targets, no player rules, the sender's name goes to logs. */

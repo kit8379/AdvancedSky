@@ -9,6 +9,7 @@ import org.me.advancedsky.model.Actor;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.mockito.Mockito.*;
 
@@ -26,7 +27,7 @@ class WarpActionsTest {
         when(core.getIslandUuid(player)).thenReturn(CompletableFuture.completedFuture(island));
         when(warps.setWarp(any(), any(), anyString(), any(Location.class))).thenReturn(CompletableFuture.completedFuture(null));
         when(warps.delWarp(any(), any(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
-        PlayerActions actions = new PlayerActions(player, core, null, null, warps, null, null, null, null);
+        PlayerActions actions = new PlayerActions(player, new ConcurrentHashMap<>(), core, null, null, warps, null, null, null, null);
 
         actions.setWarp("shop", location).join();
         actions.deleteWarp("shop").join();
@@ -42,7 +43,7 @@ class WarpActionsTest {
         CoreHandler core = mock(CoreHandler.class);
         WarpHandler warps = mock(WarpHandler.class);
         when(warps.warp(any(Actor.Player.class), eq(island), eq("shop"), eq(player))).thenReturn(CompletableFuture.completedFuture(null));
-        PlayerActions actions = new PlayerActions(player, core, null, null, warps, null, null, null, null);
+        PlayerActions actions = new PlayerActions(player, new ConcurrentHashMap<>(), core, null, null, warps, null, null, null, null);
 
         actions.warp(island, "shop").join();
 

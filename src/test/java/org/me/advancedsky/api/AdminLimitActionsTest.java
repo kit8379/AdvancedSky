@@ -11,6 +11,7 @@ import org.me.advancedsky.model.Invitation;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.mockito.Mockito.*;
 
@@ -34,7 +35,7 @@ class AdminLimitActionsTest {
         verify(members).addMember(new Actor.Bypass("console"), island, player, "member");
         verify(homes).setHome(new Actor.Bypass("console"), player, "farm", location);
 
-        PlayerActions normal = new PlayerActions(player, null, members, homes, null, null, null, null, null);
+        PlayerActions normal = new PlayerActions(player, new ConcurrentHashMap<>(), null, members, homes, null, null, null, null, null);
         normal.acceptInvite().join();
         normal.setHome("farm", location).join();
         verify(members).addMember(new Actor.Player(player), island, player, "member");
