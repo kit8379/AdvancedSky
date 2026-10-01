@@ -56,6 +56,14 @@ public class RedisHandler {
         return new Jedis(connection);
     }
 
+    /**
+     * Closes the idle connections: when one died silently the others most likely did too, and
+     * each would otherwise fail only after its own timeout.
+     */
+    public void clearIdleConnections() {
+        pool.clear();
+    }
+
     public void disconnect() {
         if (pool != null) {
             pool.close();

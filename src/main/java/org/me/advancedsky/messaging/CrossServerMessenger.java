@@ -110,6 +110,7 @@ public final class CrossServerMessenger {
             } catch (Exception e) {
                 if (running) {
                     plugin.severe("CrossServerMessenger failed while reading Redis Stream", e);
+                    redisHandler.clearIdleConnections();
                     sleepQuietly(1000L);
                 }
             }
