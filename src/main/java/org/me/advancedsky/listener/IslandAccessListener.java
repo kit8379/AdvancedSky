@@ -21,11 +21,11 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class IslandAccessListener implements Listener {
 
+    private static final long RESEND_AFTER_TICKS = 100L;
+
     private final AdvancedSky plugin;
     private final ConfigHandler config;
     private final IslandCache islandCache;
-
-    private static final long RESEND_AFTER_TICKS = 100L;
 
     // Players already sent to the lobby off an island, so the steps they take before the move
     // happens do not send them again.
