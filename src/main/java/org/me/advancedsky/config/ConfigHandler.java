@@ -18,6 +18,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 public class ConfigHandler {
+
+    /**
+     * Sections whose entries are the operator's own list, by file: not completed from the
+     * defaults. {@code *} stands for any one key, so each upgrade's levels are the operator's.
+     */
+    private static final Map<String, List<String>> OWN_SECTIONS = Map.of("limits.yml", List.of("limit.blocks", "limit.entities"), "levels.yml", List.of("blocks"), "upgrades.yml", List.of("upgrades.*"));
+
     private final AdvancedSky plugin;
 
     private volatile FileConfiguration config;
@@ -88,7 +95,9 @@ public class ConfigHandler {
         }
 
         YamlConfiguration rebuiltConfig = new YamlConfiguration();
-        copyDefaults(defaultConfig, userConfig, rebuiltConfig, "");
+        rebuiltConfig.options().setHeader(userConfig.options().getHeader());
+        rebuiltConfig.options().setFooter(userConfig.options().getFooter());
+        copyDefaults(defaultConfig, userConfig, rebuiltConfig, "", OWN_SECTIONS.getOrDefault(fileName, List.of()));
         saveConfig(rebuiltConfig, fileName);
         return rebuiltConfig;
     }
@@ -103,16 +112,23 @@ public class ConfigHandler {
         }
     }
 
-    private void copyDefaults(FileConfiguration defaultConfig, FileConfiguration userConfig, YamlConfiguration rebuiltConfig, String path) {
+    /**
+     * Completes the user's file with what the defaults have and it lacks, keeping its values and
+     * comments. A section listed in {@link #OWN_SECTIONS} that the user's file has is kept as it
+     * is, so an entry taken out of it stays out.
+     */
+    private void copyDefaults(FileConfiguration defaultConfig, FileConfiguration userConfig, YamlConfiguration rebuiltConfig, String path, List<String> ownSections) {
         Set<String> keys = Objects.requireNonNull(defaultConfig.getConfigurationSection(path)).getKeys(false);
         for (String key : keys) {
             String fullPath = path.isEmpty() ? key : path + "." + key;
-            if (defaultConfig.isConfigurationSection(fullPath)) {
+            FileConfiguration source = userConfig.contains(fullPath) ? userConfig : defaultConfig;
+            if (defaultConfig.isConfigurationSection(fullPath) && !(userConfig.isConfigurationSection(fullPath) && isOwnSection(fullPath, ownSections))) {
                 rebuiltConfig.createSection(fullPath);
-                copyDefaults(defaultConfig, userConfig, rebuiltConfig, fullPath);
+                copyComments(source, rebuiltConfig, fullPath);
+                copyDefaults(defaultConfig, userConfig, rebuiltConfig, fullPath, ownSections);
             } else {
-                Object value = userConfig.contains(fullPath) ? userConfig.get(fullPath) : defaultConfig.get(fullPath);
-                rebuiltConfig.set(fullPath, value);
+                rebuiltConfig.set(fullPath, source.get(fullPath));
+                copyComments(source, rebuiltConfig, fullPath);
             }
         }
 
@@ -125,8 +141,36 @@ public class ConfigHandler {
             String fullPath = path.isEmpty() ? key : path + "." + key;
             if (!rebuiltConfig.contains(fullPath)) {
                 rebuiltConfig.set(fullPath, userConfig.get(fullPath));
+                copyComments(userConfig, rebuiltConfig, fullPath);
             }
         }
+    }
+
+    /**
+     * Whether the path is one of the sections, {@code *} matching any one key.
+     */
+    private static boolean isOwnSection(String path, List<String> ownSections) {
+        String[] keys = path.split("\\.");
+        for (String ownSection : ownSections) {
+            String[] pattern = ownSection.split("\\.");
+            if (pattern.length != keys.length) {
+                continue;
+            }
+
+            boolean matches = true;
+            for (int i = 0; i < keys.length && matches; i++) {
+                matches = pattern[i].equals("*") || pattern[i].equals(keys[i]);
+            }
+            if (matches) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void copyComments(FileConfiguration from, YamlConfiguration to, String path) {
+        to.setComments(path, from.getComments(path));
+        to.setInlineComments(path, from.getInlineComments(path));
     }
 
     private void saveConfig(FileConfiguration config, String fileName) {
