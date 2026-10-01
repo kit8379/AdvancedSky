@@ -34,6 +34,7 @@ import org.me.advancedsky.thread.BukkitAsyncExecutor;
 import org.me.advancedsky.thread.GlobalRegionExecutor;
 import org.me.advancedsky.util.ServerUtil;
 import org.me.advancedsky.uuid.UuidHandler;
+import org.me.advancedsky.world.RegionPurge;
 import org.me.advancedsky.world.WorldHandler;
 
 import java.lang.reflect.Constructor;
@@ -123,7 +124,7 @@ public class AdvancedSky extends JavaPlugin {
             info("Island cache loaded");
 
             info("Starting world handler");
-            WorldHandler worldHandler = new WorldHandler(this, config, islandGrid);
+            WorldHandler worldHandler = new WorldHandler(this, config, islandGrid, new RegionPurge(getDataFolder().toPath()));
             info("World handler loaded");
 
             info("Starting teleport handler");

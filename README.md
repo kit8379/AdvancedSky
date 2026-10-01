@@ -60,11 +60,14 @@ destination server to teleport the player. If the player is on another server, t
 keeps the teleport and the player is sent there through the proxy; it fires when they join.
 
 `/island delete` (asked three times, as in NewSky): the host deletes the row (owner only, under
-the island row lock), sends everyone standing in the island area to the lobby, then clears the
-area: it walks the 32x32 chunks of the island's region file in batches, removes non-player
-entities and every block, and skips chunks that were never generated. Slots are never handed
-out twice, so a new island can never land on an area that is still being cleared, and the
-command completes as soon as the row is gone instead of waiting for the area.
+the island row lock), sends everyone standing in the island area to the lobby, and lists the
+area's region, entity and point-of-interest files in `plugins/AdvancedSky/region-purge.txt`. An
+island area is exactly one region file, so nothing is cleared block by block: the next startup
+deletes the listed files before any world loads, while nothing can have them open or cached, and
+a file it cannot delete stays listed for the startup after. Until then the old blocks stay on a
+slot nobody may stand on. Slots are never handed out twice; should one be handed out again
+anyway (an `AUTO_INCREMENT` that MySQL before 8.0 resets on restart), the host refuses to build
+on it while its old files wait for deletion.
 
 ## Features
 

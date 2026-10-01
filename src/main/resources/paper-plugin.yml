@@ -2,6 +2,7 @@ name: 'AdvancedSky'
 version: '${project.version}'
 main: 'org.me.advancedsky.AdvancedSky'
 loader: 'org.me.advancedsky.loader.AdvancedSkyLoader'
+bootstrapper: 'org.me.advancedsky.loader.AdvancedSkyBootstrap'
 api-version: '1.21'
 authors: [ kit8379 ]
 folia-supported: true

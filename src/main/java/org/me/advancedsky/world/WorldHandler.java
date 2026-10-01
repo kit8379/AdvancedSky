@@ -4,25 +4,24 @@ import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.ChunkSnapshot;
 import org.bukkit.Location;
-import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.block.BlockState;
-import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.util.BlockVector;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.grid.IslandGrid;
 
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -32,40 +31,27 @@ import java.util.function.Supplier;
  * islands hosted here.
  * <p>
  * Creating an island copies the template built in the template world onto the island centre;
- * deleting clears every block and non-player entity in the island's area. All block work runs on
- * the region scheduler of the chunk it touches, and where a player stands is read on that
- * player's own scheduler, so it is safe on Folia and on Paper alike.
+ * deleting lists the region files of the island's area for deletion at the next startup (see
+ * {@link RegionPurge}). All block work runs on the region scheduler of the chunk it touches, and
+ * where a player stands is read on that player's own scheduler, so it is safe on Folia and on
+ * Paper alike.
  */
 public class WorldHandler {
 
-    /**
-     * Chunks loaded and looked at the same time while clearing an island area.
-     */
-    private static final int CHUNKS_PER_BATCH = 32;
-
-    /**
-     * Blocks removed per tick while clearing an island area, one chunk at a time, so a built-up
-     * island does not stall the thread that owns it, which on Paper is the whole server's.
-     */
-    private static final int BLOCKS_PER_TICK = 4096;
-
-    /**
-     * How long a delete waits for the players it sent to the lobby to leave the island's area
-     * before clearing it anyway: a connect takes effect only once the proxy has moved them.
-     */
-    private static final long EVACUATION_TIMEOUT_MILLIS = 10_000L;
-
     private final AdvancedSky plugin;
     private final IslandGrid grid;
+    private final RegionPurge regionPurge;
     private final World world;
+    private final List<Path> storageFolders;
     private final World templateWorld;
     private final BlockVector templateAnchor;
     private final BlockVector templateMin;
     private final BlockVector templateMax;
 
-    public WorldHandler(AdvancedSky plugin, ConfigHandler config, IslandGrid grid) {
+    public WorldHandler(AdvancedSky plugin, ConfigHandler config, IslandGrid grid, RegionPurge regionPurge) {
         this.plugin = plugin;
         this.grid = grid;
+        this.regionPurge = regionPurge;
         this.templateAnchor = new BlockVector(config.getTemplateAnchorX(), config.getTemplateAnchorY(), config.getTemplateAnchorZ());
 
         // Either corner order is accepted, as with a WorldEdit selection.
@@ -75,11 +61,30 @@ public class WorldHandler {
         if (config.isLobbyOnly()) {
             this.world = null;
             this.templateWorld = null;
+            this.storageFolders = List.of();
         } else {
             // Worlds are all loaded before plugins enable; on Folia none can be added later.
             this.world = requireLoadedWorld(config.getIslandWorldName(), "island world");
             this.templateWorld = requireLoadedWorld(config.getTemplateWorldName(), "template world");
+            this.storageFolders = storageFolders(world);
         }
+    }
+
+    /**
+     * Where the world keeps its region, entity and point-of-interest files: in its own folder for
+     * the main world and worlds made by plugins, in a dimensions folder for a datapack dimension.
+     */
+    private static List<Path> storageFolders(World world) {
+        NamespacedKey key = world.getKey();
+        Path folder = world.getWorldPath().toAbsolutePath().normalize();
+        if (!key.getNamespace().equals(NamespacedKey.MINECRAFT)) {
+            folder = folder.resolve("dimensions").resolve(key.getNamespace()).resolve(key.getKey());
+        } else if (world.getEnvironment() == World.Environment.NETHER) {
+            folder = folder.resolve("DIM-1");
+        } else if (world.getEnvironment() == World.Environment.THE_END) {
+            folder = folder.resolve("DIM1");
+        }
+        return List.of(folder.resolve("region"), folder.resolve("entities"), folder.resolve("poi"));
     }
 
     /**
@@ -97,14 +102,36 @@ public class WorldHandler {
     }
 
     /**
-     * Sends every player in the island's area to the lobby and waits for them to leave it, so
-     * nobody is left standing on blocks about to vanish, then removes every block and non-player
-     * entity in it, chunk by chunk. Chunks that were never generated are skipped so the delete
-     * does not create them.
+     * Lists the region files of the island's area for deletion at the next startup and sends
+     * every player in the area to the lobby. Its blocks and entities stay until then, on a slot
+     * nobody may stand on and that is never handed out again.
      */
     public CompletableFuture<Void> deleteIsland(int slot) {
-        long deadline = System.currentTimeMillis() + EVACUATION_TIMEOUT_MILLIS;
-        return sendAway(slot, player -> true).thenCompose(sent -> awaitLeft(slot, sent, deadline)).thenCompose(v -> clearInBatches(areaChunks(slot), 0));
+        try {
+            regionPurge.schedule(regionFiles(slot));
+        } catch (IOException e) {
+            plugin.severe("Could not list the region files of the island area at slot " + slot + " for deletion; its blocks stay in the world", e);
+        }
+
+        return removePlayersFromIsland(slot, player -> true);
+    }
+
+    /**
+     * Whether the slot's area still holds a deleted island, whose region files go at the next
+     * startup.
+     */
+    public boolean isPurgePending(int slot) {
+        return regionFiles(slot).stream().anyMatch(regionPurge::isScheduled);
+    }
+
+    /**
+     * The region, entity and point-of-interest files holding the island's area, which is exactly
+     * one 512x512 region file.
+     */
+    private List<Path> regionFiles(int slot) {
+        Location center = grid.center(requireWorld(), slot);
+        String name = "r." + Math.floorDiv(center.getBlockX(), 512) + "." + Math.floorDiv(center.getBlockZ(), 512) + ".mca";
+        return storageFolders.stream().map(folder -> folder.resolve(name)).toList();
     }
 
     /**
@@ -132,14 +159,6 @@ public class WorldHandler {
      * Sends every player in the island's area for whom the predicate holds to the lobby.
      */
     public CompletableFuture<Void> removePlayersFromIsland(int slot, Predicate<Player> shouldRemove) {
-        return sendAway(slot, shouldRemove).thenApply(sent -> null);
-    }
-
-    /**
-     * Sends every player in the island's area for whom the predicate holds to the lobby.
-     * Completes with the players sent.
-     */
-    private CompletableFuture<List<Player>> sendAway(int slot, Predicate<Player> shouldRemove) {
         // Players are listed on the global region; where each one stands is read on their own thread.
         return CompletableFuture.supplyAsync(() -> List.<Player>copyOf(Bukkit.getOnlinePlayers()), plugin.getGlobalRegionExecutor()).thenCompose(players -> playersInArea(players, slot, player -> {
             if (!shouldRemove.test(player)) {
@@ -149,26 +168,7 @@ public class WorldHandler {
             sendToLobby(player);
             plugin.debug("WorldHandler", "Removed player " + player.getUniqueId() + " from island area at slot " + slot);
             return true;
-        }));
-    }
-
-    /**
-     * Completes once none of the players is in the island's area here any more, looking again
-     * every second, or at the deadline with a warning. A player who left the server counts as
-     * gone: their scheduler retires with them.
-     */
-    private CompletableFuture<Void> awaitLeft(int slot, List<Player> players, long deadline) {
-        if (players.isEmpty()) {
-            return CompletableFuture.completedFuture(null);
-        }
-
-        if (System.currentTimeMillis() >= deadline) {
-            plugin.warning("Clearing the island area at slot " + slot + " with " + players.size() + " player(s) sent to the lobby still in it");
-            return CompletableFuture.completedFuture(null);
-        }
-
-        return CompletableFuture.runAsync(() -> {
-        }, CompletableFuture.delayedExecutor(1L, TimeUnit.SECONDS, plugin.getBukkitAsyncExecutor())).thenCompose(v -> playersInArea(players, slot, player -> true)).thenCompose(remaining -> awaitLeft(slot, remaining, deadline));
+        })).thenApply(sent -> null);
     }
 
     /**
@@ -210,22 +210,6 @@ public class WorldHandler {
             result.complete(ifGone);
         }
         return result;
-    }
-
-    private List<ChunkPos> areaChunks(int slot) {
-        Location center = grid.center(requireWorld(), slot);
-        int minChunkX = (center.getBlockX() - IslandGrid.AREA_RADIUS) >> 4;
-        int minChunkZ = (center.getBlockZ() - IslandGrid.AREA_RADIUS) >> 4;
-        int maxChunkX = (center.getBlockX() + IslandGrid.AREA_RADIUS - 1) >> 4;
-        int maxChunkZ = (center.getBlockZ() + IslandGrid.AREA_RADIUS - 1) >> 4;
-
-        List<ChunkPos> chunks = new ArrayList<>();
-        for (int cx = minChunkX; cx <= maxChunkX; cx++) {
-            for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
-                chunks.add(new ChunkPos(cx, cz));
-            }
-        }
-        return chunks;
     }
 
     // ===================================================================
@@ -287,104 +271,6 @@ public class WorldHandler {
             return CompletableFuture.completedFuture(null);
         })));
         return allOf(placements);
-    }
-
-    // ===================================================================
-    // Area clearing
-    // ===================================================================
-
-    private CompletableFuture<Void> clearInBatches(List<ChunkPos> chunks, int from) {
-        if (from >= chunks.size()) {
-            return CompletableFuture.completedFuture(null);
-        }
-
-        int to = Math.min(from + CHUNKS_PER_BATCH, chunks.size());
-        List<ChunkPos> withBlocks = Collections.synchronizedList(new ArrayList<>());
-        List<CompletableFuture<Void>> batch = new ArrayList<>();
-        for (ChunkPos pos : chunks.subList(from, to)) {
-            batch.add(onChunk(world, pos.x(), pos.z(), false, chunk -> {
-                removeEntities(chunk);
-                if (hasBlocks(chunk)) {
-                    withBlocks.add(pos);
-                }
-                return CompletableFuture.completedFuture(null);
-            }));
-        }
-        return allOf(batch).thenCompose(v -> clearChunks(withBlocks, 0)).thenCompose(v -> clearInBatches(chunks, to));
-    }
-
-    private CompletableFuture<Void> clearChunks(List<ChunkPos> chunks, int index) {
-        if (index >= chunks.size()) {
-            return CompletableFuture.completedFuture(null);
-        }
-
-        return clearChunk(chunks.get(index)).thenCompose(v -> clearChunks(chunks, index + 1));
-    }
-
-    /**
-     * Removes the chunk's blocks on its thread, {@link #BLOCKS_PER_TICK} each tick until none is left.
-     */
-    private CompletableFuture<Void> clearChunk(ChunkPos pos) {
-        return onChunk(world, pos.x(), pos.z(), false, chunk -> removeBlocks(chunk) ? CompletableFuture.completedFuture(null) : clearChunk(pos));
-    }
-
-    /**
-     * Runs on the chunk's thread.
-     */
-    private static void removeEntities(Chunk chunk) {
-        for (Entity entity : chunk.getEntities()) {
-            if (!(entity instanceof Player)) {
-                entity.remove();
-            }
-        }
-    }
-
-    /**
-     * Runs on the chunk's thread.
-     */
-    private static boolean hasBlocks(Chunk chunk) {
-        ChunkSnapshot snapshot = chunk.getChunkSnapshot(false, false, false, false);
-        int sectionCount = (chunk.getWorld().getMaxHeight() - chunk.getWorld().getMinHeight()) >> 4;
-        for (int section = 0; section < sectionCount; section++) {
-            if (!snapshot.isSectionEmpty(section)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Runs on the chunk's thread: removes up to {@link #BLOCKS_PER_TICK} of its blocks, and
-     * tells whether that left none. Only sections that hold any block are visited.
-     */
-    private static boolean removeBlocks(Chunk chunk) {
-        World chunkWorld = chunk.getWorld();
-        int minHeight = chunkWorld.getMinHeight();
-        int sectionCount = (chunkWorld.getMaxHeight() - minHeight) >> 4;
-        ChunkSnapshot snapshot = chunk.getChunkSnapshot(false, false, false, false);
-
-        int removed = 0;
-        // isSectionEmpty takes a 0-based index counted from the lowest section of the world.
-        for (int section = 0; section < sectionCount; section++) {
-            if (snapshot.isSectionEmpty(section)) {
-                continue;
-            }
-            int baseY = minHeight + (section << 4);
-            for (int y = baseY; y < baseY + 16; y++) {
-                for (int x = 0; x < 16; x++) {
-                    for (int z = 0; z < 16; z++) {
-                        if (!snapshot.getBlockType(x, y, z).isAir()) {
-                            if (removed == BLOCKS_PER_TICK) {
-                                return false;
-                            }
-                            chunk.getBlock(x, y, z).setType(Material.AIR, false);
-                            removed++;
-                        }
-                    }
-                }
-            }
-        }
-        return true;
     }
 
     // ===================================================================

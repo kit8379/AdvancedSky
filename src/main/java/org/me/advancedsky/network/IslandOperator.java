@@ -57,6 +57,11 @@ public class IslandOperator {
             int slot = database.addIslandData(islandUuid, ownerUuid, serverID);
 
             return islandCache.load(islandUuid).thenCompose(v -> {
+                // A slot handed out again (an AUTO_INCREMENT that restarted below a deleted
+                // island's slot) is not built on: the next startup deletes its region files.
+                if (worldHandler.isPurgePending(slot)) {
+                    throw new IllegalStateException("Slot " + slot + " still holds a deleted island until the next restart");
+                }
                 return worldHandler.createIsland(slot);
             }).thenRunAsync(() -> {
                 plugin.debug("IslandOperator", "Created island " + islandUuid + " at slot " + slot + " on server: " + serverID);
@@ -69,8 +74,8 @@ public class IslandOperator {
     }
 
     /**
-     * Deletes the island's rows, then clears its area. Completes once the rows are gone: clearing
-     * takes longer than a remote requester waits, and nothing can reach the island or reuse its
+     * Deletes the island's rows, then sends everyone off its area, whose region files go at the
+     * next startup. Completes once the rows are gone: nothing can reach the island or reuse its
      * slot any more.
      */
     public CompletableFuture<Void> deleteIsland(Actor actor, UUID islandUuid) {
@@ -82,7 +87,7 @@ public class IslandOperator {
 
             worldHandler.deleteIsland(slot).whenComplete((v, e) -> {
                 if (e != null) {
-                    plugin.severe("Island rows deleted but the area could not be cleared, leaving orphaned blocks at slot " + slot + ": " + islandUuid, e);
+                    plugin.severe("Island rows deleted but not everyone could be sent off its area at slot " + slot + ": " + islandUuid, e);
                 } else {
                     plugin.debug("IslandOperator", "Deleted island " + islandUuid + " at slot " + slot);
                 }
