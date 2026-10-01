@@ -1775,6 +1775,10 @@ public class ConfigHandler {
         return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.player-already-cooped")).replace("{player}", player));
     }
 
+    public Component getPlayerCoopBannedMessage(String player) {
+        return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.player-coop-banned")).replace("{player}", player));
+    }
+
     public Component getPlayerNotCoopedMessage(String player) {
         return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.player-not-cooped")).replace("{player}", player));
     }

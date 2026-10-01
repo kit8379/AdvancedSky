@@ -201,6 +201,7 @@ messages:
   player-coop-success: "<green>Player <aqua>{player} <green>is now a co-op member!"
   player-uncoop-success: "<green>Player <aqua>{player} <green>is no longer a co-op member!"
   player-already-cooped: "<red><aqua>{player} <red>is already a co-op member!"
+  player-coop-banned: "<red><aqua>{player} <red>is banned from your island! Unban them first."
   player-not-cooped: "<red><aqua>{player} <red>is not a co-op member!"
   player-coop-limit-reached: "<red>Your island has reached the co-op member limit of <white>{limit}<red>."
 

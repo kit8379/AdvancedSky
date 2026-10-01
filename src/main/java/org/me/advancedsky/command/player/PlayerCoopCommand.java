@@ -11,6 +11,7 @@ import org.me.advancedsky.exceptions.CannotCoopIslandPlayerException;
 import org.me.advancedsky.exceptions.CoopLimitReachedException;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.exceptions.PlayerAlreadyCoopedException;
+import org.me.advancedsky.exceptions.PlayerBannedException;
 import org.me.advancedsky.exceptions.PlayerNotOnlineException;
 
 import java.util.Collections;
@@ -97,6 +98,8 @@ public class PlayerCoopCommand implements SubCommand, AsyncTabComplete {
                 player.sendMessage(config.getPlayerCannotCoopIslandPlayerMessage());
             } else if (cause instanceof CoopLimitReachedException) {
                 player.sendMessage(config.getPlayerCoopLimitReachedMessage(cause.getMessage()));
+            } else if (cause instanceof PlayerBannedException) {
+                player.sendMessage(config.getPlayerCoopBannedMessage(targetPlayerName));
             } else {
                 player.sendMessage(config.getUnknownExceptionMessage());
                 plugin.severe("Error cooping player " + targetPlayerName + " for " + player.getName(), ex);

@@ -746,6 +746,12 @@ public class DatabaseHandler {
                     throw new CannotBanIslandPlayerException();
                 }
 
+                // A banned player is no co-op of the island either.
+                executeUpdate(connection, "DELETE FROM " + prefix + "island_coops WHERE island_uuid = ? AND cooped_player = ?;", stmt -> {
+                    stmt.setString(1, islandUuid.toString());
+                    stmt.setString(2, playerUuid.toString());
+                });
+
                 return null;
             });
         } catch (ConstraintViolationException e) {
@@ -758,6 +764,16 @@ public class DatabaseHandler {
             inTransaction(connection -> {
                 lockIsland(connection, islandUuid);
                 requireRole(actor, connection, islandUuid, RequiredRole.MEMBER);
+
+                // A ban stands against a member's co-op; only an operator's co-op lifts it, as an
+                // operator's add does.
+                boolean banned = count(connection, "SELECT COUNT(*) FROM " + prefix + "island_bans WHERE island_uuid = ? AND banned_player = ?", stmt -> {
+                    stmt.setString(1, islandUuid.toString());
+                    stmt.setString(2, playerUuid.toString());
+                }) > 0;
+                if (banned && actor instanceof Actor.Player) {
+                    throw new PlayerBannedException();
+                }
 
                 // Re-cooping an existing co-op is reported as such below, not as the limit.
                 if (!(actor instanceof Actor.Bypass)) {
@@ -779,6 +795,13 @@ public class DatabaseHandler {
 
                 if (inserted == 0) {
                     throw new CannotCoopIslandPlayerException();
+                }
+
+                if (banned) {
+                    executeUpdate(connection, "DELETE FROM " + prefix + "island_bans WHERE island_uuid = ? AND banned_player = ?;", stmt -> {
+                        stmt.setString(1, islandUuid.toString());
+                        stmt.setString(2, playerUuid.toString());
+                    });
                 }
 
                 return null;

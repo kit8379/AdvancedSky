@@ -4,6 +4,8 @@ import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.me.advancedsky.exceptions.PlayerBannedException;
+import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.grid.IslandGrid;
@@ -134,6 +136,18 @@ class DatabaseHandlerIslandsTest {
             assertSameIsland(hosted.get(islandUuid), database.getIsland(islandUuid));
         }
         assertNull(database.getIsland(UUID.randomUUID()));
+    }
+
+    @Test
+    void aBanEndsTheCoopAndOnlyAnOperatorsCoopLiftsABan() {
+        database.updateBanPlayer(new Actor.Player(owner), full, coop);
+        assertFalse(database.getIslandCoops(full).contains(coop));
+        assertTrue(database.getIslandBans(full).contains(coop));
+
+        assertThrows(PlayerBannedException.class, () -> database.updateCoopPlayer(new Actor.Player(owner), full, banned));
+        database.updateCoopPlayer(new Actor.Bypass("test"), full, banned);
+        assertTrue(database.getIslandCoops(full).contains(banned));
+        assertFalse(database.getIslandBans(full).contains(banned));
     }
 
     private static void assertSameIsland(Island expected, Island actual) {
