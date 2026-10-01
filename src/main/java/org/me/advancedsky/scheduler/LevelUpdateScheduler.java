@@ -13,9 +13,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Rescans island levels. Listeners report players arriving on and leaving islands; the first
  * player on an empty island schedules it, it is scanned right away (its block limit counts come
- * from the scan) and then every few minutes while it has players. The first scan to start after
- * the last player left is its last: the island is dropped once that scan finishes, holding the
- * level and counts it ended with.
+ * from the scan) and then every few minutes while it has players. Once the last player leaves,
+ * one more scan starts at the next poll, while its chunks are still loaded, and is its last: the
+ * island is dropped once that scan finishes, holding the level and counts it ended with.
  * <p>
  * All state is touched on the global region thread only; the public methods are safe from any
  * thread.
@@ -95,9 +95,27 @@ public final class LevelUpdateScheduler {
                 playerCounts.put(islandUuid, count - 1);
             } else {
                 playerCounts.remove(islandUuid);
+                scanAtNextPoll(islandUuid);
             }
             lastLeaves.put(islandUuid, ++leaves);
         });
+    }
+
+    /**
+     * Brings the island's scheduled scan forward to the next poll. A scan in progress is left
+     * to reschedule the island itself when it finishes.
+     */
+    private void scanAtNextPoll(UUID islandUuid) {
+        long now = System.currentTimeMillis();
+        Entry current = entries.get(islandUuid);
+        if (current == null || current.running || current.nextRunAtMs <= now) {
+            return;
+        }
+
+        current.cancelled = true;
+        Entry due = new Entry(islandUuid, now);
+        entries.put(islandUuid, due);
+        pq.add(due);
     }
 
     /**
@@ -151,6 +169,7 @@ public final class LevelUpdateScheduler {
     }
 
     private void startOne(Entry e) {
+        e.running = true;
         long leavesAtStart = leaves;
         int cur = inFlight.incrementAndGet();
         plugin.debug("LevelUpdateScheduler", "Starting calculate for " + e.islandUuid + " (inFlight=" + cur + ")");
@@ -198,8 +217,14 @@ public final class LevelUpdateScheduler {
             return;
         }
 
-        long delay = succeeded ? BASE_INTERVAL_MS : Math.max(5_000L, BASE_INTERVAL_MS / 10);
-        Entry ne = new Entry(finished.islandUuid, now + delay + nextJitterMs());
+        long delay;
+        if (!playerCounts.containsKey(finished.islandUuid)) {
+            // Emptied while this scan ran: its last scan starts at the next poll.
+            delay = 0L;
+        } else {
+            delay = (succeeded ? BASE_INTERVAL_MS : Math.max(5_000L, BASE_INTERVAL_MS / 10)) + nextJitterMs();
+        }
+        Entry ne = new Entry(finished.islandUuid, now + delay);
         entries.put(finished.islandUuid, ne);
         pq.add(ne);
     }
@@ -215,6 +240,7 @@ public final class LevelUpdateScheduler {
         private final UUID islandUuid;
         private final long nextRunAtMs;
         private boolean cancelled;
+        private boolean running;
 
         private Entry(UUID islandUuid, long nextRunAtMs) {
             this.islandUuid = islandUuid;

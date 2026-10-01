@@ -59,20 +59,46 @@ class LevelUpdateSchedulerTest {
     }
 
     @Test
-    void islandLeftDuringItsScanGetsOneMoreScan() {
+    void islandLeftDuringItsScanGetsOneMoreScanAtTheNextPoll() {
         CompletableFuture<Integer> scan = new CompletableFuture<>();
-        when(levelHandler.calIslandLevel(island)).thenReturn(scan);
+        CompletableFuture<Integer> last = new CompletableFuture<>();
+        when(levelHandler.calIslandLevel(island)).thenReturn(scan, last);
         Runnable tick = startAndCaptureTick();
 
         scheduler.playerEnter(island);
         tick.run();
         scheduler.playerLeave(island);
         scan.complete(7);
+        tick.run();
+        verify(levelHandler, times(2)).calIslandLevel(island);
 
-        // Still scheduled minutes ahead, so an arrival now does not scan it again at once.
+        // Nobody came back during that one, so it was the last: the next arrival scans again.
+        last.complete(7);
         scheduler.playerEnter(island);
         tick.run();
+        verify(levelHandler, times(3)).calIslandLevel(island);
+    }
+
+    @Test
+    void theLastPlayerLeavingBringsTheNextScanForward() {
+        CompletableFuture<Integer> scan = new CompletableFuture<>();
+        when(levelHandler.calIslandLevel(island)).thenReturn(scan, new CompletableFuture<>());
+        Runnable tick = startAndCaptureTick();
+
+        scheduler.playerEnter(island);
+        scheduler.playerEnter(island);
+        tick.run();
+        scan.complete(7);
+        tick.run();
         verify(levelHandler, times(1)).calIslandLevel(island);
+
+        // Scheduled minutes ahead until the island empties, then due while its chunks are still loaded.
+        scheduler.playerLeave(island);
+        tick.run();
+        verify(levelHandler, times(1)).calIslandLevel(island);
+        scheduler.playerLeave(island);
+        tick.run();
+        verify(levelHandler, times(2)).calIslandLevel(island);
     }
 
     @Test
