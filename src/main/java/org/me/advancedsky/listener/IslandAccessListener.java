@@ -89,11 +89,10 @@ public class IslandAccessListener implements Listener {
 
         Island island = islandCache.getAt(location);
         if (island == null) {
-            // The gap and free slots belong to no island (a first join lands on the world spawn,
-            // in the never-allocated slot 0); only an island whose cache entry is unavailable fails closed.
-            if (islandCache.getIslandUuidAt(location) != null) {
-                denyAccess(player, config.getIslandLockedMessage());
-            }
+            // Nobody can stay in the gap or on a free slot, where a join without a teleport lands
+            // (the world spawn is in the never-allocated slot 0), and an island whose cache entry
+            // is unavailable fails closed.
+            denyAccess(player, islandCache.getIslandUuidAt(location) != null ? config.getIslandLockedMessage() : null);
             return;
         }
 
@@ -132,6 +131,8 @@ public class IslandAccessListener implements Listener {
             // Still here once the move should have happened, the proxy refused it: their next step sends them again.
             player.getScheduler().runDelayed(plugin, task -> sentAway.remove(playerUuid), null, RESEND_AFTER_TICKS);
         });
-        plugin.getApi().sendPlayerMessage(playerUuid, message);
+        if (message != null) {
+            plugin.getApi().sendPlayerMessage(playerUuid, message);
+        }
     }
 }

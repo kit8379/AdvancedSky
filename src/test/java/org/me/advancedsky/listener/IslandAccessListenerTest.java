@@ -46,8 +46,18 @@ class IslandAccessListenerTest {
     }
 
     @Test
-    void aFirstJoinOnAFreeSlotIsNotSentToTheLobby() {
+    void aJoinOnAFreeSlotIsSentToTheLobby() {
         // World spawn falls on slot 0, which no island ever gets.
+        join();
+
+        verify(api).lobby(playerUuid);
+        verify(api, never()).sendPlayerMessage(any(), any());
+    }
+
+    @Test
+    void anOperatorMayStayInTheGap() {
+        when(player.isOp()).thenReturn(true);
+
         join();
 
         verify(api, never()).lobby(any());
