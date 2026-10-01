@@ -43,6 +43,7 @@ public class IslandDistributor {
     public static final String ACTION_ISLAND_WARP_SET = "island.warp.set";
     public static final String ACTION_ISLAND_WARP_DELETE = "island.warp.delete";
     public static final String ACTION_ISLAND_UPGRADE_SET = "island.upgrade.set";
+    public static final String ACTION_ISLAND_UPGRADE_BUY = "island.upgrade.buy";
     public static final String ACTION_PLAYER_CONNECT = "player.connect";
 
     private static final Function<JSONObject, Void> VOID = response -> null;
@@ -237,6 +238,16 @@ public class IslandDistributor {
         payload.put("expectedLevel", expectedLevel);
         payload.put("newLevel", newLevel);
         return onIsland(islandUuid, ACTION_ISLAND_UPGRADE_SET, payload, () -> islandOperator.setUpgradeLevel(actor, islandUuid, upgradeId, expectedLevel, newLevel), VOID);
+    }
+
+    public CompletableFuture<Void> buyUpgrade(Actor actor, UUID islandUuid, UUID payerUuid, String upgradeId, int expectedLevel, int newLevel, double price) {
+        JSONObject payload = islandActorPayload(actor, islandUuid);
+        payload.put("payerUuid", payerUuid.toString());
+        payload.put("upgradeId", upgradeId);
+        payload.put("expectedLevel", expectedLevel);
+        payload.put("newLevel", newLevel);
+        payload.put("price", price);
+        return onIsland(islandUuid, ACTION_ISLAND_UPGRADE_BUY, payload, () -> islandOperator.buyUpgrade(actor, islandUuid, payerUuid, upgradeId, expectedLevel, newLevel, price), VOID);
     }
 
     // =====================================================================================

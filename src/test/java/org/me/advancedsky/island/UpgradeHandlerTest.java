@@ -1,7 +1,6 @@
 package org.me.advancedsky.island;
 
 import net.milkbowl.vault.economy.Economy;
-import net.milkbowl.vault.economy.EconomyResponse;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.plugin.RegisteredServiceProvider;
@@ -25,7 +24,6 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
-import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -68,8 +66,6 @@ class UpgradeHandlerTest {
         when(config.getUpgradePrice("coop-limit", 2)).thenReturn(25000.0);
         when(database.getIslandUpgradeLevel(island, "coop-limit")).thenReturn(1);
         when(database.getIslandLevel(island)).thenReturn(150);
-        when(economy.withdrawPlayer(payer, 25000.0)).thenReturn(response(EconomyResponse.ResponseType.SUCCESS));
-        when(economy.depositPlayer(payer, 25000.0)).thenReturn(response(EconomyResponse.ResponseType.SUCCESS));
         when(economy.format(anyDouble())).thenAnswer(call -> "$" + call.<Double>getArgument(0));
         handler = new UpgradeHandler(plugin, config, database, distributor, new EconomyHandler(plugin));
     }
@@ -80,43 +76,20 @@ class UpgradeHandlerTest {
     }
 
     @Test
-    void buyWithdrawsThenWritesTheNextLevel() {
-        when(distributor.setUpgradeLevel(actor, island, "coop-limit", 1, 2)).thenReturn(CompletableFuture.completedFuture(null));
+    void buyAsksTheHostToChargeAndWriteTheNextLevel() {
+        when(distributor.buyUpgrade(actor, island, buyer, "coop-limit", 1, 2, 25000.0)).thenReturn(CompletableFuture.completedFuture(null));
 
         assertEquals(2, handler.buyUpgrade(actor, island, buyer, "coop-limit").join());
 
-        verify(economy).withdrawPlayer(payer, 25000.0);
-        verify(distributor).setUpgradeLevel(actor, island, "coop-limit", 1, 2);
-        verify(economy, never()).depositPlayer(any(OfflinePlayer.class), anyDouble());
+        verify(distributor).buyUpgrade(actor, island, buyer, "coop-limit", 1, 2, 25000.0);
+        verifyNoInteractions(economy);
     }
 
     @Test
-    void failedWriteRefundsAndReportsTheCause() {
-        when(distributor.setUpgradeLevel(actor, island, "coop-limit", 1, 2)).thenReturn(CompletableFuture.failedFuture(new UpgradeLevelChangedException()));
+    void aFailedPurchaseReportsTheHostsCause() {
+        when(distributor.buyUpgrade(actor, island, buyer, "coop-limit", 1, 2, 25000.0)).thenReturn(CompletableFuture.failedFuture(new InsufficientFundsException()));
 
-        assertFailure(UpgradeLevelChangedException.class, handler.buyUpgrade(actor, island, buyer, "coop-limit"));
-
-        verify(economy).withdrawPlayer(payer, 25000.0);
-        verify(economy).depositPlayer(payer, 25000.0);
-    }
-
-    @Test
-    void timedOutWriteThatTheHostAppliedKeepsThePayment() {
-        when(distributor.setUpgradeLevel(actor, island, "coop-limit", 1, 2)).thenReturn(CompletableFuture.failedFuture(new TimeoutException()));
-        when(database.getIslandUpgradeLevel(island, "coop-limit")).thenReturn(1, 2);
-
-        assertEquals(2, handler.buyUpgrade(actor, island, buyer, "coop-limit").join());
-
-        verify(economy, never()).depositPlayer(any(OfflinePlayer.class), anyDouble());
-    }
-
-    @Test
-    void timedOutWriteThatNeverLandedIsRefunded() {
-        when(distributor.setUpgradeLevel(actor, island, "coop-limit", 1, 2)).thenReturn(CompletableFuture.failedFuture(new TimeoutException()));
-
-        assertFailure(TimeoutException.class, handler.buyUpgrade(actor, island, buyer, "coop-limit"));
-
-        verify(economy).depositPlayer(payer, 25000.0);
+        assertFailure(InsufficientFundsException.class, handler.buyUpgrade(actor, island, buyer, "coop-limit"));
     }
 
     @Test
@@ -131,34 +104,6 @@ class UpgradeHandlerTest {
         assertFailure(UpgradeDoesNotExistException.class, handler.buyUpgrade(actor, island, buyer, "fly"));
 
         verifyNoInteractions(economy, distributor);
-    }
-
-    @Test
-    void failedRefundLogsThePurchaseContextAndKeepsTheWriteFailure() {
-        when(distributor.setUpgradeLevel(actor, island, "coop-limit", 1, 2)).thenReturn(CompletableFuture.failedFuture(new UpgradeLevelChangedException()));
-        when(economy.depositPlayer(payer, 25000.0)).thenReturn(response(EconomyResponse.ResponseType.FAILURE));
-
-        assertFailure(UpgradeLevelChangedException.class, handler.buyUpgrade(actor, island, buyer, "coop-limit"));
-        verify(plugin).severe("Could not refund 25000.0 to " + buyer + " after a failed coop-limit upgrade purchase.");
-    }
-
-    @Test
-    void aRefundThatThrowsIsLoggedWithThePurchaseContext() {
-        when(distributor.setUpgradeLevel(actor, island, "coop-limit", 1, 2)).thenReturn(CompletableFuture.failedFuture(new UpgradeLevelChangedException()));
-        when(economy.depositPlayer(payer, 25000.0)).thenThrow(new IllegalStateException("economy down"));
-
-        assertFailure(UpgradeLevelChangedException.class, handler.buyUpgrade(actor, island, buyer, "coop-limit"));
-        verify(plugin).severe(eq("Could not refund 25000.0 to " + buyer + " after a failed coop-limit upgrade purchase."), any(Throwable.class));
-    }
-
-    @Test
-    void insufficientFundsWritesNothing() {
-        when(economy.withdrawPlayer(payer, 25000.0)).thenReturn(response(EconomyResponse.ResponseType.FAILURE));
-
-        assertFailure(InsufficientFundsException.class, handler.buyUpgrade(actor, island, buyer, "coop-limit"));
-
-        verifyNoInteractions(distributor);
-        verify(economy, never()).depositPlayer(any(OfflinePlayer.class), anyDouble());
     }
 
     @Test
@@ -187,10 +132,6 @@ class UpgradeHandlerTest {
         when(config.getUpgradeValue("coop-limit", 3)).thenReturn("3");
         assertTrue(handler.getUpgradeDetails(island, buyer, "coop-limit").join().maxed());
         verifyNoInteractions(distributor);
-    }
-
-    private static EconomyResponse response(EconomyResponse.ResponseType type) {
-        return new EconomyResponse(25000.0, 0, type, null);
     }
 
     private static void assertFailure(Class<? extends Throwable> expected, CompletableFuture<?> future) {

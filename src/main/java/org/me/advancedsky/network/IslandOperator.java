@@ -6,6 +6,7 @@ import org.bukkit.entity.Player;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.database.DatabaseHandler;
+import org.me.advancedsky.economy.EconomyHandler;
 import org.me.advancedsky.exceptions.*;
 import org.me.advancedsky.island.LimitHandler;
 import org.me.advancedsky.model.Actor;
@@ -35,17 +36,19 @@ public class IslandOperator {
     private final TeleportHandler teleportHandler;
     private final IslandCache islandCache;
     private final LimitHandler limitHandler;
+    private final EconomyHandler economy;
     private final String serverID;
 
     private final Map<UUID, CompletableFuture<Void>> chains = new ConcurrentHashMap<>();
 
-    public IslandOperator(AdvancedSky plugin, DatabaseHandler database, WorldHandler worldHandler, TeleportHandler teleportHandler, IslandCache islandCache, LimitHandler limitHandler, String serverID) {
+    public IslandOperator(AdvancedSky plugin, DatabaseHandler database, WorldHandler worldHandler, TeleportHandler teleportHandler, IslandCache islandCache, LimitHandler limitHandler, EconomyHandler economy, String serverID) {
         this.plugin = plugin;
         this.database = database;
         this.worldHandler = worldHandler;
         this.teleportHandler = teleportHandler;
         this.islandCache = islandCache;
         this.limitHandler = limitHandler;
+        this.economy = economy;
         this.serverID = serverID;
     }
 
@@ -278,6 +281,28 @@ public class IslandOperator {
     public CompletableFuture<Void> setUpgradeLevel(Actor actor, UUID islandUuid, String upgradeId, int expectedLevel, int newLevel) {
         return updateCache(islandUuid, () -> {
             database.updateIslandUpgradeLevel(actor, islandUuid, upgradeId, expectedLevel, newLevel);
+            return null;
+        });
+    }
+
+    /**
+     * Withdraws the price and compare-and-sets the level here on the host, refunding a failed
+     * write itself, so the payment and the level agree however long a requester waits.
+     */
+    public CompletableFuture<Void> buyUpgrade(Actor actor, UUID islandUuid, UUID payerUuid, String upgradeId, int expectedLevel, int newLevel, double price) {
+        return economy.withdraw(payerUuid, price).thenComposeAsync(v -> setUpgradeLevel(actor, islandUuid, upgradeId, expectedLevel, newLevel).exceptionallyComposeAsync(error -> {
+            return refund(payerUuid, price, upgradeId).thenCompose(refunded -> CompletableFuture.failedFuture(error));
+        }, plugin.getBukkitAsyncExecutor()), plugin.getBukkitAsyncExecutor());
+    }
+
+    private CompletableFuture<Void> refund(UUID payerUuid, double amount, String upgradeId) {
+        return economy.deposit(payerUuid, amount).handle((success, error) -> {
+            String message = "Could not refund " + amount + " to " + payerUuid + " after a failed " + upgradeId + " upgrade purchase.";
+            if (error != null) {
+                plugin.severe(message, error);
+            } else if (!success) {
+                plugin.severe(message);
+            }
             return null;
         });
     }

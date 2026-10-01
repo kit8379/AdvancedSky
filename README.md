@@ -89,7 +89,8 @@ command completes as soon as the row is gone instead of waiting for the area.
 - Paper or Folia 1.21.11, Java 21
 - MySQL / MariaDB (MySQL 8.0+ or MariaDB 10.2.4+, which keep AUTO_INCREMENT across restarts)
 - Redis 5.0 or newer (Streams)
-- Vault with an economy plugin
+- Vault with an economy plugin whose balances are shared by every server: an upgrade is paid on
+  the server hosting the island, wherever the buyer is
 - Velocity or BungeeCord with the BungeeCord plugin message channel enabled (Velocity: `bungee-plugin-message-channel = true`)
 - PlaceholderAPI (optional)
 

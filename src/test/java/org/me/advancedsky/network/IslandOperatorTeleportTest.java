@@ -29,7 +29,7 @@ class IslandOperatorTeleportTest {
     private final Player player = mock(Player.class);
     private final EntityScheduler scheduler = mock(EntityScheduler.class);
     private final TeleportHandler teleports = new TeleportHandler();
-    private final IslandOperator operator = new IslandOperator(plugin, null, null, teleports, null, null, "local");
+    private final IslandOperator operator = new IslandOperator(plugin, null, null, teleports, null, null, null, "local");
 
     IslandOperatorTeleportTest() {
         GlobalRegionExecutor global = mock(GlobalRegionExecutor.class);

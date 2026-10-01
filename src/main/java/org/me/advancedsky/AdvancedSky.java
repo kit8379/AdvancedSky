@@ -132,7 +132,8 @@ public class AdvancedSky extends JavaPlugin {
             info("Starting handlers for island remote requests");
             crossServerMessenger = new CrossServerMessenger(this, redisHandler, serverID);
             limitHandler = new LimitHandler(this, config, islandGrid);
-            IslandOperator islandOperator = new IslandOperator(this, databaseHandler, worldHandler, teleportHandler, islandCache, limitHandler, serverID);
+            EconomyHandler economyHandler = new EconomyHandler(this);
+            IslandOperator islandOperator = new IslandOperator(this, databaseHandler, worldHandler, teleportHandler, islandCache, limitHandler, economyHandler, serverID);
             IslandDistributor islandDistributor = new IslandDistributor(this, databaseHandler, islandOperator, onlinePlayerRegistry, crossServerMessenger, config.getIslandServerNames(), serverID);
             registerCrossServerHandlers(crossServerMessenger, islandOperator);
             info("All handlers for remote requests loaded");
@@ -151,7 +152,6 @@ public class AdvancedSky extends JavaPlugin {
             BanHandler banHandler = new BanHandler(this, databaseHandler, islandDistributor);
             CoopHandler coopHandler = new CoopHandler(this, databaseHandler, islandDistributor, onlinePlayerRegistry);
             BiomeHandler biomeHandler = new BiomeHandler(this, config, databaseHandler, islandGrid);
-            EconomyHandler economyHandler = new EconomyHandler(this);
             UpgradeHandler upgradeHandler = new UpgradeHandler(this, config, databaseHandler, islandDistributor, economyHandler);
             LobbyHandler lobbyHandler = new LobbyHandler(this, config, islandDistributor);
             UuidHandler uuidHandler = new UuidHandler(this, databaseHandler);
@@ -249,6 +249,7 @@ public class AdvancedSky extends JavaPlugin {
         messenger.register(IslandDistributor.ACTION_ISLAND_WARP_SET, payload -> emptyResponse(islandOperator.setWarp(Actor.fromJson(payload), uuid(payload, "islandUuid"), payload.getString("warpName"), payload.getString("warpLocation"))));
         messenger.register(IslandDistributor.ACTION_ISLAND_WARP_DELETE, payload -> emptyResponse(islandOperator.deleteWarp(Actor.fromJson(payload), uuid(payload, "islandUuid"), payload.getString("warpName"))));
         messenger.register(IslandDistributor.ACTION_ISLAND_UPGRADE_SET, payload -> emptyResponse(islandOperator.setUpgradeLevel(Actor.fromJson(payload), uuid(payload, "islandUuid"), payload.getString("upgradeId"), payload.getInt("expectedLevel"), payload.getInt("newLevel"))));
+        messenger.register(IslandDistributor.ACTION_ISLAND_UPGRADE_BUY, payload -> emptyResponse(islandOperator.buyUpgrade(Actor.fromJson(payload), uuid(payload, "islandUuid"), uuid(payload, "payerUuid"), payload.getString("upgradeId"), payload.getInt("expectedLevel"), payload.getInt("newLevel"), payload.getDouble("price"))));
         messenger.register(IslandDistributor.ACTION_PLAYER_CONNECT, payload -> emptyResponse(ServerUtil.connectToServer(this, uuid(payload, "playerUuid"), payload.getString("targetServer"))));
     }
 

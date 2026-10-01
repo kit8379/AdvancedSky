@@ -14,8 +14,6 @@ import org.me.advancedsky.network.IslandDistributor;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.TimeoutException;
 
 /**
  * Island upgrades: one level per island for each upgrade id in the config, bought with Vault
@@ -39,9 +37,8 @@ public class UpgradeHandler {
     }
 
     /**
-     * Withdraws first, then compare-and-sets the level; a failure after the withdrawal refunds
-     * it, unless the write timed out and the stored level shows the host applied it anyway.
-     * Completes with the level bought.
+     * Checks the purchase here; the island's host then withdraws the price and compare-and-sets
+     * the level, refunding a failed write itself. Completes with the level bought.
      */
     public CompletableFuture<Integer> buyUpgrade(Actor actor, UUID islandUuid, UUID payerUuid, String upgradeId) {
         return CompletableFuture.supplyAsync(() -> {
@@ -60,34 +57,7 @@ public class UpgradeHandler {
             }
 
             return new Purchase(current, next, config.getUpgradePrice(upgradeId, next));
-        }, plugin.getBukkitAsyncExecutor()).thenCompose(purchase -> economy.withdraw(payerUuid, purchase.price()).thenApply(v -> purchase)).thenComposeAsync(purchase -> islandDistributor.setUpgradeLevel(actor, islandUuid, upgradeId, purchase.current(), purchase.next()).thenApply(v -> purchase.next()).exceptionallyComposeAsync(error -> {
-            if (writeLanded(islandUuid, upgradeId, purchase, error)) {
-                return CompletableFuture.completedFuture(purchase.next());
-            }
-            return refund(payerUuid, purchase.price(), upgradeId).thenCompose(v -> CompletableFuture.failedFuture(error));
-        }, plugin.getBukkitAsyncExecutor()), plugin.getBukkitAsyncExecutor());
-    }
-
-    /**
-     * A timed-out request leaves the write's outcome unknown: the host may have applied it after
-     * the requester stopped waiting. The stored level decides; if it cannot be read, the write
-     * counts as failed.
-     */
-    private boolean writeLanded(UUID islandUuid, String upgradeId, Purchase purchase, Throwable error) {
-        Throwable cause = error;
-        while (cause instanceof CompletionException && cause.getCause() != null) {
-            cause = cause.getCause();
-        }
-
-        if (!(cause instanceof TimeoutException)) {
-            return false;
-        }
-
-        try {
-            return database.getIslandUpgradeLevel(islandUuid, upgradeId) == purchase.next();
-        } catch (RuntimeException readError) {
-            return false;
-        }
+        }, plugin.getBukkitAsyncExecutor()).thenComposeAsync(purchase -> islandDistributor.buyUpgrade(actor, islandUuid, payerUuid, upgradeId, purchase.current(), purchase.next(), purchase.price()).thenApply(v -> purchase.next()), plugin.getBukkitAsyncExecutor());
     }
 
     /**
@@ -136,18 +106,6 @@ public class UpgradeHandler {
             boolean available = progress.islandLevel() >= requireLevel && balance >= price;
             return economy.format(price).thenCombine(economy.format(balance), (formattedPrice, formattedBalance) -> new Upgrade(current, currentValue, false, next, config.getUpgradeValue(upgradeId, next), requireLevel, formattedPrice, available, progress.islandLevel(), formattedBalance));
         }));
-    }
-
-    private CompletableFuture<Void> refund(UUID payerUuid, double amount, String upgradeId) {
-        return economy.deposit(payerUuid, amount).handle((success, error) -> {
-            String message = "Could not refund " + amount + " to " + payerUuid + " after a failed " + upgradeId + " upgrade purchase.";
-            if (error != null) {
-                plugin.severe(message, error);
-            } else if (!success) {
-                plugin.severe(message);
-            }
-            return null;
-        });
     }
 
     private record Purchase(int current, int next, double price) {

@@ -20,7 +20,7 @@ class IslandOperatorCacheTest {
     private final AdvancedSky plugin = mock(AdvancedSky.class);
     private final DatabaseHandler database = mock(DatabaseHandler.class);
     private final IslandCache cache = mock(IslandCache.class);
-    private final IslandOperator operator = new IslandOperator(plugin, database, null, null, cache, null, "local");
+    private final IslandOperator operator = new IslandOperator(plugin, database, null, null, cache, null, null, "local");
 
     @Test
     void committedMutationKeepsItsResultWhenCacheReloadFails() {
