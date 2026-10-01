@@ -84,7 +84,7 @@ public class IslandAdminCommand implements CommandExecutor, AsyncCommandTabRoute
 
     @Override
     public CompletableFuture<List<String>> completeAsync(CommandSender sender, String label, String[] args) {
-        if (args.length == 0) {
+        if (args.length == 0 || !sender.hasPermission("advancedsky.island.admin")) {
             return CompletableFuture.completedFuture(Collections.emptyList());
         }
 

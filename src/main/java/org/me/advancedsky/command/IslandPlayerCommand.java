@@ -95,7 +95,7 @@ public class IslandPlayerCommand implements CommandExecutor, AsyncCommandTabRout
 
     @Override
     public CompletableFuture<List<String>> completeAsync(CommandSender sender, String label, String[] args) {
-        if (args.length == 0) {
+        if (args.length == 0 || !sender.hasPermission("advancedsky.island.player")) {
             return CompletableFuture.completedFuture(Collections.emptyList());
         }
 
