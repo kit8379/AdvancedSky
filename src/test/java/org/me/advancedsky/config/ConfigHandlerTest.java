@@ -53,6 +53,23 @@ class ConfigHandlerTest {
         assertEquals(saved, read("config.yml"));
     }
 
+    @Test
+    void upgradeLevelsAndValuesFollowAReload() throws IOException {
+        ConfigHandler config = new ConfigHandler(plugin());
+        assertEquals(List.of(1, 2, 3, 4, 5), config.getUpgradeLevels("island-size"));
+        assertEquals("175", config.getUpgradeValue("island-size", 5));
+        assertTrue(config.isUpgrade("island-size"));
+        assertFalse(config.isUpgrade("flight"));
+
+        write("upgrades.yml", read("upgrades.yml").replaceAll("(?m)^ {4}'5':\\r?\\n {6}require-level: 1400\\r?\\n {6}price: 1000000\\r?\\n {6}size: 175\\r?\\n", ""));
+        config.reload();
+
+        assertEquals(List.of(1, 2, 3, 4), config.getUpgradeLevels("island-size"));
+        // A level the config no longer has reads as no limit, as before.
+        assertEquals("0", config.getUpgradeValue("island-size", 5));
+        assertEquals("150", config.getUpgradeValue("island-size", 4));
+    }
+
     private AdvancedSky plugin() {
         AdvancedSky plugin = mock(AdvancedSky.class);
         when(plugin.getDataFolder()).thenReturn(dataFolder.toFile());

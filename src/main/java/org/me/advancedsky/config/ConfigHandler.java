@@ -38,6 +38,9 @@ public class ConfigHandler {
     // in the YAML tree each time.
     private volatile String islandWorldName;
     private volatile Map<String, Map<Integer, Integer>> upgradeLimits;
+    // Read on every upgrade placeholder request and upgrade check, so kept the same way.
+    private volatile Map<String, List<Integer>> upgradeLevels;
+    private volatile Map<String, Map<Integer, String>> upgradeValues;
 
     public ConfigHandler(AdvancedSky plugin) {
         this.plugin = plugin;
@@ -56,7 +59,20 @@ public class ConfigHandler {
         this.upgrades = load("upgrades.yml");
         this.limits = load("limits.yml");
         this.islandWorldName = config.getString("island.world");
+        this.upgradeLevels = loadUpgradeLevels();
         this.upgradeLimits = loadUpgradeLimits();
+        this.upgradeValues = loadUpgradeValues();
+    }
+
+    /**
+     * The levels of every upgrade, ascending, by upgrade id in config order.
+     */
+    private Map<String, List<Integer>> loadUpgradeLevels() {
+        Map<String, List<Integer>> result = new LinkedHashMap<>();
+        for (String upgradeId : Objects.requireNonNull(upgrades.getConfigurationSection("upgrades")).getKeys(false)) {
+            result.put(upgradeId, Objects.requireNonNull(upgrades.getConfigurationSection("upgrades." + upgradeId)).getKeys(false).stream().map(Integer::parseInt).sorted().toList());
+        }
+        return Collections.unmodifiableMap(result);
     }
 
     /**
@@ -69,6 +85,21 @@ public class ConfigHandler {
             Map<Integer, Integer> byLevel = new HashMap<>();
             for (int level : getUpgradeLevels(upgradeId)) {
                 byLevel.put(level, upgrades.getInt("upgrades." + upgradeId + "." + level + "." + valueKey));
+            }
+            result.put(upgradeId, Map.copyOf(byLevel));
+        }
+        return Map.copyOf(result);
+    }
+
+    /**
+     * The value players see for every level of every upgrade, by upgrade id and level.
+     */
+    private Map<String, Map<Integer, String>> loadUpgradeValues() {
+        Map<String, Map<Integer, String>> result = new HashMap<>();
+        for (String upgradeId : getUpgradeIds()) {
+            Map<Integer, String> byLevel = new HashMap<>();
+            for (int level : getUpgradeLevels(upgradeId)) {
+                byLevel.put(level, upgradeValue(upgradeId, level));
             }
             result.put(upgradeId, Map.copyOf(byLevel));
         }
@@ -342,11 +373,11 @@ public class ConfigHandler {
     }
 
     public List<String> getUpgradeIds() {
-        return Objects.requireNonNull(upgrades.getConfigurationSection("upgrades")).getKeys(false).stream().toList();
+        return List.copyOf(upgradeLevels.keySet());
     }
 
     public boolean isUpgrade(String upgradeId) {
-        return getUpgradeIds().contains(upgradeId);
+        return upgradeLevels.containsKey(upgradeId);
     }
 
     /**
@@ -354,7 +385,7 @@ public class ConfigHandler {
      * level every island starts at and the last is the maximum.
      */
     public List<Integer> getUpgradeLevels(String upgradeId) {
-        return Objects.requireNonNull(upgrades.getConfigurationSection("upgrades." + upgradeId)).getKeys(false).stream().map(Integer::parseInt).sorted().toList();
+        return Objects.requireNonNull(upgradeLevels.get(upgradeId), "upgrades." + upgradeId);
     }
 
     /**
@@ -394,6 +425,11 @@ public class ConfigHandler {
      * or the generator rates as percentages.
      */
     public String getUpgradeValue(String upgradeId, int level) {
+        String value = upgradeValues.getOrDefault(upgradeId, Map.of()).get(level);
+        return value != null ? value : upgradeValue(upgradeId, level);
+    }
+
+    private String upgradeValue(String upgradeId, int level) {
         if (upgradeId.equals("biomes")) {
             return String.join(", ", getUpgradeAllowedBiomes(level));
         }

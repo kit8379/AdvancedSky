@@ -19,6 +19,7 @@ import static org.mockito.Mockito.*;
 
 import java.io.InputStreamReader;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +39,14 @@ class CobblestoneGeneratorTest {
             Field field = ConfigHandler.class.getDeclaredField("upgrades");
             field.setAccessible(true);
             field.set(config, YamlConfiguration.loadConfiguration(new InputStreamReader(stream, StandardCharsets.UTF_8)));
+        }
+        // What reload() builds from the upgrades just set.
+        for (String[] cache : new String[][]{{"upgradeLevels", "loadUpgradeLevels"}, {"upgradeLimits", "loadUpgradeLimits"}, {"upgradeValues", "loadUpgradeValues"}}) {
+            Method load = ConfigHandler.class.getDeclaredMethod(cache[1]);
+            load.setAccessible(true);
+            Field field = ConfigHandler.class.getDeclaredField(cache[0]);
+            field.setAccessible(true);
+            field.set(config, load.invoke(config));
         }
         return config;
     }
