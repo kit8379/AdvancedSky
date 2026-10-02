@@ -3,6 +3,7 @@ package org.me.advancedsky.listener;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.Tag;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.Directional;
@@ -150,8 +151,7 @@ public final class IslandLimitListener implements Listener {
     }
 
     /**
-     * A dispenser puts down a shulker box, pumpkin or skull without a BlockPlaceEvent: past the
-     * cap it dispenses nothing.
+     * A dispenser puts down a shulker box without a BlockPlaceEvent: past the cap it puts down none.
      */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onDispense(BlockDispenseEvent event) {
@@ -193,11 +193,13 @@ public final class IslandLimitListener implements Listener {
     }
 
     /**
-     * The block in front of a dispenser dispensing a capped block, or null.
+     * The block in front of a dispenser dispensing a capped shulker box, or null. Shulker boxes
+     * are the only blocks a dispenser puts down to stay: a pumpkin or wither skull it places only
+     * to build a golem or wither, gone at once, and any other block it throws out as an item.
      */
     private Block dispensedInto(BlockDispenseEvent event, Material type) {
         Block dispenser = event.getBlock();
-        if (dispenser.getType() != Material.DISPENSER || limitHandler.getBlockLimit(type) == LimitHandler.UNLIMITED || !(dispenser.getBlockData() instanceof Directional directional)) {
+        if (dispenser.getType() != Material.DISPENSER || limitHandler.getBlockLimit(type) == LimitHandler.UNLIMITED || !Tag.SHULKER_BOXES.isTagged(type) || !(dispenser.getBlockData() instanceof Directional directional)) {
             return null;
         }
 

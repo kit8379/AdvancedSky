@@ -6,6 +6,8 @@ import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
+import org.bukkit.Tag;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
@@ -410,10 +412,11 @@ class LimitHandlerTest {
     }
 
     @Test
-    void aDispenserPutsDownACappedBlockOnlyWithRoomAndItIsCountedOnceDown() {
+    void aDispenserIsHeldToTheCapOnlyForTheShulkerBoxesItPutsDownAndCountsThemOnceDown() {
         LimitHandler limits = mock(LimitHandler.class);
         when(limits.getBlockLimit(any())).thenReturn(LimitHandler.UNLIMITED);
         when(limits.getBlockLimit(Material.SHULKER_BOX)).thenReturn(5);
+        when(limits.getBlockLimit(Material.HOPPER)).thenReturn(5);
         IslandLimitListener listener = new IslandLimitListener(plugin, islandWorldConfig(), limits, cache());
         Block dispenser = block(ISLAND_WORLD, Material.DISPENSER);
         Directional facing = mock(Directional.class);
@@ -421,22 +424,28 @@ class LimitHandlerTest {
         when(dispenser.getBlockData()).thenReturn(facing);
         Block front = block(ISLAND_WORLD, Material.AIR);
         when(dispenser.getRelative(BlockFace.UP)).thenReturn(front);
-        ItemStack item = mock(ItemStack.class);
-        when(item.getType()).thenReturn(Material.SHULKER_BOX);
-        when(item.clone()).thenReturn(item);
-
-        BlockDispenseEvent full = new BlockDispenseEvent(dispenser, item, new Vector());
-        listener.onDispense(full);
-        assertTrue(full.isCancelled());
-
-        when(limits.hasRoom(island, Material.SHULKER_BOX)).thenReturn(true);
-        BlockDispenseEvent dispensed = new BlockDispenseEvent(dispenser, item, new Vector());
-        listener.onDispense(dispensed);
-        assertFalse(dispensed.isCancelled());
-
         RegionScheduler scheduler = mock(RegionScheduler.class);
+
         try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
+            // Tags come from the server; every tag here is the shulker box one.
+            bukkit.when(() -> Bukkit.getTag(any(), any(), any())).thenAnswer(call -> shulkerBoxes());
             bukkit.when(Bukkit::getRegionScheduler).thenReturn(scheduler);
+
+            // A hopper is thrown out as an item, past the cap too.
+            BlockDispenseEvent hopper = new BlockDispenseEvent(dispenser, item(Material.HOPPER), new Vector());
+            listener.onDispense(hopper);
+            listener.onDispensed(hopper);
+            assertFalse(hopper.isCancelled());
+            verify(limits, never()).hasRoom(any(), any());
+
+            BlockDispenseEvent full = new BlockDispenseEvent(dispenser, item(Material.SHULKER_BOX), new Vector());
+            listener.onDispense(full);
+            assertTrue(full.isCancelled());
+
+            when(limits.hasRoom(island, Material.SHULKER_BOX)).thenReturn(true);
+            BlockDispenseEvent dispensed = new BlockDispenseEvent(dispenser, item(Material.SHULKER_BOX), new Vector());
+            listener.onDispense(dispensed);
+            assertFalse(dispensed.isCancelled());
             listener.onDispensed(dispensed);
         }
         ArgumentCaptor<Consumer<ScheduledTask>> later = ArgumentCaptor.captor();
@@ -446,6 +455,36 @@ class LimitHandlerTest {
         when(front.getType()).thenReturn(Material.SHULKER_BOX);
         later.getValue().accept(mock(ScheduledTask.class));
         verify(limits).increment(island, Material.SHULKER_BOX, 0, 0);
+    }
+
+    /**
+     * A stand-in for the server's shulker box tag. Tag itself cannot be mocked: instrumenting it
+     * runs its static fields, which ask the server.
+     */
+    private static Tag<Material> shulkerBoxes() {
+        return new Tag<>() {
+            @Override
+            public boolean isTagged(Material item) {
+                return item == Material.SHULKER_BOX;
+            }
+
+            @Override
+            public Set<Material> getValues() {
+                return Set.of(Material.SHULKER_BOX);
+            }
+
+            @Override
+            public NamespacedKey getKey() {
+                return NamespacedKey.minecraft("shulker_boxes");
+            }
+        };
+    }
+
+    private static ItemStack item(Material type) {
+        ItemStack item = mock(ItemStack.class);
+        when(item.getType()).thenReturn(type);
+        when(item.clone()).thenReturn(item);
+        return item;
     }
 
     @Test
