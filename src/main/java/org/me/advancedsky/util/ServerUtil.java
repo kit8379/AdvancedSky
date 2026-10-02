@@ -1,7 +1,6 @@
 package org.me.advancedsky.util;
 
 import org.bukkit.Bukkit;
-import org.bukkit.entity.Player;
 import org.me.advancedsky.AdvancedSky;
 
 import java.io.ByteArrayOutputStream;
@@ -13,21 +12,22 @@ import java.util.concurrent.CompletableFuture;
 public class ServerUtil {
 
     /**
-     * Connects a player to a specified server using BungeeCord plugin messaging.
+     * Connects a player to a specified server using BungeeCord plugin messaging. A player no
+     * longer on this server, such as one already switching when a stale registry entry pointed
+     * here, is left alone: the teleport stored on the target server runs when they join it.
      *
      * @param plugin     the AdvancedSky plugin instance
      * @param playerUuid the UUID of the player to connect
      * @param serverName the name of the server to connect to
-     * @return a CompletableFuture that completes when the connection message is sent
+     * @return a CompletableFuture that completes when the connection message is sent, or the
+     * player is found gone
      */
     public static CompletableFuture<Void> connectToServer(AdvancedSky plugin, UUID playerUuid, String serverName) {
-        return CompletableFuture.supplyAsync(() -> {
-            Player player = Bukkit.getPlayer(playerUuid);
+        return CompletableFuture.supplyAsync(() -> Bukkit.getPlayer(playerUuid), plugin.getGlobalRegionExecutor()).thenCompose(player -> {
             if (player == null) {
-                throw new IllegalStateException("Player not found: " + playerUuid);
+                return CompletableFuture.completedFuture(null);
             }
-            return player;
-        }, plugin.getGlobalRegionExecutor()).thenCompose(player -> {
+
             // Sent from the thread that owns the player, as Folia requires for player state.
             CompletableFuture<Void> sent = new CompletableFuture<>();
             boolean scheduled = player.getScheduler().run(plugin, task -> {
@@ -40,11 +40,11 @@ public class ServerUtil {
                     plugin.severe("Failed to send plugin message to player " + player.getName(), e);
                     sent.completeExceptionally(e);
                 }
-            }, () -> sent.completeExceptionally(new IllegalStateException("Player left before the connect: " + playerUuid))) != null;
+            }, () -> sent.complete(null)) != null;
 
             // A player whose scheduler is already retired gets neither the task nor the callback.
             if (!scheduled) {
-                sent.completeExceptionally(new IllegalStateException("Player left before the connect: " + playerUuid));
+                sent.complete(null);
             }
             return sent;
         });

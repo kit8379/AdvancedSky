@@ -56,6 +56,18 @@ class IslandDistributorTeleportTest {
     }
 
     @Test
+    void aPlayerGoneFromTheServerTheRegistryStillNamesKeepsTheTeleportForTheirJoin() {
+        when(registry.getOnlinePlayerServer(playerUuid)).thenReturn("sky1");
+
+        try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
+            bukkit.when(() -> Bukkit.getPlayer(playerUuid)).thenReturn(null);
+            distributor.teleportLobby(playerUuid, List.of("lobby"), "world", "0,100,0,0,0").join();
+        }
+
+        verify(messenger, never()).requestVoid(any(), eq(IslandDistributor.ACTION_PLAYER_CONNECT), any());
+    }
+
+    @Test
     void aPlayerOnlineNowhereKeepsTheTeleportForTheirNextJoin() {
         try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
             bukkit.when(() -> Bukkit.getPlayer(playerUuid)).thenReturn(null);
