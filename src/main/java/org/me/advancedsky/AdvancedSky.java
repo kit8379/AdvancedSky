@@ -184,8 +184,7 @@ public class AdvancedSky extends JavaPlugin {
             info("Starting listeners");
             getServer().getPluginManager().registerEvents(new OnlinePlayersListener(this, onlinePlayerRegistry, serverID), this);
             getServer().getPluginManager().registerEvents(new IslandBorderListener(config, islandCache, islandGrid), this);
-            IslandActivityListener islandActivityListener = new IslandActivityListener(this, config, islandCache, levelUpdateScheduler);
-            getServer().getPluginManager().registerEvents(islandActivityListener, this);
+            getServer().getPluginManager().registerEvents(new IslandActivityListener(this, config, islandCache, levelUpdateScheduler), this);
             getServer().getPluginManager().registerEvents(new TeleportRequestListener(this, teleportHandler), this);
             getServer().getPluginManager().registerEvents(new IslandProtectionListener(config, islandCache, islandGrid), this);
             getServer().getPluginManager().registerEvents(new IslandAccessListener(this, config, islandCache), this);
@@ -221,7 +220,6 @@ public class AdvancedSky extends JavaPlugin {
 
             crossServerMessenger.start();
             levelUpdateScheduler.start();
-            islandActivityListener.start();
 
         } catch (Exception e) {
             getLogger().log(Level.SEVERE, "An error occurred during plugin initialization", e);

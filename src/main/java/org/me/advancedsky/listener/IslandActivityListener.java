@@ -1,6 +1,5 @@
 package org.me.advancedsky.listener;
 
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -26,8 +25,6 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class IslandActivityListener implements Listener {
 
-    private static final long RECHECK_PERIOD_TICKS = 20L * 60;
-
     private final AdvancedSky plugin;
     private final ConfigHandler config;
     private final IslandCache islandCache;
@@ -40,22 +37,6 @@ public class IslandActivityListener implements Listener {
         this.config = config;
         this.islandCache = islandCache;
         this.levelUpdateScheduler = levelUpdateScheduler;
-    }
-
-    /**
-     * Looks again, once a minute, at where each player on an island stands, on their own thread.
-     * Folia moves a player by teleportAsync or through a portal without any event, so one who
-     * then stands still would keep their old island in use and leave the new one unscanned.
-     */
-    public void start() {
-        Bukkit.getGlobalRegionScheduler().runAtFixedRate(plugin, task -> {
-            for (UUID playerUuid : currentIsland.keySet()) {
-                Player player = Bukkit.getPlayer(playerUuid);
-                if (player != null) {
-                    player.getScheduler().run(plugin, scheduled -> update(player, player.getLocation()), null);
-                }
-            }
-        }, RECHECK_PERIOD_TICKS, RECHECK_PERIOD_TICKS);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
