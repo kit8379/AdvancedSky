@@ -110,7 +110,9 @@ class CobblestoneGeneratorTest {
         when(config.getIslandWorldName()).thenReturn(ISLAND_WORLD);
         CobblestoneGeneratorHandler generator = mock(CobblestoneGeneratorHandler.class);
         when(generator.roll(3)).thenReturn(Material.IRON_ORE);
-        CobblestoneGeneratorListener listener = new CobblestoneGeneratorListener(config, cache, generator);
+        LimitHandler limits = mock(LimitHandler.class);
+        when(limits.hasRoom(islandUuid, Material.IRON_ORE)).thenReturn(true);
+        CobblestoneGeneratorListener listener = new CobblestoneGeneratorListener(config, cache, generator, limits);
         Location onIsland = GRID.center(null, SLOT);
         Location otherIsland = GRID.center(null, SLOT + 1);
 
@@ -120,6 +122,10 @@ class CobblestoneGeneratorTest {
         verify(formEvent(listener, ISLAND_WORLD, otherIsland, Material.COBBLESTONE), never()).setType(any());
 
         when(generator.roll(3)).thenReturn(Material.COBBLESTONE);
+        verify(formEvent(listener, ISLAND_WORLD, onIsland, Material.COBBLESTONE), never()).setType(any());
+
+        // A capped block the island has no room for stays cobblestone.
+        when(generator.roll(3)).thenReturn(Material.DIAMOND_ORE);
         verify(formEvent(listener, ISLAND_WORLD, onIsland, Material.COBBLESTONE), never()).setType(any());
     }
 

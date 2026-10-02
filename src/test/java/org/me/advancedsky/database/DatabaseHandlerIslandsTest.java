@@ -186,6 +186,15 @@ class DatabaseHandlerIslandsTest {
         assertFalse(database.getIslandBans(full).contains(banned));
     }
 
+    @Test
+    void aLevelIsWrittenAgainButNotForAnIslandDeletedMeanwhile() {
+        database.updateIslandLevel(full, 3);
+        database.updateIslandLevel(full, 5);
+        assertEquals(5, database.getIslandLevel(full));
+
+        assertDoesNotThrow(() -> database.updateIslandLevel(UUID.randomUUID(), 5));
+    }
+
     private static void assertSameIsland(Island expected, Island actual) {
         assertNotNull(actual);
         assertEquals(expected.getIslandUuid(), actual.getIslandUuid());

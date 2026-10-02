@@ -1,23 +1,31 @@
 package org.me.advancedsky.island;
 
+import io.papermc.paper.threadedregions.scheduler.RegionScheduler;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import net.kyori.adventure.text.Component;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
+import org.bukkit.block.data.Directional;
+import org.bukkit.block.data.type.Bed;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockDispenseEvent;
+import org.bukkit.event.block.BlockFormEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityPlaceEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.util.BoundingBox;
+import org.bukkit.util.Vector;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
@@ -25,6 +33,8 @@ import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.listener.IslandLimitListener;
 import org.me.advancedsky.model.Island;
+import org.mockito.ArgumentCaptor;
+import org.mockito.MockedStatic;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -36,6 +46,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 class LimitHandlerTest {
@@ -363,6 +374,81 @@ class LimitHandlerTest {
     }
 
     @Test
+    void aBedBrokenByItsHeadIsReleasedInItsFootsChunk() {
+        LimitHandler limits = mock(LimitHandler.class);
+        when(limits.getBlockLimit(any())).thenReturn(LimitHandler.UNLIMITED);
+        when(limits.getBlockLimit(Material.RED_BED)).thenReturn(5);
+        IslandLimitListener listener = new IslandLimitListener(plugin, islandWorldConfig(), limits, cache());
+        Block head = block(ISLAND_WORLD, Material.RED_BED);
+        Bed bed = mock(Bed.class);
+        when(bed.getPart()).thenReturn(Bed.Part.HEAD);
+        when(bed.getFacing()).thenReturn(BlockFace.EAST);
+        when(head.getBlockData()).thenReturn(bed);
+        Block foot = mock(Block.class);
+        when(foot.getX()).thenReturn(-1);
+        when(head.getRelative(BlockFace.WEST)).thenReturn(foot);
+
+        listener.onBlockBreak(new BlockBreakEvent(head, mock(Player.class)));
+
+        verify(limits).decrement(island, Material.RED_BED, -1, 0);
+    }
+
+    @Test
+    void aCappedBlockFormedOnAnIslandIsCounted() {
+        LimitHandler limits = mock(LimitHandler.class);
+        when(limits.getBlockLimit(any())).thenReturn(LimitHandler.UNLIMITED);
+        when(limits.getBlockLimit(Material.DIAMOND_ORE)).thenReturn(5);
+        IslandLimitListener listener = new IslandLimitListener(plugin, islandWorldConfig(), limits, cache());
+
+        listener.onBlockForm(new BlockFormEvent(block(ISLAND_WORLD, Material.LAVA), state(Material.DIAMOND_ORE)));
+        listener.onBlockForm(new BlockFormEvent(block(ISLAND_WORLD, Material.LAVA), state(Material.COBBLESTONE)));
+        listener.onBlockForm(new BlockFormEvent(block(ISLAND_WORLD, Material.DIAMOND_ORE), state(Material.DIAMOND_ORE)));
+        listener.onBlockForm(new BlockFormEvent(block("world", Material.LAVA), state(Material.DIAMOND_ORE)));
+
+        verify(limits).increment(island, Material.DIAMOND_ORE, 0, 0);
+        verify(limits, times(1)).increment(any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void aDispenserPutsDownACappedBlockOnlyWithRoomAndItIsCountedOnceDown() {
+        LimitHandler limits = mock(LimitHandler.class);
+        when(limits.getBlockLimit(any())).thenReturn(LimitHandler.UNLIMITED);
+        when(limits.getBlockLimit(Material.SHULKER_BOX)).thenReturn(5);
+        IslandLimitListener listener = new IslandLimitListener(plugin, islandWorldConfig(), limits, cache());
+        Block dispenser = block(ISLAND_WORLD, Material.DISPENSER);
+        Directional facing = mock(Directional.class);
+        when(facing.getFacing()).thenReturn(BlockFace.UP);
+        when(dispenser.getBlockData()).thenReturn(facing);
+        Block front = block(ISLAND_WORLD, Material.AIR);
+        when(dispenser.getRelative(BlockFace.UP)).thenReturn(front);
+        ItemStack item = mock(ItemStack.class);
+        when(item.getType()).thenReturn(Material.SHULKER_BOX);
+        when(item.clone()).thenReturn(item);
+
+        BlockDispenseEvent full = new BlockDispenseEvent(dispenser, item, new Vector());
+        listener.onDispense(full);
+        assertTrue(full.isCancelled());
+
+        when(limits.hasRoom(island, Material.SHULKER_BOX)).thenReturn(true);
+        BlockDispenseEvent dispensed = new BlockDispenseEvent(dispenser, item, new Vector());
+        listener.onDispense(dispensed);
+        assertFalse(dispensed.isCancelled());
+
+        RegionScheduler scheduler = mock(RegionScheduler.class);
+        try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
+            bukkit.when(Bukkit::getRegionScheduler).thenReturn(scheduler);
+            listener.onDispensed(dispensed);
+        }
+        ArgumentCaptor<Consumer<ScheduledTask>> later = ArgumentCaptor.captor();
+        verify(scheduler).runDelayed(eq(plugin), any(Location.class), later.capture(), eq(1L));
+        verify(limits, never()).increment(any(), any(), anyInt(), anyInt());
+
+        when(front.getType()).thenReturn(Material.SHULKER_BOX);
+        later.getValue().accept(mock(ScheduledTask.class));
+        verify(limits).increment(island, Material.SHULKER_BOX, 0, 0);
+    }
+
+    @Test
     void spawnsAreDeniedWhenTheIslandIsFull() {
         LimitHandler limits = mock(LimitHandler.class);
         when(limits.getEntityLimit(any())).thenReturn(LimitHandler.UNLIMITED);
@@ -448,6 +534,12 @@ class LimitHandlerTest {
         when(block.getType()).thenReturn(type);
         when(block.getLocation()).thenReturn(new Location(world, center.getX(), center.getY(), center.getZ()));
         return block;
+    }
+
+    private static BlockState state(Material type) {
+        BlockState state = mock(BlockState.class);
+        when(state.getType()).thenReturn(type);
+        return state;
     }
 
     private BlockPlaceEvent placeEvent(String worldName, Material type, Player player) {

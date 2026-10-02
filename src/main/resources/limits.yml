@@ -6,7 +6,8 @@
 # that block or entity outright; anything not listed is unlimited.
 limit:
   # Maximum blocks of each type inside the island border. Counted by the
-  # periodic level scan and adjusted live on place, break and burn.
+  # periodic level scan and adjusted live on place, break and burn, and
+  # when a generator forms or a dispenser puts down a capped block.
   blocks:
     HOPPER: 50
     DISPENSER: 100

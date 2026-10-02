@@ -190,7 +190,7 @@ public class AdvancedSky extends JavaPlugin {
             getServer().getPluginManager().registerEvents(new IslandAccessListener(this, config, islandCache), this);
             getServer().getPluginManager().registerEvents(new IslandRespawnListener(this, config, islandCache), this);
             getServer().getPluginManager().registerEvents(new IslandPvPListener(this, config, islandCache), this);
-            getServer().getPluginManager().registerEvents(new CobblestoneGeneratorListener(config, islandCache, cobblestoneGeneratorHandler), this);
+            getServer().getPluginManager().registerEvents(new CobblestoneGeneratorListener(config, islandCache, cobblestoneGeneratorHandler, limitHandler), this);
             getServer().getPluginManager().registerEvents(new IslandLimitListener(this, config, limitHandler, islandCache), this);
             getServer().getPluginManager().registerEvents(new UuidUpdateListener(this, uuidHandler), this);
             getServer().getPluginManager().registerEvents(new IslandCoopListener(this, coopHandler, onlinePlayerRegistry), this);

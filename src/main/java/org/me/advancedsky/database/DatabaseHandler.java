@@ -826,10 +826,13 @@ public class DatabaseHandler {
         }
     }
 
+    /**
+     * Writes nothing for an island deleted while it was scanned.
+     */
     public void updateIslandLevel(UUID islandUuid, int level) {
-        executeUpdate("INSERT INTO " + prefix + "island_levels (island_uuid, level) VALUES (?, ?) " + "ON DUPLICATE KEY UPDATE level = ?;", stmt -> {
-            stmt.setString(1, islandUuid.toString());
-            stmt.setInt(2, level);
+        executeUpdate("INSERT INTO " + prefix + "island_levels (island_uuid, level) SELECT island_uuid, ? FROM " + prefix + "islands WHERE island_uuid = ? " + "ON DUPLICATE KEY UPDATE level = ?;", stmt -> {
+            stmt.setInt(1, level);
+            stmt.setString(2, islandUuid.toString());
             stmt.setInt(3, level);
         });
     }
