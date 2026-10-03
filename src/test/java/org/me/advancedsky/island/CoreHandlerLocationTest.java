@@ -37,7 +37,7 @@ class CoreHandlerLocationTest {
     private final World world = mock(World.class);
     private final Location location = new Location(world, 0, 70, 0);
     private final EntityScheduler scheduler = mock(EntityScheduler.class);
-    private final CoreHandler core = new CoreHandler(plugin, config, database, null, cache, null, null, null, "local");
+    private final CoreHandler core = new CoreHandler(plugin, config, database, null, cache, null);
 
     @BeforeEach
     void setUp() {

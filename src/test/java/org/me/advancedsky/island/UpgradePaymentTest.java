@@ -10,6 +10,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.network.IslandOperator;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.database.DatabaseHandler;
@@ -69,7 +70,9 @@ class UpgradePaymentTest {
         when(config.getUpgradePrice("coop-limit", 2)).thenReturn(25000.0);
         when(database.getIslandServer(island)).thenReturn(Optional.of("local"));
         when(database.getIslandUpgradeLevel(island, "coop-limit")).thenReturn(1);
-        handler = new UpgradeHandler(plugin, config, database, new LocalIslandTasks(plugin, database, cache, "local"), new EconomyHandler(plugin));
+        EconomyHandler economyHandler = new EconomyHandler(plugin);
+        IslandOperator operator = new IslandOperator(plugin, database, null, cache, null, economyHandler, null, "local");
+        handler = new UpgradeHandler(plugin, config, database, operator, economyHandler);
     }
 
     @AfterEach

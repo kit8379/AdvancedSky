@@ -10,6 +10,7 @@ import redis.clients.jedis.params.XAddParams;
 import redis.clients.jedis.params.XReadParams;
 import redis.clients.jedis.resps.StreamEntry;
 
+import java.lang.reflect.Constructor;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -198,7 +199,7 @@ public final class CrossServerMessenger {
                 if (CrossServerMessage.STATUS_SUCCESS.equals(message.getStatus())) {
                     future.complete(message.getPayload());
                 } else {
-                    future.completeExceptionally(new CompletionException(restoreRemoteException(message)));
+                    future.completeExceptionally(new CompletionException(restoreRemoteException(message.getErrorType(), message.getErrorMessage())));
                 }
             } catch (RuntimeException protocolError) {
                 future.completeExceptionally(protocolError);
@@ -206,8 +207,30 @@ public final class CrossServerMessenger {
         }, plugin.getBukkitAsyncExecutor());
     }
 
-    private Throwable restoreRemoteException(CrossServerMessage message) {
-        return RemoteErrors.decode(message.getErrorType(), message.getErrorMessage());
+    static RuntimeException restoreRemoteException(String errorType, String errorMessage) {
+        if (errorType == null || errorType.isBlank()) {
+            throw new IllegalArgumentException("Missing remote error type");
+        }
+        try {
+            Class<?> clazz = Class.forName(errorType, false, CrossServerMessenger.class.getClassLoader());
+            if (!RuntimeException.class.isAssignableFrom(clazz)) {
+                throw new IllegalArgumentException("Remote error type is not a RuntimeException: " + errorType);
+            }
+            return instantiateRemoteException(clazz.asSubclass(RuntimeException.class), errorMessage);
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalArgumentException("Cannot restore remote error type: " + errorType + "; message: " + errorMessage, error);
+        }
+    }
+
+    private static RuntimeException instantiateRemoteException(Class<? extends RuntimeException> clazz, String errorMessage) throws ReflectiveOperationException {
+        // Exceptions carry either a String message or no arguments in the current contract.
+        Constructor<? extends RuntimeException> constructor;
+        try {
+            constructor = clazz.getConstructor(String.class);
+        } catch (NoSuchMethodException noMessageConstructor) {
+            return clazz.getConstructor().newInstance();
+        }
+        return constructor.newInstance(errorMessage);
     }
 
     private void sendAndDelete(StreamEntryID entryId, CrossServerMessage response) {

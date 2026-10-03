@@ -9,6 +9,7 @@ import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.exceptions.*;
 import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.model.Actor;
+import org.me.advancedsky.network.IslandOperator;
 import org.me.advancedsky.network.IslandDistributor;
 import org.me.advancedsky.util.IslandUtils;
 
@@ -26,16 +27,16 @@ public class WarpHandler {
     private final IslandDistributor islandDistributor;
     private final OnlinePlayerRegistry onlinePlayerRegistry;
     private final IslandGrid islandGrid;
-    private final LocalIslandTasks tasks;
+    private final IslandOperator islandOperator;
 
-    public WarpHandler(AdvancedSky plugin, ConfigHandler config, DatabaseHandler database, IslandDistributor islandDistributor, OnlinePlayerRegistry onlinePlayerRegistry, IslandGrid islandGrid, LocalIslandTasks tasks) {
+    public WarpHandler(AdvancedSky plugin, ConfigHandler config, DatabaseHandler database, IslandDistributor islandDistributor, OnlinePlayerRegistry onlinePlayerRegistry, IslandGrid islandGrid, IslandOperator islandOperator) {
         this.plugin = plugin;
         this.config = config;
         this.database = database;
         this.islandDistributor = islandDistributor;
         this.onlinePlayerRegistry = onlinePlayerRegistry;
         this.islandGrid = islandGrid;
-        this.tasks = tasks;
+        this.islandOperator = islandOperator;
     }
 
     /**
@@ -59,18 +60,12 @@ public class WarpHandler {
 
             String warpLocation = location.getX() + "," + location.getY() + "," + location.getZ() + "," + location.getYaw() + "," + location.getPitch();
 
-            return tasks.<Void>mutate(islandUuid, () -> {
-                database.updateWarpPoint(actor, islandUuid, normalizedWarpName, warpLocation);
-                return null;
-            });
+            return islandOperator.setWarp(actor, islandUuid, normalizedWarpName, warpLocation);
         }, plugin.getBukkitAsyncExecutor()).thenCompose(future -> future);
     }
 
     public CompletableFuture<Void> delWarp(Actor actor, UUID islandUuid, String warpName) {
-        return tasks.mutate(islandUuid, () -> {
-            database.deleteWarpPoint(actor, islandUuid, warpName.toLowerCase(Locale.ROOT));
-            return null;
-        });
+        return islandOperator.deleteWarp(actor, islandUuid, warpName.toLowerCase(Locale.ROOT));
     }
 
     /**

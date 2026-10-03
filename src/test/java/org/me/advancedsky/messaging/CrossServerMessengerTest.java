@@ -17,10 +17,10 @@ import redis.clients.jedis.params.XAddParams;
 import redis.clients.jedis.resps.StreamEntry;
 
 import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.mockito.Mockito.*;
 
 class CrossServerMessengerTest {
@@ -82,20 +82,14 @@ class CrossServerMessengerTest {
     }
 
     @Test
-    void aRemoteFailureComesBackWithItsTypeAndMessage() throws Exception {
-        CrossServerMessenger messenger = new CrossServerMessenger(mock(AdvancedSky.class), mock(RedisHandler.class), "sky1");
-        Method restore = CrossServerMessenger.class.getDeclaredMethod("restoreRemoteException", CrossServerMessage.class);
-        restore.setAccessible(true);
+    void aRemoteFailureComesBackWithItsTypeAndMessage() {
         CrossServerMessage request = CrossServerMessage.request("sky1", "sky2", "island.home.set", new JSONObject());
-
-        Throwable notFound = (Throwable) restore.invoke(messenger, CrossServerMessage.failedResponse(request, new IllegalStateException("Player not found: Steve")));
-        assertInstanceOf(IllegalStateException.class, notFound);
-        assertEquals("Player not found: Steve", notFound.getMessage());
-
-        Throwable limit = (Throwable) restore.invoke(messenger, CrossServerMessage.failedResponse(request, new TeamLimitReachedException("4")));
-        assertInstanceOf(TeamLimitReachedException.class, limit);
-        assertEquals("4", limit.getMessage());
-
-        assertInstanceOf(IslandDoesNotExistException.class, restore.invoke(messenger, CrossServerMessage.failedResponse(request, new IslandDoesNotExistException())));
+        for (RuntimeException original : List.of(new IllegalStateException("Player not found: Steve"),
+                new TeamLimitReachedException("4"), new IslandDoesNotExistException())) {
+            CrossServerMessage response = CrossServerMessage.fromJson(CrossServerMessage.failedResponse(request, original).toJson());
+            RuntimeException restored = CrossServerMessenger.restoreRemoteException(response.getErrorType(), response.getErrorMessage());
+            assertEquals(original.getClass(), restored.getClass());
+            assertEquals(original.getMessage(), restored.getMessage());
+        }
     }
 }

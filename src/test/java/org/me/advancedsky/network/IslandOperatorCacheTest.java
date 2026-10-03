@@ -1,4 +1,4 @@
-package org.me.advancedsky.island;
+package org.me.advancedsky.network;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,13 +20,13 @@ import java.util.concurrent.CompletionException;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-class CoreHandlerLifecycleTest {
+class IslandOperatorCacheTest {
     private final UUID island = UUID.randomUUID();
     private final Actor actor = new Actor.Bypass("test");
     private final AdvancedSky plugin = mock(AdvancedSky.class);
     private final DatabaseHandler database = mock(DatabaseHandler.class);
     private final IslandCache cache = mock(IslandCache.class);
-    private final CoreHandler core = new CoreHandler(plugin, null, database, null, cache, new LocalIslandTasks(plugin, database, cache, "local"), null, null, "local");
+    private final IslandOperator operator = new IslandOperator(plugin, database, null, cache, null, null, null, "local");
 
     @BeforeEach
     void setUp() {
@@ -45,7 +45,7 @@ class CoreHandlerLifecycleTest {
         when(cache.load(island)).thenReturn(CompletableFuture.completedFuture(null));
         inlineAsync();
 
-        assertDoesNotThrow(() -> new CoreHandler(plugin, null, database, null, cache, new LocalIslandTasks(plugin, database, cache, "local"), world, null, "local").createIsland(island, owner).join());
+        assertDoesNotThrow(() -> new IslandOperator(plugin, database, world, cache, null, null, null, "local").createIsland(island, owner).join());
         verify(world).createIsland(5);
         var order = inOrder(world, database, cache);
         order.verify(world).deleteIsland(5);
@@ -63,7 +63,7 @@ class CoreHandlerLifecycleTest {
         LimitHandler limits = mock(LimitHandler.class);
         inlineAsync();
 
-        assertDoesNotThrow(() -> new CoreHandler(plugin, null, database, null, cache, new LocalIslandTasks(plugin, database, cache, "local"), world, limits, "local").deleteIsland(actor, island).join());
+        assertDoesNotThrow(() -> new IslandOperator(plugin, database, world, cache, limits, null, null, "local").deleteIsland(actor, island).join());
         verify(cache).unload(island);
         verify(world).deleteIsland(5);
     }
@@ -80,11 +80,11 @@ class CoreHandlerLifecycleTest {
         when(database.addIslandData(built, owner, "local")).thenReturn(6);
         when(cache.load(any())).thenReturn(CompletableFuture.completedFuture(null));
         inlineAsync();
-        CoreHandler core = new CoreHandler(plugin, null, database, null, cache, new LocalIslandTasks(plugin, database, cache, "local"), world, null, "local");
-        core.createIsland(island, owner);
-        core.createIsland(built, owner).join();
+        IslandOperator operator = new IslandOperator(plugin, database, world, cache, null, null, null, "local");
+        operator.createIsland(island, owner);
+        operator.createIsland(built, owner).join();
 
-        core.abortCreates();
+        operator.abortCreates();
 
         verify(database).beginIslandDeletion(any(Actor.Bypass.class), eq(island));
         verify(database, never()).finishIslandDeletion(any());
@@ -105,7 +105,7 @@ class CoreHandlerLifecycleTest {
         when(world.deleteIsland(5)).thenReturn(clearing);
         when(database.getIslandSlot(island)).thenReturn(Optional.of(5));
         inlineAsync();
-        var deleting = new CoreHandler(plugin, null, database, null, cache, new LocalIslandTasks(plugin, database, cache, "local"), world, null, "local").deleteIsland(actor, island);
+        var deleting = new IslandOperator(plugin, database, world, cache, null, null, null, "local").deleteIsland(actor, island);
         assertTrue(deleting.isDone());
         deleting.join();
         assertFalse(clearing.isDone());
@@ -129,7 +129,7 @@ class CoreHandlerLifecycleTest {
         when(world.deleteIsland(5)).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("chunk held")));
         when(database.getIslandSlot(island)).thenReturn(Optional.of(5));
         inlineAsync();
-        var deleting = new CoreHandler(plugin, null, database, null, cache, new LocalIslandTasks(plugin, database, cache, "local"), world, null, "local").deleteIsland(actor, island);
+        var deleting = new IslandOperator(plugin, database, world, cache, null, null, null, "local").deleteIsland(actor, island);
         assertDoesNotThrow(deleting::join);
         verify(database).beginIslandDeletion(actor, island);
         verify(database, never()).finishIslandDeletion(any());
@@ -146,10 +146,10 @@ class CoreHandlerLifecycleTest {
         when(database.getDeletingIslands("local")).thenReturn(java.util.Map.of(island, 5));
         when(database.isIslandDeleting(island)).thenReturn(true);
         inlineAsync();
-        CoreHandler core = new CoreHandler(plugin, null, database, null, cache, new LocalIslandTasks(plugin, database, cache, "local"), world, null, "local");
-        assertDoesNotThrow(() -> core.deleteIsland(actor, island).join());
+        IslandOperator operator = new IslandOperator(plugin, database, world, cache, null, null, null, "local");
+        assertDoesNotThrow(() -> operator.deleteIsland(actor, island).join());
         verify(cache, never()).unload(island);
-        assertEquals(new CoreHandler.DeletionResult(1, 0), core.retryDeletions().join());
+        assertEquals(new IslandOperator.DeletionResult(1, 0), operator.retryDeletions().join());
         verify(world, times(2)).deleteIsland(5);
         verify(cache).unload(island);
     }
@@ -159,7 +159,7 @@ class CoreHandlerLifecycleTest {
         WorldHandler world = mock(WorldHandler.class);
         when(database.getIslandSlot(island)).thenReturn(Optional.of(5));
         doThrow(new IslandDoesNotExistException()).when(database).beginIslandDeletion(actor, island);
-        assertThrows(CompletionException.class, () -> new CoreHandler(plugin, null, database, null, cache, new LocalIslandTasks(plugin, database, cache, "local"), world, null, "local").deleteIsland(actor, island).join());
+        assertThrows(CompletionException.class, () -> new IslandOperator(plugin, database, world, cache, null, null, null, "local").deleteIsland(actor, island).join());
         verifyNoInteractions(world);
         verify(cache, never()).beginDeletion(any(), anyInt());
     }
@@ -173,7 +173,7 @@ class CoreHandlerLifecycleTest {
         when(database.getIslandPlayers(island)).thenReturn(java.util.Map.of());
         when(world.deleteIsland(5)).thenReturn(new CompletableFuture<>());
 
-        assertDoesNotThrow(() -> new CoreHandler(plugin, null, database, null, cache, new LocalIslandTasks(plugin, database, cache, "local"), world, null, "local").deleteIsland(actor, island).join());
+        assertDoesNotThrow(() -> new IslandOperator(plugin, database, world, cache, null, null, null, "local").deleteIsland(actor, island).join());
         verify(cache).beginDeletion(island, 5);
         verify(world).deleteIsland(5);
     }
@@ -186,7 +186,7 @@ class CoreHandlerLifecycleTest {
         when(database.isIslandDeleting(island)).thenReturn(true);
         when(database.getIslandPlayers(island)).thenReturn(java.util.Map.of(UUID.randomUUID(), "owner"));
 
-        assertThrows(CompletionException.class, () -> new CoreHandler(plugin, null, database, null, cache, new LocalIslandTasks(plugin, database, cache, "local"), world, null, "local").deleteIsland(actor, island).join());
+        assertThrows(CompletionException.class, () -> new IslandOperator(plugin, database, world, cache, null, null, null, "local").deleteIsland(actor, island).join());
         verifyNoInteractions(world, cache);
     }
 
@@ -202,8 +202,8 @@ class CoreHandlerLifecycleTest {
         when(world.deleteIsland(5)).thenReturn(CompletableFuture.completedFuture(null));
         when(world.deleteIsland(6)).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("held")));
         inlineAsync();
-        var result = new CoreHandler(plugin, null, database, null, cache, new LocalIslandTasks(plugin, database, cache, "local"), world, null, "local").retryDeletions().join();
-        assertEquals(new CoreHandler.DeletionResult(1, 1), result);
+        var result = new IslandOperator(plugin, database, world, cache, null, null, null, "local").retryDeletions().join();
+        assertEquals(new IslandOperator.DeletionResult(1, 1), result);
         verify(database).finishIslandDeletion(island);
         verify(database, never()).finishIslandDeletion(failed);
         verify(cache, never()).unload(failed);
@@ -218,12 +218,12 @@ class CoreHandlerLifecycleTest {
         when(database.getDeletingIslands("local")).thenReturn(java.util.Map.of(island, 5));
         when(database.isIslandDeleting(island)).thenReturn(false);
         inlineAsync();
-        CoreHandler core = new CoreHandler(plugin, null, database, null, cache, new LocalIslandTasks(plugin, database, cache, "local"), world, null, "local");
-        CompletableFuture<Void> delete = core.deleteIsland(actor, island);
-        var retry = core.retryDeletions();
+        IslandOperator operator = new IslandOperator(plugin, database, world, cache, null, null, null, "local");
+        CompletableFuture<Void> delete = operator.deleteIsland(actor, island);
+        var retry = operator.retryDeletions();
         clearing.complete(null);
         delete.join();
-        assertEquals(new CoreHandler.DeletionResult(0, 0), retry.join());
+        assertEquals(new IslandOperator.DeletionResult(0, 0), retry.join());
         verify(world, times(1)).deleteIsland(5);
     }
 
@@ -235,7 +235,7 @@ class CoreHandlerLifecycleTest {
         when(world.deleteIsland(5)).thenReturn(CompletableFuture.completedFuture(null), CompletableFuture.failedFuture(new IllegalStateException("cleanup failed")));
         when(world.createIsland(5)).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("paste failed")));
         inlineAsync();
-        var created = new CoreHandler(plugin, null, database, null, cache, new LocalIslandTasks(plugin, database, cache, "local"), world, null, "local").createIsland(island, owner);
+        var created = new IslandOperator(plugin, database, world, cache, null, null, null, "local").createIsland(island, owner);
         assertThrows(CompletionException.class, created::join);
         verify(database).beginIslandDeletion(any(Actor.Bypass.class), eq(island));
         verify(database, never()).finishIslandDeletion(any());
@@ -247,7 +247,7 @@ class CoreHandlerLifecycleTest {
         when(database.toggleIslandPvp(actor, island)).thenReturn(true);
         when(cache.reload(island)).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("reload failed")));
 
-        assertTrue(core.toggleIslandPvp(actor, island).join());
+        assertTrue(operator.toggleIslandPvp(actor, island).join());
         verify(plugin).severe(eq("Island data saved but could not refresh the island cache: " + island), any(Throwable.class));
     }
 
@@ -256,7 +256,7 @@ class CoreHandlerLifecycleTest {
         IslandDoesNotExistException failure = new IslandDoesNotExistException();
         doThrow(failure).when(database).deleteWarpPoint(actor, island, "shop");
 
-        CompletionException error = assertThrows(CompletionException.class, () -> new WarpHandler(plugin, null, database, null, null, null, new LocalIslandTasks(plugin, database, cache, "local")).delWarp(actor, island, "shop").join());
+        CompletionException error = assertThrows(CompletionException.class, () -> operator.deleteWarp(actor, island, "shop").join());
         assertSame(failure, error.getCause());
         verify(cache, never()).reload(island);
     }
@@ -267,7 +267,7 @@ class CoreHandlerLifecycleTest {
         doThrow(failure).when(database).deleteWarpPoint(actor, island, "shop");
         when(cache.reload(island)).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("reload failed")));
 
-        CompletionException error = assertThrows(CompletionException.class, () -> new WarpHandler(plugin, null, database, null, null, null, new LocalIslandTasks(plugin, database, cache, "local")).delWarp(actor, island, "shop").join());
+        CompletionException error = assertThrows(CompletionException.class, () -> operator.deleteWarp(actor, island, "shop").join());
         assertSame(failure, error.getCause());
         verify(cache).reload(island);
         verify(plugin, never()).severe(anyString(), any(Throwable.class));

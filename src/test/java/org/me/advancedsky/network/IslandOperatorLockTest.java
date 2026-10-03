@@ -1,4 +1,4 @@
-package org.me.advancedsky.island;
+package org.me.advancedsky.network;
 
 import org.bukkit.entity.Player;
 import org.junit.jupiter.api.Test;
@@ -16,12 +16,13 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-class CoreHandlerLockTest {
+class IslandOperatorLockTest {
     private static final int SLOT = 4;
     private final UUID island = UUID.randomUUID();
     private final UUID owner = UUID.randomUUID();
@@ -33,9 +34,9 @@ class CoreHandlerLockTest {
     private final DatabaseHandler database = mock(DatabaseHandler.class);
     private final IslandCache cache = mock(IslandCache.class);
     private final WorldHandler worlds = mock(WorldHandler.class);
-    private final CoreHandler core = new CoreHandler(plugin, null, database, null, cache, new LocalIslandTasks(plugin, database, cache, "local"), worlds, null, "local");
+    private final IslandOperator operator = new IslandOperator(plugin, database, worlds, cache, null, null, null, "local");
 
-    CoreHandlerLockTest() {
+    IslandOperatorLockTest() {
         BukkitAsyncExecutor async = mock(BukkitAsyncExecutor.class);
         doAnswer(call -> { call.<Runnable>getArgument(0).run(); return null; }).when(async).execute(any());
         when(plugin.getBukkitAsyncExecutor()).thenReturn(async);
@@ -50,7 +51,7 @@ class CoreHandlerLockTest {
     void lockingEvictsByTheReloadedCacheWithoutReadingTheDatabase() {
         when(cache.get(island)).thenReturn(new Island(island, SLOT, true, false, owner, Set.of(member), Set.of(coop), Set.of(), Map.of(), null, 1, 1));
 
-        assertTrue(core.toggleIslandLock(actor, island).join());
+        assertTrue(operator.toggleIslandLock(actor, island).join());
 
         Predicate<Player> evicts = capturedPredicate();
         assertFalse(evicts.test(player(owner)));
@@ -62,25 +63,21 @@ class CoreHandlerLockTest {
     }
 
     @Test
-    void lockingFallsBackToTheDatabaseWhenTheCacheEntryIsUnavailable() {
+    void lockingReportsAMissingCacheEntryBeforeEvictingPlayers() {
         when(cache.get(island)).thenReturn(null);
-        when(database.getIslandPlayers(island)).thenReturn(Map.of(owner, "owner", member, "member"));
-        when(database.getIslandCoops(island)).thenReturn(Set.of(coop));
-
-        assertTrue(core.toggleIslandLock(actor, island).join());
-
-        Predicate<Player> evicts = capturedPredicate();
-        assertFalse(evicts.test(player(owner)));
-        assertFalse(evicts.test(player(member)));
-        assertFalse(evicts.test(player(coop)));
-        assertTrue(evicts.test(player(visitor)));
+        CompletionException error = assertThrows(CompletionException.class, () -> operator.toggleIslandLock(actor, island).join());
+        assertInstanceOf(IllegalStateException.class, error.getCause());
+        assertEquals("Island cache entry is missing after locking: " + island, error.getCause().getMessage());
+        verifyNoInteractions(worlds);
+        verify(database, never()).getIslandPlayers(island);
+        verify(database, never()).getIslandCoops(island);
     }
 
     @Test
     void unlockingEvictsNobody() {
         when(database.toggleIslandLock(actor, island)).thenReturn(false);
 
-        assertFalse(core.toggleIslandLock(actor, island).join());
+        assertFalse(operator.toggleIslandLock(actor, island).join());
 
         verifyNoInteractions(worlds);
     }

@@ -3,6 +3,7 @@ package org.me.advancedsky.island;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.network.IslandOperator;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.cluster.OnlinePlayerRegistry;
 import org.me.advancedsky.config.ConfigHandler;
@@ -36,14 +37,14 @@ class LocalManagementTest {
     private final WorldHandler world = mock(WorldHandler.class);
     private final OnlinePlayerRegistry online = mock(OnlinePlayerRegistry.class);
     private final EconomyHandler economy = mock(EconomyHandler.class);
-    private final LocalIslandTasks tasks = new LocalIslandTasks(plugin, database, cache, "local");
-    private final CoreHandler core = new CoreHandler(plugin, config, database, distributor, cache, tasks, world, null, "local");
-    private final PlayerHandler members = new PlayerHandler(plugin, database, distributor, null, online, tasks, world);
-    private final BanHandler bans = new BanHandler(plugin, database, tasks, world);
-    private final CoopHandler coops = new CoopHandler(plugin, database, distributor, online, tasks, world);
-    private final HomeHandler homes = new HomeHandler(plugin, config, database, distributor, online, null, tasks);
-    private final WarpHandler warps = new WarpHandler(plugin, config, database, distributor, online, null, tasks);
-    private final UpgradeHandler upgrades = new UpgradeHandler(plugin, config, database, tasks, economy);
+    private final IslandOperator islandOperator = new IslandOperator(plugin, database, world, cache, null, economy, online, "local");
+    private final CoreHandler core = new CoreHandler(plugin, config, database, distributor, cache, islandOperator);
+    private final PlayerHandler members = new PlayerHandler(plugin, database, distributor, null, online, islandOperator);
+    private final BanHandler bans = new BanHandler(plugin, database, islandOperator);
+    private final CoopHandler coops = new CoopHandler(plugin, database, distributor, islandOperator);
+    private final HomeHandler homes = new HomeHandler(plugin, config, database, distributor, online, null, islandOperator);
+    private final WarpHandler warps = new WarpHandler(plugin, config, database, distributor, online, null, islandOperator);
+    private final UpgradeHandler upgrades = new UpgradeHandler(plugin, config, database, islandOperator, economy);
 
     @BeforeEach
     void setUp() {

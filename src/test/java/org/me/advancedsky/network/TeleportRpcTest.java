@@ -5,9 +5,6 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
-import org.me.advancedsky.island.CoopHandler;
-import org.me.advancedsky.island.CoreHandler;
-import org.me.advancedsky.island.PlayerHandler;
 import org.me.advancedsky.messaging.CrossServerMessageHandler;
 import org.me.advancedsky.messaging.CrossServerMessenger;
 import org.me.advancedsky.teleport.TeleportHandler;
@@ -63,9 +60,9 @@ class TeleportRpcTest {
         AdvancedSky plugin = mock(AdvancedSky.class);
         CrossServerMessenger messenger = mock(CrossServerMessenger.class);
         var register = AdvancedSky.class.getDeclaredMethod("registerCrossServerHandlers", CrossServerMessenger.class,
-                CoreHandler.class, PlayerHandler.class, CoopHandler.class, TeleportHandler.class);
+                IslandOperator.class, TeleportHandler.class);
         register.setAccessible(true);
-        register.invoke(plugin, messenger, null, null, null, teleports);
+        register.invoke(plugin, messenger, null, teleports);
         ArgumentCaptor<CrossServerMessageHandler> handler = ArgumentCaptor.forClass(CrossServerMessageHandler.class);
         verify(messenger).register(eq(IslandDistributor.ACTION_ISLAND_TELEPORT_PREPARE), handler.capture());
         return handler.getValue();

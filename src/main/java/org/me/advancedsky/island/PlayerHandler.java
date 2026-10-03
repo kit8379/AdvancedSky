@@ -8,7 +8,7 @@ import org.me.advancedsky.exceptions.*;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.model.Invitation;
 import org.me.advancedsky.network.IslandDistributor;
-import org.me.advancedsky.world.WorldHandler;
+import org.me.advancedsky.network.IslandOperator;
 
 import java.util.Map;
 import java.util.Optional;
@@ -21,27 +21,22 @@ public class PlayerHandler {
 
     private final AdvancedSky plugin;
     private final DatabaseHandler database;
-    private final LocalIslandTasks tasks;
-    private final WorldHandler worldHandler;
+    private final IslandOperator islandOperator;
     private final IslandDistributor islandDistributor;
     private final InvitationStore invitationStore;
     private final OnlinePlayerRegistry onlinePlayerRegistry;
 
-    public PlayerHandler(AdvancedSky plugin, DatabaseHandler database, IslandDistributor islandDistributor, InvitationStore invitationStore, OnlinePlayerRegistry onlinePlayerRegistry, LocalIslandTasks tasks, WorldHandler worldHandler) {
+    public PlayerHandler(AdvancedSky plugin, DatabaseHandler database, IslandDistributor islandDistributor, InvitationStore invitationStore, OnlinePlayerRegistry onlinePlayerRegistry, IslandOperator islandOperator) {
         this.plugin = plugin;
         this.database = database;
-        this.tasks = tasks;
-        this.worldHandler = worldHandler;
+        this.islandOperator = islandOperator;
         this.islandDistributor = islandDistributor;
         this.invitationStore = invitationStore;
         this.onlinePlayerRegistry = onlinePlayerRegistry;
     }
 
     public CompletableFuture<Void> addMember(Actor actor, UUID islandUuid, UUID playerUuid, String role) {
-        return tasks.mutate(islandUuid, () -> {
-            database.addIslandPlayer(actor, islandUuid, playerUuid, role);
-            return null;
-        });
+        return islandOperator.addMember(actor, islandUuid, playerUuid, role);
     }
 
     public CompletableFuture<Void> acceptInviteMember(UUID islandUuid, UUID playerUuid) {
@@ -49,40 +44,15 @@ public class PlayerHandler {
     }
 
     public CompletableFuture<Void> removeMember(Actor actor, UUID islandUuid, UUID playerUuid) {
-        return tasks.execute(islandUuid, () -> tasks.refresh(islandUuid, () -> {
-            database.deleteIslandPlayer(actor, islandUuid, playerUuid);
-            return null;
-        }).thenCompose(v -> {
-            return worldHandler.removePlayerFromIsland(getIslandSlot(islandUuid), playerUuid);
-        }).thenApply(removed -> null));
+        return islandOperator.removeMember(actor, islandUuid, playerUuid);
     }
 
     public CompletableFuture<Void> setOwner(Actor actor, UUID islandUuid, UUID newOwnerUuid) {
-        return tasks.mutate(islandUuid, () -> {
-            database.updateIslandOwner(actor, islandUuid, newOwnerUuid);
-            return null;
-        });
+        return islandOperator.setOwner(actor, islandUuid, newOwnerUuid);
     }
 
     public CompletableFuture<Void> expelPlayer(Actor actor, UUID islandUuid, UUID playerUuid) {
-        return tasks.execute(islandUuid, () -> {
-            if (!onlinePlayerRegistry.isOnline(playerUuid)) throw new PlayerNotOnlineException();
-            Set<UUID> islandPlayers = database.getIslandPlayers(islandUuid).keySet();
-
-            if (actor instanceof Actor.Player player && !islandPlayers.contains(player.uuid())) {
-                return CompletableFuture.failedFuture(new IslandDoesNotExistException());
-            }
-
-            if (islandPlayers.contains(playerUuid)) {
-                return CompletableFuture.failedFuture(new CannotExpelIslandPlayerException());
-            }
-
-            return worldHandler.removePlayerFromIsland(getIslandSlot(islandUuid), playerUuid).thenAccept(removed -> {
-                if (!removed) {
-                    throw new PlayerNotInIslandException();
-                }
-            });
-        });
+        return islandOperator.expelPlayer(actor, islandUuid, playerUuid);
     }
 
     public CompletableFuture<Void> addPendingInvite(UUID inviteeUuid, UUID islandUuid, UUID inviterUuid, int ttlSeconds) {
@@ -132,9 +102,5 @@ public class PlayerHandler {
 
     public CompletableFuture<Set<UUID>> getIslandPlayers(UUID islandUuid) {
         return CompletableFuture.supplyAsync(() -> database.getIslandPlayers(islandUuid).keySet(), plugin.getBukkitAsyncExecutor());
-    }
-
-    private int getIslandSlot(UUID islandUuid) {
-        return database.getIslandSlot(islandUuid).orElseThrow(IslandDoesNotExistException::new);
     }
 }

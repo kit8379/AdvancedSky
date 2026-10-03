@@ -7,7 +7,7 @@ import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.island.CoreHandler;
 import org.me.advancedsky.island.HomeHandler;
-import org.me.advancedsky.island.LocalIslandTasks;
+import org.me.advancedsky.network.IslandOperator;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.thread.BukkitAsyncExecutor;
 import org.me.advancedsky.world.WorldHandler;
@@ -42,7 +42,7 @@ class PlayerActionsOrderTest {
         when(world.createIsland(6)).thenReturn(CompletableFuture.completedFuture(null));
         when(cache.load(newIsland)).thenReturn(CompletableFuture.completedFuture(null));
         when(database.getIslandServer(oldIsland)).thenReturn(Optional.of("host"));
-        CoreHandler lifecycle = new CoreHandler(plugin, null, database, null, cache, new LocalIslandTasks(plugin, database, cache, "host"), world, null, "host");
+        IslandOperator lifecycle = new IslandOperator(plugin, database, world, cache, null, null, null, "host");
         CoreHandler core = mock(CoreHandler.class);
         when(core.getOwnIslandHere(player)).thenReturn(CompletableFuture.completedFuture(oldIsland));
         when(core.deleteIsland(any(Actor.class), eq(oldIsland))).thenAnswer(call -> lifecycle.deleteIsland(call.getArgument(0), oldIsland));

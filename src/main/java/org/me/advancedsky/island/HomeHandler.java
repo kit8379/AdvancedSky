@@ -9,6 +9,7 @@ import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.exceptions.*;
 import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.model.Actor;
+import org.me.advancedsky.network.IslandOperator;
 import org.me.advancedsky.network.IslandDistributor;
 import org.me.advancedsky.util.IslandUtils;
 
@@ -26,16 +27,16 @@ public class HomeHandler {
     private final IslandDistributor islandDistributor;
     private final OnlinePlayerRegistry onlinePlayerRegistry;
     private final IslandGrid islandGrid;
-    private final LocalIslandTasks tasks;
+    private final IslandOperator islandOperator;
 
-    public HomeHandler(AdvancedSky plugin, ConfigHandler config, DatabaseHandler database, IslandDistributor islandDistributor, OnlinePlayerRegistry onlinePlayerRegistry, IslandGrid islandGrid, LocalIslandTasks tasks) {
+    public HomeHandler(AdvancedSky plugin, ConfigHandler config, DatabaseHandler database, IslandDistributor islandDistributor, OnlinePlayerRegistry onlinePlayerRegistry, IslandGrid islandGrid, IslandOperator islandOperator) {
         this.plugin = plugin;
         this.config = config;
         this.database = database;
         this.islandDistributor = islandDistributor;
         this.onlinePlayerRegistry = onlinePlayerRegistry;
         this.islandGrid = islandGrid;
-        this.tasks = tasks;
+        this.islandOperator = islandOperator;
     }
 
     /**
@@ -61,10 +62,7 @@ public class HomeHandler {
 
             String homeLocation = location.getX() + "," + location.getY() + "," + location.getZ() + "," + location.getYaw() + "," + location.getPitch();
 
-            return tasks.<Void>mutate(islandUuid, () -> {
-                database.updateHomePoint(actor, islandUuid, playerUuid, normalizedHomeName, homeLocation);
-                return null;
-            });
+            return islandOperator.setHome(actor, islandUuid, playerUuid, normalizedHomeName, homeLocation);
         }, plugin.getBukkitAsyncExecutor()).thenCompose(future -> future);
     }
 
@@ -78,10 +76,7 @@ public class HomeHandler {
 
     /** Uses the island checked at the player's location, so a membership change cannot retarget it. */
     public CompletableFuture<Void> delHome(UUID islandUuid, UUID playerUuid, String homeName) {
-        return tasks.mutate(islandUuid, () -> {
-            database.deleteHomePoint(islandUuid, playerUuid, homeName.toLowerCase(Locale.ROOT));
-            return null;
-        });
+        return islandOperator.deleteHome(islandUuid, playerUuid, homeName.toLowerCase(Locale.ROOT));
     }
 
     public CompletableFuture<Void> home(UUID playerUuid, String homeName, UUID targetPlayerUuid) {

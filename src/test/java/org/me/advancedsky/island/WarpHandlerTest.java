@@ -7,6 +7,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.network.IslandOperator;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.cluster.OnlinePlayerRegistry;
 import org.me.advancedsky.config.ConfigHandler;
@@ -87,10 +88,10 @@ class WarpHandlerTest {
         players = mock(OnlinePlayerRegistry.class);
         cache = new IslandCache(plugin, database, grid);
         cache.load(island).join();
-        LocalIslandTasks tasks = new LocalIslandTasks(plugin, database, cache, "test");
-        members = new PlayerHandler(plugin, database, distributor, null, players, tasks, null);
-        homes = new HomeHandler(plugin, config, database, distributor, players, grid, tasks);
-        handler = new WarpHandler(plugin, config, database, distributor, players, grid, tasks);
+        IslandOperator operator = new IslandOperator(plugin, database, null, cache, null, null, players, "test");
+        members = new PlayerHandler(plugin, database, distributor, null, players, operator);
+        homes = new HomeHandler(plugin, config, database, distributor, players, grid, operator);
+        handler = new WarpHandler(plugin, config, database, distributor, players, grid, operator);
     }
 
     @AfterEach
