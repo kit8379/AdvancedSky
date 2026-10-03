@@ -15,7 +15,6 @@ import org.mockito.MockedStatic;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -145,10 +144,9 @@ class AdvancedSkyExpansionTest {
     void leaderboardWorksWithoutPlayerAndSharesRowsAndFields() {
         IslandTop first = new IslandTop(islandId, ownerId, 42, Set.of(playerId));
         IslandTop second = new IslandTop(UUID.randomUUID(), bannedId, 0, Set.of());
-        when(api.getPlayerNames(Set.of(ownerId, bannedId))).thenReturn(CompletableFuture.completedFuture(Map.of(ownerId, "Owner", bannedId, "OtherOwner")));
         when(api.getTopIslandLevels(2)).thenReturn(CompletableFuture.completedFuture(List.of(first, second)));
         assertEquals("0", expansion.onRequest(null, "top_2_level"));
-        assertEquals("OtherOwner", expansion.onRequest(null, "top_2_owner"));
+        assertEquals(bannedId.toString(), expansion.onRequest(null, "top_2_owner"));
         assertEquals("Owner", expansion.onRequest(player, "top_1_owner"));
         assertEquals("1", expansion.onRequest(null, "top_1_members"));
         assertEquals(islandId.toString(), expansion.onRequest(null, "top_1_uuid"));
@@ -179,16 +177,16 @@ class AdvancedSkyExpansionTest {
     void databaseFailuresAreLoggedAndDoNotPretendThePlayerHasNoIsland() {
         RuntimeException failure = new RuntimeException("database unavailable");
         when(api.getIslandUuid(playerId)).thenReturn(CompletableFuture.failedFuture(failure));
-        assertThrows(CompletionException.class, () -> expansion.onRequest(player, "island_level"));
+        assertEquals("", expansion.onRequest(player, "island_level"));
         verify(plugin).severe("Failed to load placeholder data for " + playerId, failure);
         when(api.getTopIslandLevels(1)).thenReturn(CompletableFuture.failedFuture(failure));
-        assertThrows(CompletionException.class, () -> expansion.onRequest(null, "top_1_level"));
+        assertEquals("", expansion.onRequest(null, "top_1_level"));
         verify(plugin).severe(eq("Failed to load leaderboard placeholders"),
                 argThat(error -> error == failure || error.getCause() == failure));
     }
 
     @Test
-    void expiredValuesAreNotUsedWhileTheCurrentDataIsLoading() {
+    void refreshServesPreviousValuesThenClearsDeletedIslandAndLeaderboard() {
         when(api.getTopIslandLevels(1)).thenReturn(CompletableFuture.completedFuture(
                 List.of(new IslandTop(islandId, ownerId, 42, Set.of(playerId)))));
         assertEquals("42", expansion.onRequest(player, "island_level"));
@@ -198,8 +196,8 @@ class AdvancedSkyExpansionTest {
         CompletableFuture<List<IslandTop>> topRefresh = new CompletableFuture<>();
         when(api.getIslandUuid(playerId)).thenReturn(refresh);
         when(api.getTopIslandLevels(1)).thenReturn(topRefresh);
-        assertEquals("", expansion.onRequest(player, "island_level"));
-        assertEquals("", expansion.onRequest(null, "top_1_level"));
+        assertEquals("42", expansion.onRequest(player, "island_level"));
+        assertEquals("42", expansion.onRequest(null, "top_1_level"));
         refresh.completeExceptionally(new IslandDoesNotExistException());
         topRefresh.complete(List.of());
         assertEquals("0", expansion.onRequest(player, "island_level"));

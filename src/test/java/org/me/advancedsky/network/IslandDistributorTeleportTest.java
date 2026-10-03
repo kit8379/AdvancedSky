@@ -79,7 +79,7 @@ class IslandDistributorTeleportTest {
     void aCrossServerTeleportCarriesTheStyledMessageWithItsDestination() {
         Component message = Component.text("Teleported to home ", NamedTextColor.GREEN)
                 .append(Component.text("default", NamedTextColor.AQUA));
-        when(registry.getOnlinePlayerServer(playerUuid)).thenReturn("lobby");
+        // During the transfer the source's registry may already read the player as gone.
         try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
             bukkit.when(() -> Bukkit.getPlayer(playerUuid)).thenReturn(null);
             distributor.teleportLobby(playerUuid, "world", "0,100,0,0,0", message).join();
@@ -93,7 +93,7 @@ class IslandDistributorTeleportTest {
     }
 
     @Test
-    void aMissingRegistryEntryFailsInsteadOfGuessingThePlayerServer() {
+    void aPlayerHereIsSentOnThoughTheirRegistryEntryIsNotWrittenYet() {
         Player player = mock(Player.class);
         EntityScheduler scheduler = mock(EntityScheduler.class);
         when(scheduler.run(eq(plugin), any(), any())).thenAnswer(call -> {
@@ -104,12 +104,10 @@ class IslandDistributorTeleportTest {
 
         try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
             bukkit.when(() -> Bukkit.getPlayer(playerUuid)).thenReturn(player);
-            var error = assertThrows(java.util.concurrent.CompletionException.class,
-                    () -> distributor.teleportLobby(playerUuid, "world", "0,100,0,0,0").join());
-            assertInstanceOf(org.me.advancedsky.exceptions.PlayerNotOnlineException.class, error.getCause());
+            distributor.teleportLobby(playerUuid, "world", "0,100,0,0,0").join();
         }
 
-        verifyNoInteractions(player);
+        verify(player).sendPluginMessage(eq(plugin), eq("BungeeCord"), any());
     }
 
     @Test
@@ -125,18 +123,15 @@ class IslandDistributorTeleportTest {
     }
 
     @Test
-    void aPlayerOnlineNowhereFailsWithAnExplicitOfflineError() {
+    void aPlayerOnlineNowhereKeepsTheTeleportForTheirNextJoin() {
         try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
             bukkit.when(() -> Bukkit.getPlayer(playerUuid)).thenReturn(null);
-            var error = assertThrows(java.util.concurrent.CompletionException.class,
-                    () -> distributor.teleportLobby(playerUuid, "world", "0,100,0,0,0").join());
-            assertInstanceOf(org.me.advancedsky.exceptions.PlayerNotOnlineException.class, error.getCause());
+            distributor.teleportLobby(playerUuid, "world", "0,100,0,0,0").join();
         }
 
         verify(messenger, never()).requestVoid(any(), eq(IslandDistributor.ACTION_PLAYER_CONNECT), any());
         ArgumentCaptor<JSONObject> request = ArgumentCaptor.forClass(JSONObject.class);
         verify(messenger).request(eq("lobby"), eq(IslandDistributor.ACTION_ISLAND_TELEPORT_PREPARE), request.capture());
-        assertTrue(request.getValue().has("successMessage"));
-        assertSame(JSONObject.NULL, request.getValue().get("successMessage"));
+        assertFalse(request.getValue().has("successMessage"));
     }
 }

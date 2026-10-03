@@ -237,8 +237,7 @@ public class AdvancedSky extends JavaPlugin {
         messenger.register(IslandDistributor.ACTION_ISLAND_TELEPORT_PREPARE, payload -> {
             // Carry completion messaging with the destination, rather than routing it through
             // a player registry that is changing while the proxy moves the player.
-            Object encodedMessage = payload.get("successMessage");
-            var successMessage = encodedMessage == JSONObject.NULL ? null : ComponentUtils.deserialize(payload.getString("successMessage"));
+            var successMessage = payload.isNull("successMessage") ? null : ComponentUtils.deserialize(payload.getString("successMessage"));
             return teleports.prepareTeleport(uuid(payload, "playerUuid"), payload.getString("teleportWorld"), payload.getString("teleportLocation"), successMessage)
                     .thenApply(teleported -> new JSONObject().put("teleported", teleported));
         });

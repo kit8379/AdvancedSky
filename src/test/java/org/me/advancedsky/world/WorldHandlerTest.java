@@ -57,7 +57,7 @@ class WorldHandlerTest {
         when(config.getTemplateSchematic()).thenReturn("schematics/starter.schem");
         when(config.getIslandHeight()).thenReturn(64);
         when(plugin.getDataFolder()).thenAnswer(call -> folder.toFile());
-        write(folder.resolve("schematics/starter.schem"), schematic(1, 1, 1, new int[3], new byte[]{1}));
+        write(folder.resolve("schematics/starter.schem"), schematic(2, 1, 1, 1, new int[3], new byte[]{1}));
         Structure structure = mock(Structure.class);
         when(structures.loadStructure(any(InputStream.class))).thenReturn(structure);
         when(structure.getPalettes()).thenReturn(List.of(palette));
@@ -223,7 +223,7 @@ class WorldHandlerTest {
 
     @Test
     void thePasteUsesOnlyDestinationChunksAndWaitsForAllTheirRegionTasks() throws IOException {
-        write(folder.resolve("schematics/starter.schem"), schematic(2, 1, 1, new int[]{-1, -1, 0}, new byte[]{1, 2}));
+        write(folder.resolve("schematics/starter.schem"), schematic(3, 2, 1, 1, new int[]{-1, -1, 0}, new byte[]{1, 2}));
         BlockState stone = mock(BlockState.class);
         BlockState chest = mock(BlockState.class);
         when(stone.getType()).thenReturn(Material.STONE);
@@ -306,7 +306,7 @@ class WorldHandlerTest {
         int blockCount;
         try (InputStream input = getClass().getClassLoader().getResourceAsStream(SchematicTemplate.DEFAULT_PATH)) {
             var bundled = net.kyori.adventure.nbt.BinaryTagIO.reader().read(input, net.kyori.adventure.nbt.BinaryTagIO.Compression.GZIP);
-            blockCount = SchematicTemplate.decode(bundled.getCompound("Schematic"), DATA_VERSION).structure().getList("blocks").size();
+            blockCount = SchematicTemplate.decode(bundled, DATA_VERSION).structure().getList("blocks").size();
         }
         BlockState example = palette.getBlocks().getFirst();
         when(palette.getBlocks()).thenReturn(java.util.Collections.nCopies(blockCount, example));

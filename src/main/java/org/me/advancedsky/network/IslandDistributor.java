@@ -1,13 +1,13 @@
 package org.me.advancedsky.network;
 
 import net.kyori.adventure.text.Component;
+import org.bukkit.Bukkit;
 import org.json.JSONObject;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cluster.OnlinePlayerRegistry;
 import org.me.advancedsky.cluster.ServerRegistry;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
-import org.me.advancedsky.exceptions.PlayerNotOnlineException;
 import org.me.advancedsky.messaging.CrossServerMessenger;
 import org.me.advancedsky.teleport.TeleportHandler;
 import org.me.advancedsky.util.ComponentUtils;
@@ -116,7 +116,9 @@ public class IslandDistributor {
             payload.put("playerUuid", playerUuid.toString());
             payload.put("teleportWorld", teleportWorld);
             payload.put("teleportLocation", teleportLocation);
-            payload.put("successMessage", successMessage == null ? JSONObject.NULL : ComponentUtils.serialize(successMessage));
+            if (successMessage != null) {
+                payload.put("successMessage", ComponentUtils.serialize(successMessage));
+            }
             prepared = messenger.request(hostServer, ACTION_ISLAND_TELEPORT_PREPARE, payload).thenApply(resp -> resp.getBoolean("teleported"));
         }
 
@@ -127,13 +129,19 @@ public class IslandDistributor {
             }
 
             // The registry read must stay off the global region thread; a local prepare completes there.
-            return CompletableFuture.supplyAsync(() -> onlinePlayerRegistry.getOnlinePlayerServer(playerUuid),
-                    plugin.getBukkitAsyncExecutor()).thenComposeAsync(playerServer -> {
-                if (playerServer == null) {
-                    return CompletableFuture.failedFuture(new PlayerNotOnlineException());
+            return CompletableFuture.completedFuture(null).thenComposeAsync(v -> {
+                String registered = onlinePlayerRegistry.getOnlinePlayerServer(playerUuid);
+                if (registered != null) {
+                    return CompletableFuture.completedFuture(registered);
                 }
+
+                // No entry reads as offline, but a join's entry may not be written yet: a player
+                // here is on this server whatever the registry says.
+                return CompletableFuture.supplyAsync(() -> Bukkit.getPlayer(playerUuid) != null ? serverID : null, plugin.getGlobalRegionExecutor());
+            }, plugin.getBukkitAsyncExecutor()).thenComposeAsync(playerServer -> {
                 // Already on the host (arrived since the prepare step): nothing to do.
-                if (playerServer.equals(hostServer)) {
+                // Offline: the pending teleport fires on their next join to the host.
+                if (playerServer == null || playerServer.equals(hostServer)) {
                     return CompletableFuture.completedFuture(null);
                 }
 

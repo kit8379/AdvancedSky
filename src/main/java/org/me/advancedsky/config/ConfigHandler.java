@@ -20,7 +20,8 @@ import java.util.*;
 public class ConfigHandler {
 
     /**
-     * Sections whose entries are chosen by the operator. {@code *} matches one key.
+     * Sections whose entries are the operator's own list, by file: not completed from the
+     * defaults. {@code *} stands for any one key, so each upgrade's levels are the operator's.
      */
     private static final Map<String, List<String>> OWN_SECTIONS = Map.of("limits.yml", List.of("limit.blocks", "limit.entities"), "levels.yml", List.of("blocks"), "upgrades.yml", List.of("upgrades.*"));
 
@@ -57,7 +58,9 @@ public class ConfigHandler {
 
     /**
      * Loads the files again, all but commands.yml, which like the settings read once at startup
-     * stays as it was until a restart. Existing files are read without modification.
+     * stays as it was until a restart. One reload at a time: each rewrites the files it reads,
+     * and one reading a file another is rewriting would find it empty and write the defaults over
+     * it.
      */
     public synchronized void reload() {
         this.config = load("config.yml");
@@ -76,32 +79,7 @@ public class ConfigHandler {
     private Map<String, List<Integer>> loadUpgradeLevels() {
         Map<String, List<Integer>> result = new LinkedHashMap<>();
         for (String upgradeId : Objects.requireNonNull(upgrades.getConfigurationSection("upgrades")).getKeys(false)) {
-            List<Integer> levels = Objects.requireNonNull(upgrades.getConfigurationSection("upgrades." + upgradeId)).getKeys(false).stream().map(Integer::parseInt).sorted().toList();
-            if (levels.isEmpty()) throw new IllegalStateException("upgrades.yml: no levels for '" + upgradeId + "'");
-            for (int i = 0; i < levels.size(); i++) {
-                int level = levels.get(i);
-                if (level != i + 1) throw new IllegalStateException("upgrades.yml: levels must start at 1 and be consecutive for '" + upgradeId + "'");
-                String path = "upgrades." + upgradeId + "." + level;
-                for (String key : level == 1 ? List.<String>of() : List.of("price", "require-level")) {
-                    if (!(upgrades.get(path + "." + key) instanceof Number)) {
-                        throw new IllegalStateException("upgrades.yml: missing or invalid '" + path + "." + key + "'");
-                    }
-                }
-                String valueKey = switch (upgradeId) {
-                    case "island-size" -> "size";
-                    case "biomes" -> "allowed";
-                    case "generator-rates" -> "rates";
-                    default -> "limit";
-                };
-                Object value = upgrades.get(path + "." + valueKey);
-                boolean valid = switch (upgradeId) {
-                    case "biomes" -> value instanceof List<?>;
-                    case "generator-rates" -> value instanceof ConfigurationSection;
-                    default -> value instanceof Number;
-                };
-                if (!valid) throw new IllegalStateException("upgrades.yml: missing or invalid '" + path + "." + valueKey + "'");
-            }
-            result.put(upgradeId, levels);
+            result.put(upgradeId, Objects.requireNonNull(upgrades.getConfigurationSection("upgrades." + upgradeId)).getKeys(false).stream().map(Integer::parseInt).sorted().toList());
         }
         return Collections.unmodifiableMap(result);
     }
@@ -112,7 +90,6 @@ public class ConfigHandler {
     private Map<String, Map<Integer, Integer>> loadUpgradeLimits() {
         Map<String, Map<Integer, Integer>> result = new HashMap<>();
         for (String upgradeId : getUpgradeIds()) {
-            if (upgradeId.equals("biomes") || upgradeId.equals("generator-rates")) continue;
             String valueKey = upgradeId.equals("island-size") ? "size" : "limit";
             Map<Integer, Integer> byLevel = new HashMap<>();
             for (int level : getUpgradeLevels(upgradeId)) {
@@ -148,43 +125,80 @@ public class ConfigHandler {
         try {
             userConfig.load(file);
         } catch (IOException | InvalidConfigurationException e) {
-            throw new IllegalStateException("Cannot parse " + fileName, e);
+            throw new IllegalStateException("Cannot parse " + fileName + ", refusing to rewrite it", e);
         }
-        validateSettings(loadSchema(fileName), userConfig, fileName, "", OWN_SECTIONS.getOrDefault(fileName, List.of()));
-        return userConfig;
-    }
 
-    private FileConfiguration loadSchema(String fileName) {
-        try (InputStream in = plugin.getResource(fileName)) {
-            if (in == null) throw new IllegalStateException("Missing bundled configuration: " + fileName);
-            return YamlConfiguration.loadConfiguration(new InputStreamReader(in, StandardCharsets.UTF_8));
-        } catch (IOException e) {
-            throw new IllegalStateException("Cannot read bundled configuration: " + fileName, e);
-        }
-    }
-
-    /** Validate the current contract without adding settings or accepting unknown fields. */
-    private void validateSettings(FileConfiguration schema, FileConfiguration user, String fileName, String path, List<String> ownSections) {
-        ConfigurationSection userSection = user.getConfigurationSection(path);
-        ConfigurationSection schemaSection = Objects.requireNonNull(schema.getConfigurationSection(path));
-        if (userSection == null) throw new IllegalStateException(fileName + ": missing section '" + path + "'");
-        for (String key : schemaSection.getKeys(false)) {
-            String fullPath = path.isEmpty() ? key : path + "." + key;
-            if (!user.contains(fullPath)) throw new IllegalStateException(fileName + ": missing required setting '" + fullPath + "'");
-            Object expected = schema.get(fullPath);
-            Object actual = user.get(fullPath);
-            boolean matches = expected instanceof ConfigurationSection ? actual instanceof ConfigurationSection
-                    : expected instanceof Number ? actual instanceof Number
-                    : expected instanceof List<?> ? actual instanceof List<?>
-                    : expected.getClass().isInstance(actual);
-            if (!matches) throw new IllegalStateException(fileName + ": invalid type for '" + fullPath + "'");
-            if (expected instanceof ConfigurationSection && !isOwnSection(fullPath, ownSections)) {
-                validateSettings(schema, user, fileName, fullPath, ownSections);
+        if (fileName.equals("config.yml")) {
+            // Preserve the old list-based role on upgrade, unless an explicit flag was supplied.
+            if (!userConfig.contains("lobby-only") && userConfig.contains("servers.lobby")) {
+                userConfig.set("lobby-only", userConfig.getStringList("servers.lobby").contains(userConfig.getString("server.name")));
+            }
+            userConfig.set("servers.island", null);
+            userConfig.set("servers.lobby", null);
+            if (userConfig.isConfigurationSection("servers") && userConfig.getConfigurationSection("servers").getKeys(false).isEmpty()) {
+                userConfig.set("servers", null);
+            }
+            userConfig.set("island.world", null);
+            // Templates now come from a file. Remove only the obsolete world-copy settings.
+            for (String key : List.of("world", "anchor", "min", "max")) {
+                userConfig.set("island.template." + key, null);
             }
         }
+
+        FileConfiguration defaultConfig = loadDefaultConfig(fileName);
+        if (defaultConfig == null) {
+            plugin.severe("Missing default config: " + fileName);
+            return userConfig;
+        }
+
+        YamlConfiguration rebuiltConfig = new YamlConfiguration();
+        rebuiltConfig.options().setHeader(userConfig.options().getHeader());
+        rebuiltConfig.options().setFooter(userConfig.options().getFooter());
+        copyDefaults(defaultConfig, userConfig, rebuiltConfig, "", OWN_SECTIONS.getOrDefault(fileName, List.of()));
+        saveConfig(rebuiltConfig, fileName);
+        return rebuiltConfig;
+    }
+
+    private FileConfiguration loadDefaultConfig(String fileName) {
+        try (InputStream in = plugin.getResource(fileName)) {
+            if (in == null) return null;
+            return YamlConfiguration.loadConfiguration(new InputStreamReader(in, StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            plugin.severe("Error loading default config: " + fileName, e);
+            return null;
+        }
+    }
+
+    /**
+     * Completes the user's file with what the defaults have and it lacks, keeping its values and
+     * comments. A section listed in {@link #OWN_SECTIONS} that the user's file has is kept as it
+     * is, so an entry taken out of it stays out.
+     */
+    private void copyDefaults(FileConfiguration defaultConfig, FileConfiguration userConfig, YamlConfiguration rebuiltConfig, String path, List<String> ownSections) {
+        Set<String> keys = Objects.requireNonNull(defaultConfig.getConfigurationSection(path)).getKeys(false);
+        for (String key : keys) {
+            String fullPath = path.isEmpty() ? key : path + "." + key;
+            FileConfiguration source = userConfig.contains(fullPath) ? userConfig : defaultConfig;
+            if (defaultConfig.isConfigurationSection(fullPath) && !(userConfig.isConfigurationSection(fullPath) && isOwnSection(fullPath, ownSections))) {
+                rebuiltConfig.createSection(fullPath);
+                copyComments(source, rebuiltConfig, fullPath);
+                copyDefaults(defaultConfig, userConfig, rebuiltConfig, fullPath, ownSections);
+            } else {
+                rebuiltConfig.set(fullPath, source.get(fullPath));
+                copyComments(source, rebuiltConfig, fullPath);
+            }
+        }
+
+        ConfigurationSection userSection = userConfig.getConfigurationSection(path);
+        if (userSection == null) {
+            return;
+        }
+
         for (String key : userSection.getKeys(false)) {
-            if (!schemaSection.contains(key)) {
-                throw new IllegalStateException(fileName + ": unknown setting '" + (path.isEmpty() ? key : path + "." + key) + "'");
+            String fullPath = path.isEmpty() ? key : path + "." + key;
+            if (!rebuiltConfig.contains(fullPath)) {
+                rebuiltConfig.set(fullPath, userConfig.get(fullPath));
+                copyComments(userConfig, rebuiltConfig, fullPath);
             }
         }
     }
@@ -209,6 +223,19 @@ public class ConfigHandler {
             }
         }
         return false;
+    }
+
+    private static void copyComments(FileConfiguration from, YamlConfiguration to, String path) {
+        to.setComments(path, from.getComments(path));
+        to.setInlineComments(path, from.getInlineComments(path));
+    }
+
+    private void saveConfig(FileConfiguration config, String fileName) {
+        try {
+            config.save(new File(plugin.getDataFolder(), fileName));
+        } catch (IOException e) {
+            plugin.severe("Could not save " + fileName, e);
+        }
     }
 
     // ================================================================================================================
@@ -371,8 +398,11 @@ public class ConfigHandler {
         return Objects.requireNonNull(upgradeLevels.get(upgradeId), "upgrades." + upgradeId);
     }
 
+    /**
+     * Zero for an upgrade or level the config does not have.
+     */
     public int getUpgradeLimit(String upgradeId, int level) {
-        return requiredUpgradeEntry(upgradeLimits, upgradeId, level);
+        return upgradeLimits.getOrDefault(upgradeId, Map.of()).getOrDefault(level, 0);
     }
 
     /**
@@ -405,15 +435,8 @@ public class ConfigHandler {
      * or the generator rates as percentages.
      */
     public String getUpgradeValue(String upgradeId, int level) {
-        return requiredUpgradeEntry(upgradeValues, upgradeId, level);
-    }
-
-    private static <T> T requiredUpgradeEntry(Map<String, Map<Integer, T>> entries, String upgradeId, int level) {
-        Map<Integer, T> levels = entries.get(upgradeId);
-        if (levels == null || !levels.containsKey(level)) {
-            throw new IllegalArgumentException("Unknown configured upgrade level: " + upgradeId + "." + level);
-        }
-        return levels.get(level);
+        String value = upgradeValues.getOrDefault(upgradeId, Map.of()).get(level);
+        return value != null ? value : upgradeValue(upgradeId, level);
     }
 
     private String upgradeValue(String upgradeId, int level) {
@@ -436,13 +459,11 @@ public class ConfigHandler {
     }
 
     public int getUpgradeRequireLevel(String upgradeId, int level) {
-        if (!getUpgradeLevels(upgradeId).contains(level)) throw new IllegalArgumentException("Unknown configured upgrade level: " + upgradeId + "." + level);
-        return level == 1 ? 0 : upgrades.getInt("upgrades." + upgradeId + "." + level + ".require-level");
+        return upgrades.getInt("upgrades." + upgradeId + "." + level + ".require-level");
     }
 
     public double getUpgradePrice(String upgradeId, int level) {
-        if (!getUpgradeLevels(upgradeId).contains(level)) throw new IllegalArgumentException("Unknown configured upgrade level: " + upgradeId + "." + level);
-        return level == 1 ? 0 : upgrades.getDouble("upgrades." + upgradeId + "." + level + ".price");
+        return upgrades.getDouble("upgrades." + upgradeId + "." + level + ".price");
     }
 
     public String getBaseCommandMode() {
