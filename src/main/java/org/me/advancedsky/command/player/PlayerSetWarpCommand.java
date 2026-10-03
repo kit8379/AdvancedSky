@@ -4,6 +4,7 @@ import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.exceptions.PlayerNotOnOwnIslandException;
 import org.me.advancedsky.api.AdvancedSkyAPI;
 import org.me.advancedsky.command.AsyncTabComplete;
 import org.me.advancedsky.command.SubCommand;
@@ -73,7 +74,9 @@ public class PlayerSetWarpCommand implements SubCommand, AsyncTabComplete {
 
         api.player(playerUuid).setWarp(warpName, loc).thenRun(() -> player.sendMessage(config.getPlayerSetWarpSuccessMessage(warpName))).exceptionally(ex -> {
             Throwable cause = ex.getCause();
-            if (cause instanceof LocationNotInIslandException || cause instanceof IslandDoesNotExistException) {
+            if (cause instanceof PlayerNotOnOwnIslandException) {
+                player.sendMessage(config.getPlayerMustOnOwnIslandMessage());
+            } else if (cause instanceof LocationNotInIslandException || cause instanceof IslandDoesNotExistException) {
                 player.sendMessage(config.getPlayerMustInIslandSetWarpMessage());
             } else if (cause instanceof WarpNameNotLegalException) {
                 player.sendMessage(config.getWarpNameNotLegalMessage());

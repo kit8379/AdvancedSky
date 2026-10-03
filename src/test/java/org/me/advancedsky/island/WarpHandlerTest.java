@@ -15,10 +15,7 @@ import org.me.advancedsky.exceptions.*;
 import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.network.IslandDistributor;
-import org.me.advancedsky.network.IslandOperator;
 import org.me.advancedsky.thread.BukkitAsyncExecutor;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -30,6 +27,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.*;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class WarpHandlerTest {
     private static final String WORLD = "islands";
@@ -47,7 +47,7 @@ class WarpHandlerTest {
     private IslandDistributor distributor;
     private OnlinePlayerRegistry players;
     private IslandCache cache;
-    private IslandOperator operator;
+    private PlayerHandler members;
     private HomeHandler homes;
     private ConfigHandler config;
 
@@ -87,17 +87,10 @@ class WarpHandlerTest {
         players = mock(OnlinePlayerRegistry.class);
         cache = new IslandCache(plugin, database, grid);
         cache.load(island).join();
-        operator = new IslandOperator(plugin, database, null, null, cache, null, null, "test");
-        when(distributor.setWarp(any(), any(), anyString(), anyString())).thenAnswer(call ->
-                operator.setWarp(call.getArgument(0), call.getArgument(1), call.getArgument(2), call.getArgument(3)));
-        when(distributor.deleteWarp(any(), any(), anyString())).thenAnswer(call ->
-                operator.deleteWarp(call.getArgument(0), call.getArgument(1), call.getArgument(2)));
-        when(distributor.setHome(any(), any(), any(), anyString(), anyString())).thenAnswer(call ->
-                operator.setHome(call.getArgument(0), call.getArgument(1), call.getArgument(2), call.getArgument(3), call.getArgument(4)));
-        when(distributor.deleteHome(any(), any(), anyString())).thenAnswer(call ->
-                operator.deleteHome(call.getArgument(0), call.getArgument(1), call.getArgument(2)));
-        homes = new HomeHandler(plugin, config, database, distributor, players, grid);
-        handler = new WarpHandler(plugin, config, database, distributor, players, grid);
+        LocalIslandTasks tasks = new LocalIslandTasks(plugin, database, cache, "test");
+        members = new PlayerHandler(plugin, database, distributor, null, players, tasks, null);
+        homes = new HomeHandler(plugin, config, database, distributor, players, grid, tasks);
+        handler = new WarpHandler(plugin, config, database, distributor, players, grid, tasks);
     }
 
     @AfterEach
@@ -114,8 +107,7 @@ class WarpHandlerTest {
         assertEquals(Set.of("shop"), handler.getWarpNames(island).join());
         handler.delWarp(new Actor.Player(owner), island, "SHOP").join();
         assertTrue(handler.getWarpNames(island).join().isEmpty());
-        verify(distributor, times(2)).setWarp(any(), eq(island), eq("shop"), anyString());
-        verify(distributor).deleteWarp(new Actor.Player(owner), island, "shop");
+        verifyNoInteractions(distributor);
     }
 
     @Test
@@ -140,8 +132,8 @@ class WarpHandlerTest {
         assertThrows(IslandDoesNotExistException.class,
                 () -> database.deleteWarpPoint(new Actor.Player(member), island, "farm"));
         database.beginIslandDeletion(new Actor.Player(owner), island);
-        database.deleteIsland(new Actor.Player(owner), island);
         assertTrue(database.getIslandWarps(island).isEmpty());
+        database.finishIslandDeletion(island);
     }
 
     @Test
@@ -282,7 +274,7 @@ class WarpHandlerTest {
     void newMembersDefaultHomeIsIncludedByMembershipCacheReload() {
         homes.setHome(new Actor.Player(owner), owner, "default", new Location(islandWorld, 1, 70, 3)).join();
         UUID newMember = UUID.randomUUID();
-        operator.addMember(new Actor.Player(newMember), island, newMember, "member").join();
+        members.addMember(new Actor.Player(newMember), island, newMember, "member").join();
         assertEquals("1.0,70.0,3.0,0.0,0.0", cache.get(island).getDefaultHomes().get(newMember));
         assertTrue(cache.get(island).getMembers().contains(newMember));
     }

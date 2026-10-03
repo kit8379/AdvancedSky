@@ -20,13 +20,10 @@ import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.listener.IslandProtectionListener;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.model.Island;
-import org.me.advancedsky.network.IslandOperator;
 import org.me.advancedsky.thread.BukkitAsyncExecutor;
 import org.me.advancedsky.world.WorldHandler;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
 
 import java.io.InputStreamReader;
 import java.lang.reflect.Field;
@@ -39,6 +36,9 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.function.Function;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class IslandSizeTest {
     private static final int[] SIZES = {75, 100, 125, 150, 175};
@@ -58,6 +58,10 @@ class IslandSizeTest {
     void setUp() {
         when(world.getName()).thenReturn(ISLAND_WORLD);
         when(config.getIslandWorldName()).thenReturn(ISLAND_WORLD);
+        when(database.getIslandServer(islandId)).thenReturn(java.util.Optional.of("local"));
+        when(config.isUpgrade("island-size")).thenReturn(true);
+        when(config.getUpgradeLevels("island-size")).thenReturn(List.of(1, 2, 3, 4, 5));
+        when(database.getIslandUpgradeLevel(islandId, "island-size")).thenReturn(1);
         BukkitAsyncExecutor async = mock(BukkitAsyncExecutor.class);
         doAnswer(call -> { call.<Runnable>getArgument(0).run(); return null; }).when(async).execute(any());
         when(plugin.getBukkitAsyncExecutor()).thenReturn(async);
@@ -127,13 +131,14 @@ class IslandSizeTest {
 
     @Test
     void hostRefreshesTheCacheAfterPurchaseAndAdminDowngrade() {
-        IslandOperator operator = new IslandOperator(plugin, database, null, null, cache, null, null, "local");
+        UpgradeHandler handler = new UpgradeHandler(plugin, config, database, new LocalIslandTasks(plugin, database, cache, "local"), null);
         when(cache.reload(islandId)).thenReturn(CompletableFuture.completedFuture(null));
         Actor buyer = new Actor.Player(owner);
         Actor admin = new Actor.Bypass("test");
 
-        operator.setUpgradeLevel(buyer, islandId, "island-size", 1, 2).join();
-        operator.setUpgradeLevel(admin, islandId, "island-size", 2, 1).join();
+        handler.setUpgradeLevel(buyer, islandId, "island-size", 2).join();
+        when(database.getIslandUpgradeLevel(islandId, "island-size")).thenReturn(2);
+        handler.setUpgradeLevel(admin, islandId, "island-size", 1).join();
 
         InOrder order = inOrder(database, cache);
         order.verify(database).updateIslandUpgradeLevel(buyer, islandId, "island-size", 1, 2);
@@ -144,19 +149,19 @@ class IslandSizeTest {
 
     @Test
     void rejectedWriteKeepsTheCauseAndLeavesTheCacheAlone() {
-        IslandOperator operator = new IslandOperator(plugin, database, null, null, cache, null, null, "local");
+        UpgradeHandler handler = new UpgradeHandler(plugin, config, database, new LocalIslandTasks(plugin, database, cache, "local"), null);
         Actor actor = new Actor.Player(owner);
         doThrow(new UpgradeLevelChangedException()).when(database).updateIslandUpgradeLevel(actor, islandId, "island-size", 1, 2);
-        CompletionException error = assertThrows(CompletionException.class, () -> operator.setUpgradeLevel(actor, islandId, "island-size", 1, 2).join());
+        CompletionException error = assertThrows(CompletionException.class, () -> handler.setUpgradeLevel(actor, islandId, "island-size", 2).join());
         assertInstanceOf(UpgradeLevelChangedException.class, error.getCause());
         verify(cache, never()).reload(islandId);
     }
 
     @Test
     void committedUpgradeIsNotRefundedIfCacheRefreshFails() {
-        IslandOperator operator = new IslandOperator(plugin, database, null, null, cache, null, null, "local");
+        UpgradeHandler handler = new UpgradeHandler(plugin, config, database, new LocalIslandTasks(plugin, database, cache, "local"), null);
         when(cache.reload(islandId)).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("database unavailable")));
-        assertDoesNotThrow(() -> operator.setUpgradeLevel(new Actor.Player(owner), islandId, "island-size", 1, 2).join());
+        assertDoesNotThrow(() -> handler.setUpgradeLevel(new Actor.Player(owner), islandId, "island-size", 2).join());
         verify(plugin).severe(eq("Island data saved but could not refresh the island cache: " + islandId), any(Throwable.class));
     }
 

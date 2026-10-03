@@ -25,14 +25,16 @@ public class HomeHandler {
     private final IslandDistributor islandDistributor;
     private final OnlinePlayerRegistry onlinePlayerRegistry;
     private final IslandGrid islandGrid;
+    private final LocalIslandTasks tasks;
 
-    public HomeHandler(AdvancedSky plugin, ConfigHandler config, DatabaseHandler database, IslandDistributor islandDistributor, OnlinePlayerRegistry onlinePlayerRegistry, IslandGrid islandGrid) {
+    public HomeHandler(AdvancedSky plugin, ConfigHandler config, DatabaseHandler database, IslandDistributor islandDistributor, OnlinePlayerRegistry onlinePlayerRegistry, IslandGrid islandGrid, LocalIslandTasks tasks) {
         this.plugin = plugin;
         this.config = config;
         this.database = database;
         this.islandDistributor = islandDistributor;
         this.onlinePlayerRegistry = onlinePlayerRegistry;
         this.islandGrid = islandGrid;
+        this.tasks = tasks;
     }
 
     /**
@@ -58,7 +60,10 @@ public class HomeHandler {
 
             String homeLocation = location.getX() + "," + location.getY() + "," + location.getZ() + "," + location.getYaw() + "," + location.getPitch();
 
-            return islandDistributor.setHome(actor, islandUuid, playerUuid, normalizedHomeName, homeLocation);
+            return tasks.<Void>mutate(islandUuid, () -> {
+                database.updateHomePoint(actor, islandUuid, playerUuid, normalizedHomeName, homeLocation);
+                return null;
+            });
         }, plugin.getBukkitAsyncExecutor()).thenCompose(future -> future);
     }
 
@@ -66,8 +71,16 @@ public class HomeHandler {
         return CompletableFuture.supplyAsync(() -> {
             UUID islandUuid = database.getIslandUuid(playerUuid).orElseThrow(IslandDoesNotExistException::new);
 
-            return islandDistributor.deleteHome(islandUuid, playerUuid, homeName.toLowerCase(Locale.ROOT));
+            return delHome(islandUuid, playerUuid, homeName);
         }, plugin.getBukkitAsyncExecutor()).thenCompose(future -> future);
+    }
+
+    /** Uses the island checked at the player's location, so a membership change cannot retarget it. */
+    public CompletableFuture<Void> delHome(UUID islandUuid, UUID playerUuid, String homeName) {
+        return tasks.mutate(islandUuid, () -> {
+            database.deleteHomePoint(islandUuid, playerUuid, homeName.toLowerCase(Locale.ROOT));
+            return null;
+        });
     }
 
     public CompletableFuture<Void> home(UUID playerUuid, String homeName, UUID targetPlayerUuid) {

@@ -152,7 +152,7 @@ class DatabaseHandlerIslandsTest {
         // The first commit is the side InnoDB picks to roll back; every later one goes through.
         when(dataSource.getConnection()).thenAnswer(ignored -> {
             Connection real = DriverManager.getConnection(url);
-            return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(), new Class<?>[]{Connection.class}, (proxy, method, args) -> {
+            return Proxy.newProxyInstance(Connection.class.getClassLoader(), new Class<?>[]{Connection.class}, (proxy, method, args) -> {
                 if (method.getName().equals("commit") && commits.incrementAndGet() == 1) {
                     throw new SQLTransactionRollbackException("Deadlock found when trying to get lock", "40001", 1213);
                 }
@@ -193,25 +193,77 @@ class DatabaseHandlerIslandsTest {
         database.updateIslandLevel(full, 5);
         assertEquals(5, database.getIslandLevel(full));
 
+        database.beginIslandDeletion(new Actor.Player(owner), full);
+        database.updateIslandLevel(full, 9);
+        assertEquals(0, database.getIslandLevel(full), "a late scan cannot restore deleted island data");
         assertDoesNotThrow(() -> database.updateIslandLevel(UUID.randomUUID(), 5));
     }
 
     @Test
-    void deletionRetainsTheRowAndSlotUntilPhysicalCleanupFinishes() {
+    void aFailedDeletionTransactionRestoresMembershipAndIslandData() throws Exception {
+        String url = connection.getMetaData().getURL();
+        HikariDataSource dataSource = mock(HikariDataSource.class);
+        when(dataSource.getConnection()).thenAnswer(ignored -> {
+            Connection real = DriverManager.getConnection(url);
+            return Proxy.newProxyInstance(Connection.class.getClassLoader(), new Class<?>[]{Connection.class}, (proxy, method, args) -> {
+                if (method.getName().equals("commit")) {
+                    throw new java.sql.SQLException("commit failed", "08006");
+                }
+                try {
+                    return method.invoke(real, args);
+                } catch (InvocationTargetException e) {
+                    throw e.getCause();
+                }
+            });
+        });
+        field("dataSource", dataSource);
+
+        assertThrows(RuntimeException.class, () -> database.beginIslandDeletion(new Actor.Player(owner), full));
+        assertFalse(database.isIslandDeleting(full));
+        assertEquals(full, database.getIslandUuid(owner).orElseThrow());
+        assertEquals(full, database.getIslandUuid(member).orElseThrow());
+        assertEquals(2, database.getIslandHomes(full, owner).size());
+        assertEquals(2, database.getIslandWarps(full).size());
+        assertTrue(database.getIslandBans(full).contains(banned));
+        assertTrue(database.getIslandCoops(full).contains(coop));
+        assertEquals(2, database.getIslandUpgradeLevel(full, "island-size"));
+    }
+
+    @Test
+    void deletionDetachesPlayersImmediatelyButReservesTheSlotUntilCleanupFinishes() {
         int slot = database.getIslandSlot(full).orElseThrow();
         database.beginIslandDeletion(new Actor.Player(owner), full);
         assertEquals(slot, database.getIslandSlot(full).orElseThrow());
         assertEquals(Map.of(full, slot), database.getDeletingIslands("a"));
         assertTrue(database.getDeletingIslands("b").isEmpty());
-        assertEquals(full, database.getIslandUuid(owner).orElseThrow());
+        assertTrue(database.getIslandUuid(owner).isEmpty());
+        assertTrue(database.getIslandUuid(member).isEmpty());
+        assertTrue(database.getIslandUuid(otherMember).isEmpty());
+        assertTrue(database.getIslandPlayers(full).isEmpty());
+        assertTrue(database.getIslandHomes(full, owner).isEmpty());
+        assertTrue(database.getIslandHomes(full, member).isEmpty());
+        assertTrue(database.getIslandWarps(full).isEmpty());
+        assertTrue(database.getIslandBans(full).isEmpty());
+        assertTrue(database.getIslandCoops(full).isEmpty());
+        assertEquals(1, database.getIslandUpgradeLevel(full, "island-size"));
         assertNull(database.getIsland(full), "deleting islands must not enter the active cache");
         assertFalse(database.getIslandsByServer("a").containsKey(full));
         assertThrows(org.me.advancedsky.exceptions.IslandDoesNotExistException.class,
                 () -> database.toggleIslandPvp(new Actor.Player(owner), full));
-        assertNotEquals(slot, database.addIslandData(UUID.randomUUID(), UUID.randomUUID(), "a"));
-        database.deleteIsland(new Actor.Player(owner), full);
+        UUID replacement = UUID.randomUUID();
+        int replacementSlot = database.addIslandData(replacement, owner, "b");
+        assertNotEquals(slot, replacementSlot);
+        database.finishIslandCreation(replacement);
+        database.addIslandPlayer(new Actor.Bypass("test"), bare, member, "member");
+        assertEquals(replacement, database.getIslandUuid(owner).orElseThrow());
+        assertEquals(bare, database.getIslandUuid(member).orElseThrow());
+        assertThrows(org.me.advancedsky.exceptions.IslandDoesNotExistException.class,
+                () -> database.beginIslandDeletion(new Actor.Player(owner), full));
+        database.finishIslandDeletion(full);
         assertTrue(database.getIslandSlot(full).isEmpty());
-        assertTrue(database.getIslandUuid(owner).isEmpty());
+        assertEquals(replacement, database.getIslandUuid(owner).orElseThrow());
+        assertEquals(bare, database.getIslandUuid(member).orElseThrow());
+        assertTrue(database.getIslandHomes(replacement, owner).containsKey("default"));
         assertEquals(slot, database.addIslandData(UUID.randomUUID(), UUID.randomUUID(), "b"));
     }
 
@@ -219,12 +271,12 @@ class DatabaseHandlerIslandsTest {
     void aStaleDeleteCannotRemoveANewIslandAtTheSameSlot() {
         int slot = database.getIslandSlot(full).orElseThrow();
         database.beginIslandDeletion(new Actor.Bypass("test"), full);
-        database.deleteIsland(new Actor.Bypass("test"), full);
+        database.finishIslandDeletion(full);
         UUID replacement = UUID.randomUUID();
         assertEquals(slot, database.addIslandData(replacement, UUID.randomUUID(), "a"));
         database.finishIslandCreation(replacement);
         assertThrows(org.me.advancedsky.exceptions.IslandDoesNotExistException.class,
-                () -> database.deleteIsland(new Actor.Bypass("stale"), full));
+                () -> database.finishIslandDeletion(full));
         assertEquals(slot, database.getIslandSlot(replacement).orElseThrow());
         assertFalse(database.isIslandDeleting(replacement));
     }
@@ -233,7 +285,7 @@ class DatabaseHandlerIslandsTest {
     void aFailedCreateRollsBackItsClaimOnAnEmptySlot() {
         int slot = database.getIslandSlot(full).orElseThrow();
         database.beginIslandDeletion(new Actor.Bypass("test"), full);
-        database.deleteIsland(new Actor.Bypass("test"), full);
+        database.finishIslandDeletion(full);
         UUID failed = UUID.randomUUID();
         when(config.getIslandSpawnX()).thenThrow(new IllegalStateException("home failed"));
         assertThrows(IllegalStateException.class, () -> database.addIslandData(failed, UUID.randomUUID(), "a"));
@@ -246,7 +298,7 @@ class DatabaseHandlerIslandsTest {
     void concurrentCreatesOnDifferentHostsCannotClaimTheSameEmptySlot() {
         int slot = database.getIslandSlot(full).orElseThrow();
         database.beginIslandDeletion(new Actor.Bypass("test"), full);
-        database.deleteIsland(new Actor.Bypass("test"), full);
+        database.finishIslandDeletion(full);
         var first = java.util.concurrent.CompletableFuture.supplyAsync(() -> database.addIslandData(UUID.randomUUID(), UUID.randomUUID(), "a"));
         var second = java.util.concurrent.CompletableFuture.supplyAsync(() -> database.addIslandData(UUID.randomUUID(), UUID.randomUUID(), "b"));
         int firstSlot = first.join();
@@ -260,8 +312,11 @@ class DatabaseHandlerIslandsTest {
         assertThrows(RuntimeException.class, () -> database.beginIslandDeletion(new Actor.Player(member), full));
         assertFalse(database.isIslandDeleting(full));
         assertNotNull(database.getIsland(full));
-        assertThrows(IllegalStateException.class, () -> database.deleteIsland(new Actor.Bypass("not begun"), full));
+        assertThrows(IllegalStateException.class, () -> database.finishIslandDeletion(full));
         assertTrue(database.getIslandSlot(full).isPresent());
+        assertEquals(full, database.getIslandUuid(owner).orElseThrow());
+        assertEquals(full, database.getIslandUuid(member).orElseThrow());
+        assertFalse(database.getIslandWarps(full).isEmpty());
     }
 
     @Test

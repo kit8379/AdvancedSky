@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cluster.OnlinePlayerRegistry;
 import org.me.advancedsky.messaging.CrossServerMessenger;
+import org.me.advancedsky.teleport.TeleportHandler;
 import org.me.advancedsky.thread.BukkitAsyncExecutor;
 import org.me.advancedsky.thread.GlobalRegionExecutor;
 import org.mockito.MockedStatic;
@@ -25,7 +26,7 @@ class IslandDistributorTeleportTest {
     private final AdvancedSky plugin = mock(AdvancedSky.class);
     private final OnlinePlayerRegistry registry = mock(OnlinePlayerRegistry.class);
     private final CrossServerMessenger messenger = mock(CrossServerMessenger.class);
-    private final IslandDistributor distributor = new IslandDistributor(plugin, null, null, registry, messenger, null, List.of("sky1"), "sky1");
+    private final IslandDistributor distributor = new IslandDistributor(plugin, null, null, registry, messenger, List.of("sky1"), "sky1");
 
     IslandDistributorTeleportTest() {
         BukkitAsyncExecutor async = mock(BukkitAsyncExecutor.class);
@@ -35,6 +36,18 @@ class IslandDistributorTeleportTest {
         doAnswer(call -> { call.<Runnable>getArgument(0).run(); return null; }).when(global).execute(any());
         when(plugin.getGlobalRegionExecutor()).thenReturn(global);
         when(messenger.request(eq("lobby"), eq(IslandDistributor.ACTION_ISLAND_TELEPORT_PREPARE), any())).thenReturn(CompletableFuture.completedFuture(new JSONObject().put("teleported", false)));
+    }
+
+    @Test
+    void aSameHostTeleportCallsTheTeleportHandlerWithoutProxyRouting() {
+        TeleportHandler teleports = mock(TeleportHandler.class);
+        IslandDistributor local = new IslandDistributor(plugin, null, teleports, registry, messenger, List.of("sky1"), "sky1");
+        when(teleports.prepareTeleport(playerUuid, "world", "0,100,0,0,0")).thenReturn(CompletableFuture.completedFuture(true));
+
+        local.teleportLobby(playerUuid, List.of("sky1"), "world", "0,100,0,0,0").join();
+
+        verify(teleports).prepareTeleport(playerUuid, "world", "0,100,0,0,0");
+        verifyNoInteractions(registry, messenger);
     }
 
     @Test

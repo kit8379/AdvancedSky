@@ -1,6 +1,7 @@
 package org.me.advancedsky.island;
 
 import net.milkbowl.vault.economy.Economy;
+import net.milkbowl.vault.economy.EconomyResponse;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.plugin.RegisteredServiceProvider;
@@ -9,18 +10,19 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.economy.EconomyHandler;
 import org.me.advancedsky.exceptions.*;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.model.Upgrade;
-import org.me.advancedsky.network.IslandDistributor;
 import org.me.advancedsky.thread.BukkitAsyncExecutor;
 import org.me.advancedsky.thread.GlobalRegionExecutor;
 import org.mockito.MockedStatic;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -35,7 +37,7 @@ class UpgradeHandlerTest {
     private final AdvancedSky plugin = mock(AdvancedSky.class);
     private final ConfigHandler config = mock(ConfigHandler.class);
     private final DatabaseHandler database = mock(DatabaseHandler.class);
-    private final IslandDistributor distributor = mock(IslandDistributor.class);
+    private final IslandCache cache = mock(IslandCache.class);
     private final Economy economy = mock(Economy.class);
     private final OfflinePlayer payer = mock(OfflinePlayer.class);
     private MockedStatic<Bukkit> bukkit;
@@ -67,7 +69,10 @@ class UpgradeHandlerTest {
         when(database.getIslandUpgradeLevel(island, "coop-limit")).thenReturn(1);
         when(database.getIslandLevel(island)).thenReturn(150);
         when(economy.format(anyDouble())).thenAnswer(call -> "$" + call.<Double>getArgument(0));
-        handler = new UpgradeHandler(plugin, config, database, distributor, new EconomyHandler(plugin));
+        when(database.getIslandServer(island)).thenReturn(Optional.of("local"));
+        when(cache.reload(island)).thenReturn(CompletableFuture.completedFuture(null));
+        when(economy.withdrawPlayer(payer, 25000.0)).thenReturn(new EconomyResponse(25000, 0, EconomyResponse.ResponseType.SUCCESS, null));
+        handler = new UpgradeHandler(plugin, config, database, new LocalIslandTasks(plugin, database, cache, "local"), new EconomyHandler(plugin));
     }
 
     @AfterEach
@@ -76,18 +81,18 @@ class UpgradeHandlerTest {
     }
 
     @Test
-    void buyAsksTheHostToChargeAndWriteTheNextLevel() {
-        when(distributor.buyUpgrade(actor, island, buyer, "coop-limit", 1, 2, 25000.0)).thenReturn(CompletableFuture.completedFuture(null));
+    void buyChargesAndWritesTheNextLevelLocally() {
 
         assertEquals(2, handler.buyUpgrade(actor, island, buyer, "coop-limit").join());
 
-        verify(distributor).buyUpgrade(actor, island, buyer, "coop-limit", 1, 2, 25000.0);
-        verifyNoInteractions(economy);
+        verify(database).updateIslandUpgradeLevel(actor, island, "coop-limit", 1, 2);
+        verify(economy).withdrawPlayer(payer, 25000.0);
+        verify(cache).reload(island);
     }
 
     @Test
-    void aFailedPurchaseReportsTheHostsCause() {
-        when(distributor.buyUpgrade(actor, island, buyer, "coop-limit", 1, 2, 25000.0)).thenReturn(CompletableFuture.failedFuture(new InsufficientFundsException()));
+    void aFailedWithdrawalReportsItsCause() {
+        when(economy.withdrawPlayer(payer, 25000.0)).thenReturn(new EconomyResponse(25000, 0, EconomyResponse.ResponseType.FAILURE, null));
 
         assertFailure(InsufficientFundsException.class, handler.buyUpgrade(actor, island, buyer, "coop-limit"));
     }
@@ -103,20 +108,19 @@ class UpgradeHandlerTest {
 
         assertFailure(UpgradeDoesNotExistException.class, handler.buyUpgrade(actor, island, buyer, "fly"));
 
-        verifyNoInteractions(economy, distributor);
+        verifyNoInteractions(economy, cache);
     }
 
     @Test
     void adminSetValidatesTheLevelAndCompareAndSetsFromTheCurrentOne() {
-        when(distributor.setUpgradeLevel(any(), any(), anyString(), anyInt(), anyInt())).thenReturn(CompletableFuture.completedFuture(null));
         Actor admin = new Actor.Bypass("test");
 
         handler.setUpgradeLevel(admin, island, "coop-limit", 3).join();
-        verify(distributor).setUpgradeLevel(admin, island, "coop-limit", 1, 3);
+        verify(database).updateIslandUpgradeLevel(admin, island, "coop-limit", 1, 3);
 
         assertFailure(UpgradeLevelDoesNotExistException.class, handler.setUpgradeLevel(admin, island, "coop-limit", 4));
         assertFailure(UpgradeDoesNotExistException.class, handler.setUpgradeLevel(admin, island, "fly", 1));
-        verifyNoMoreInteractions(distributor);
+        verify(database, times(1)).updateIslandUpgradeLevel(any(), any(), anyString(), anyInt(), anyInt());
     }
 
     @Test
@@ -131,7 +135,7 @@ class UpgradeHandlerTest {
         when(database.getIslandUpgradeLevel(island, "coop-limit")).thenReturn(3);
         when(config.getUpgradeValue("coop-limit", 3)).thenReturn("3");
         assertTrue(handler.getUpgradeDetails(island, buyer, "coop-limit").join().maxed());
-        verifyNoInteractions(distributor);
+        verifyNoInteractions(cache);
     }
 
     private static void assertFailure(Class<? extends Throwable> expected, CompletableFuture<?> future) {

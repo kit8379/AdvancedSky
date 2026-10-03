@@ -36,7 +36,6 @@ public class IslandCache {
     private final Map<UUID, Island> islands = new ConcurrentHashMap<>();
     private final Map<Integer, UUID> islandsBySlot = new ConcurrentHashMap<>();
     private final Set<UUID> deleting = ConcurrentHashMap.newKeySet();
-    // Each dirty island maps to the retry that owns it, so one failure streak runs one retry.
     private final Map<UUID, Object> dirty = new ConcurrentHashMap<>();
     private final Map<UUID, Long> loading = new ConcurrentHashMap<>();
     private final AtomicLong nextLoadGeneration = new AtomicLong();
@@ -87,7 +86,9 @@ public class IslandCache {
         return islandUuid != null && deleting.contains(islandUuid);
     }
 
-    /** Keep the position identifiable but inaccessible while physical deletion is in progress. */
+    /**
+     * Keep the position identifiable but inaccessible while physical deletion is in progress.
+     */
     public void beginDeletion(UUID islandUuid, int slot) {
         deleting.add(islandUuid);
         loading.remove(islandUuid);
@@ -184,7 +185,6 @@ public class IslandCache {
         }
         dirty.remove(islandUuid);
         deleting.remove(islandUuid);
-        // Deletions recovered at startup have a position but no active Island object.
         islandsBySlot.entrySet().removeIf(entry -> entry.getValue().equals(islandUuid));
     }
 }

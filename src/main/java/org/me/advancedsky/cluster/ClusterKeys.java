@@ -11,7 +11,6 @@ public final class ClusterKeys {
     private static final String ONLINE_PLAYERS = "online:players";
     private static final String ONLINE_PLAYER_SERVERS = "online:player_servers";
     private static final String INVITATION_PREFIX = "invitation:island:";
-    private static final String CREATE_RESERVATIONS_PREFIX = "create:reserved:";
 
     private final String prefix;
 
@@ -33,9 +32,5 @@ public final class ClusterKeys {
 
     public String invitation(UUID inviteeUuid) {
         return prefix + INVITATION_PREFIX + inviteeUuid;
-    }
-
-    public String createReservations(String serverName) {
-        return prefix + CREATE_RESERVATIONS_PREFIX + serverName;
     }
 }

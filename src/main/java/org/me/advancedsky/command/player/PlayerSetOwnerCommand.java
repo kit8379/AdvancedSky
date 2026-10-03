@@ -3,6 +3,7 @@ package org.me.advancedsky.command.player;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.exceptions.PlayerNotOnOwnIslandException;
 import org.me.advancedsky.api.AdvancedSkyAPI;
 import org.me.advancedsky.command.AsyncTabComplete;
 import org.me.advancedsky.command.SubCommand;
@@ -86,7 +87,9 @@ public class PlayerSetOwnerCommand implements SubCommand, AsyncTabComplete {
             });
         }).exceptionally(ex -> {
             Throwable cause = ex.getCause();
-            if (cause instanceof IslandDoesNotExistException) {
+            if (cause instanceof PlayerNotOnOwnIslandException) {
+                player.sendMessage(config.getPlayerMustOnOwnIslandMessage());
+            } else if (cause instanceof IslandDoesNotExistException) {
                 player.sendMessage(config.getPlayerNoIslandMessage());
             } else if (cause instanceof IslandPlayerDoesNotExistException) {
                 player.sendMessage(config.getIslandMemberNotExistsMessage(targetPlayerName));

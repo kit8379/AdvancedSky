@@ -8,7 +8,6 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.json.JSONObject;
 import org.me.advancedsky.api.AdvancedSkyAPI;
 import org.me.advancedsky.cache.IslandCache;
-import org.me.advancedsky.cluster.CreateReservations;
 import org.me.advancedsky.cluster.InvitationStore;
 import org.me.advancedsky.cluster.OnlinePlayerRegistry;
 import org.me.advancedsky.command.AsyncTabCompleteListener;
@@ -24,7 +23,6 @@ import org.me.advancedsky.message.PlayerMessageHandler;
 import org.me.advancedsky.messaging.CrossServerMessenger;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.network.IslandDistributor;
-import org.me.advancedsky.network.IslandOperator;
 import org.me.advancedsky.placeholder.AdvancedSkyExpansion;
 import org.me.advancedsky.redis.RedisHandler;
 import org.me.advancedsky.scheduler.LevelUpdateScheduler;
@@ -51,7 +49,7 @@ public class AdvancedSky extends JavaPlugin {
     private LimitHandler limitHandler;
     private LevelHandler levelHandler;
     private CobblestoneGeneratorHandler cobblestoneGeneratorHandler;
-    private IslandOperator islandOperator;
+    private CoreHandler coreHandler;
     private AdvancedSkyAPI api;
     private AdvancedSkyExpansion placeholderExpansion;
     private BukkitAsyncExecutor bukkitAsyncExecutor;
@@ -126,16 +124,15 @@ public class AdvancedSky extends JavaPlugin {
             info("World handler loaded");
 
             info("Starting teleport handler");
-            TeleportHandler teleportHandler = new TeleportHandler();
+            TeleportHandler teleportHandler = new TeleportHandler(this, worldHandler, islandCache);
             info("Teleport handler loaded");
 
             info("Starting handlers for island remote requests");
             crossServerMessenger = new CrossServerMessenger(this, redisHandler, serverID);
             limitHandler = new LimitHandler(this, config, islandGrid);
             EconomyHandler economyHandler = new EconomyHandler(this);
-            islandOperator = new IslandOperator(this, databaseHandler, worldHandler, teleportHandler, islandCache, limitHandler, economyHandler, serverID);
-            IslandDistributor islandDistributor = new IslandDistributor(this, databaseHandler, islandOperator, onlinePlayerRegistry, crossServerMessenger, new CreateReservations(this, redisHandler), config.getIslandServerNames(), serverID);
-            registerCrossServerHandlers(crossServerMessenger, islandOperator);
+            LocalIslandTasks localTasks = new LocalIslandTasks(this, databaseHandler, islandCache, serverID);
+            IslandDistributor islandDistributor = new IslandDistributor(this, databaseHandler, teleportHandler, onlinePlayerRegistry, crossServerMessenger, config.getIslandServerNames(), serverID);
             info("All handlers for remote requests loaded");
 
             info("Starting player message handler");
@@ -143,18 +140,19 @@ public class AdvancedSky extends JavaPlugin {
             info("Player message handler loaded");
 
             info("Starting main handlers for the plugin");
-            CoreHandler coreHandler = new CoreHandler(this, config, databaseHandler, islandDistributor, islandCache);
-            PlayerHandler playerHandler = new PlayerHandler(this, databaseHandler, islandDistributor, invitationStore, onlinePlayerRegistry);
-            HomeHandler homeHandler = new HomeHandler(this, config, databaseHandler, islandDistributor, onlinePlayerRegistry, islandGrid);
-            WarpHandler warpHandler = new WarpHandler(this, config, databaseHandler, islandDistributor, onlinePlayerRegistry, islandGrid);
+            coreHandler = new CoreHandler(this, config, databaseHandler, islandDistributor, islandCache, localTasks, worldHandler, limitHandler, serverID);
+            PlayerHandler playerHandler = new PlayerHandler(this, databaseHandler, islandDistributor, invitationStore, onlinePlayerRegistry, localTasks, worldHandler);
+            HomeHandler homeHandler = new HomeHandler(this, config, databaseHandler, islandDistributor, onlinePlayerRegistry, islandGrid, localTasks);
+            WarpHandler warpHandler = new WarpHandler(this, config, databaseHandler, islandDistributor, onlinePlayerRegistry, islandGrid, localTasks);
             levelHandler = new LevelHandler(this, config, databaseHandler, limitHandler, worldHandler, islandCache, islandGrid);
             cobblestoneGeneratorHandler = new CobblestoneGeneratorHandler(this, config);
-            BanHandler banHandler = new BanHandler(this, databaseHandler, islandDistributor);
-            CoopHandler coopHandler = new CoopHandler(this, databaseHandler, islandDistributor, onlinePlayerRegistry);
+            BanHandler banHandler = new BanHandler(this, databaseHandler, localTasks, worldHandler);
+            CoopHandler coopHandler = new CoopHandler(this, databaseHandler, islandDistributor, onlinePlayerRegistry, localTasks, worldHandler);
             BiomeHandler biomeHandler = new BiomeHandler(this, config, databaseHandler, islandGrid);
-            UpgradeHandler upgradeHandler = new UpgradeHandler(this, config, databaseHandler, islandDistributor, economyHandler);
+            UpgradeHandler upgradeHandler = new UpgradeHandler(this, config, databaseHandler, localTasks, economyHandler);
             LobbyHandler lobbyHandler = new LobbyHandler(this, config, islandDistributor);
             UuidHandler uuidHandler = new UuidHandler(this, databaseHandler);
+            registerCrossServerHandlers(crossServerMessenger, coreHandler, playerHandler, coopHandler, teleportHandler);
             info("All main handlers loaded");
 
             info("Starting plugin messaging");
@@ -219,7 +217,7 @@ public class AdvancedSky extends JavaPlugin {
 
             crossServerMessenger.start();
             levelUpdateScheduler.start();
-            if (!config.isLobbyOnly()) islandOperator.retryDeletions().exceptionally(error -> {
+            if (!config.isLobbyOnly()) coreHandler.retryDeletions().exceptionally(error -> {
                 severe("Could not recover incomplete island deletions; rows retained for retry", error);
                 return null;
             });
@@ -230,26 +228,14 @@ public class AdvancedSky extends JavaPlugin {
         }
     }
 
-    private void registerCrossServerHandlers(CrossServerMessenger messenger, IslandOperator islandOperator) {
-        messenger.register(IslandDistributor.ACTION_ISLAND_CREATE, payload -> emptyResponse(islandOperator.createIsland(uuid(payload, "islandUuid"), uuid(payload, "ownerUuid"))));
-        messenger.register(IslandDistributor.ACTION_ISLAND_DELETE, payload -> emptyResponse(islandOperator.deleteIsland(Actor.fromJson(payload), uuid(payload, "islandUuid"))));
-        messenger.register(IslandDistributor.ACTION_ISLAND_TELEPORT_PREPARE, payload -> islandOperator.prepareTeleport(uuid(payload, "playerUuid"), payload.getString("teleportWorld"), payload.getString("teleportLocation")).thenApply(teleported -> new JSONObject().put("teleported", teleported)));
-        messenger.register(IslandDistributor.ACTION_ISLAND_MEMBER_ADD, payload -> emptyResponse(islandOperator.addMember(Actor.fromJson(payload), uuid(payload, "islandUuid"), uuid(payload, "playerUuid"), payload.getString("role"))));
-        messenger.register(IslandDistributor.ACTION_ISLAND_MEMBER_REMOVE, payload -> emptyResponse(islandOperator.removeMember(Actor.fromJson(payload), uuid(payload, "islandUuid"), uuid(payload, "playerUuid"))));
-        messenger.register(IslandDistributor.ACTION_ISLAND_OWNER_SET, payload -> emptyResponse(islandOperator.setOwner(Actor.fromJson(payload), uuid(payload, "islandUuid"), uuid(payload, "newOwnerUuid"))));
-        messenger.register(IslandDistributor.ACTION_ISLAND_BAN_ADD, payload -> emptyResponse(islandOperator.addBan(Actor.fromJson(payload), uuid(payload, "islandUuid"), uuid(payload, "playerUuid"))));
-        messenger.register(IslandDistributor.ACTION_ISLAND_BAN_REMOVE, payload -> emptyResponse(islandOperator.removeBan(Actor.fromJson(payload), uuid(payload, "islandUuid"), uuid(payload, "playerUuid"))));
-        messenger.register(IslandDistributor.ACTION_ISLAND_COOP_ADD, payload -> emptyResponse(islandOperator.addCoop(Actor.fromJson(payload), uuid(payload, "islandUuid"), uuid(payload, "playerUuid"))));
-        messenger.register(IslandDistributor.ACTION_ISLAND_COOP_REMOVE, payload -> emptyResponse(islandOperator.removeCoop(Actor.fromJson(payload), uuid(payload, "islandUuid"), uuid(payload, "playerUuid"))));
-        messenger.register(IslandDistributor.ACTION_ISLAND_LOCK_TOGGLE, payload -> islandOperator.toggleIslandLock(Actor.fromJson(payload), uuid(payload, "islandUuid")).thenApply(locked -> new JSONObject().put("locked", locked)));
-        messenger.register(IslandDistributor.ACTION_ISLAND_PVP_TOGGLE, payload -> islandOperator.toggleIslandPvp(Actor.fromJson(payload), uuid(payload, "islandUuid")).thenApply(pvp -> new JSONObject().put("pvp", pvp)));
-        messenger.register(IslandDistributor.ACTION_ISLAND_EXPEL, payload -> emptyResponse(islandOperator.expelPlayer(Actor.fromJson(payload), uuid(payload, "islandUuid"), uuid(payload, "playerUuid"))));
-        messenger.register(IslandDistributor.ACTION_ISLAND_HOME_SET, payload -> emptyResponse(islandOperator.setHome(Actor.fromJson(payload), uuid(payload, "islandUuid"), uuid(payload, "playerUuid"), payload.getString("homeName"), payload.getString("homeLocation"))));
-        messenger.register(IslandDistributor.ACTION_ISLAND_HOME_DELETE, payload -> emptyResponse(islandOperator.deleteHome(uuid(payload, "islandUuid"), uuid(payload, "playerUuid"), payload.getString("homeName"))));
-        messenger.register(IslandDistributor.ACTION_ISLAND_WARP_SET, payload -> emptyResponse(islandOperator.setWarp(Actor.fromJson(payload), uuid(payload, "islandUuid"), payload.getString("warpName"), payload.getString("warpLocation"))));
-        messenger.register(IslandDistributor.ACTION_ISLAND_WARP_DELETE, payload -> emptyResponse(islandOperator.deleteWarp(Actor.fromJson(payload), uuid(payload, "islandUuid"), payload.getString("warpName"))));
-        messenger.register(IslandDistributor.ACTION_ISLAND_UPGRADE_SET, payload -> emptyResponse(islandOperator.setUpgradeLevel(Actor.fromJson(payload), uuid(payload, "islandUuid"), payload.getString("upgradeId"), payload.getInt("expectedLevel"), payload.getInt("newLevel"))));
-        messenger.register(IslandDistributor.ACTION_ISLAND_UPGRADE_BUY, payload -> emptyResponse(islandOperator.buyUpgrade(Actor.fromJson(payload), uuid(payload, "islandUuid"), uuid(payload, "payerUuid"), payload.getString("upgradeId"), payload.getInt("expectedLevel"), payload.getInt("newLevel"), payload.getDouble("price"))));
+    private void registerCrossServerHandlers(CrossServerMessenger messenger, CoreHandler core, PlayerHandler players, CoopHandler coops, TeleportHandler teleports) {
+        messenger.register(IslandDistributor.ACTION_ISLAND_CREATE, payload -> emptyResponse(core.createIsland(uuid(payload, "islandUuid"), uuid(payload, "ownerUuid"))));
+        messenger.register(IslandDistributor.ACTION_ISLAND_TELEPORT_PREPARE, payload -> teleports.prepareTeleport(uuid(payload, "playerUuid"), payload.getString("teleportWorld"), payload.getString("teleportLocation")).thenApply(teleported -> new JSONObject().put("teleported", teleported)));
+        messenger.register(IslandDistributor.ACTION_INVITATION_ACCEPT, payload -> {
+            UUID playerUuid = uuid(payload, "playerUuid");
+            return emptyResponse(players.addMember(new Actor.Player(playerUuid), uuid(payload, "islandUuid"), playerUuid, "member"));
+        });
+        messenger.register(IslandDistributor.ACTION_COOP_QUIT, payload -> emptyResponse(coops.unCoopPlayer(new Actor.Bypass("coop quit cleanup"), uuid(payload, "islandUuid"), uuid(payload, "playerUuid"))));
         messenger.register(IslandDistributor.ACTION_PLAYER_CONNECT, payload -> emptyResponse(ServerUtil.connectToServer(this, uuid(payload, "playerUuid"), payload.getString("targetServer"))));
     }
 
@@ -292,8 +278,8 @@ public class AdvancedSky extends JavaPlugin {
             crossServerMessenger.stop();
         }
 
-        if (islandOperator != null) {
-            islandOperator.abortCreates();
+        if (coreHandler != null) {
+            coreHandler.abortCreates();
         }
 
         if (onlinePlayerRegistry != null) {
@@ -323,11 +309,11 @@ public class AdvancedSky extends JavaPlugin {
         info("Plugin configs reloaded!");
     }
 
-    public CompletableFuture<IslandOperator.DeletionResult> purgeDeletedRegions() {
-        if (config.isLobbyOnly() || islandOperator == null) {
+    public CompletableFuture<CoreHandler.DeletionResult> purgeDeletedRegions() {
+        if (config.isLobbyOnly() || coreHandler == null) {
             return CompletableFuture.failedFuture(new IllegalStateException("Run region purge on an island server"));
         }
-        return islandOperator.retryDeletions();
+        return coreHandler.retryDeletions();
     }
 
     @SuppressWarnings("unused")

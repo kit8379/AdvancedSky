@@ -30,7 +30,7 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
- * Applies island changes to this server's island world. Only called by {@code IslandOperator} for
+ * Applies island changes to this server's island world. Called by the local island handlers for
  * islands hosted here.
  * <p>
  * Creating an island copies the template built in the template world onto the island centre;

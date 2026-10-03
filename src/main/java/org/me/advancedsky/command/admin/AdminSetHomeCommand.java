@@ -4,6 +4,7 @@ import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.exceptions.IslandNotHostedHereException;
 import org.me.advancedsky.api.AdvancedSkyAPI;
 import org.me.advancedsky.command.AsyncTabComplete;
 import org.me.advancedsky.command.SubCommand;
@@ -83,7 +84,9 @@ public class AdminSetHomeCommand implements SubCommand, AsyncTabComplete {
             return api.admin(sender).setHome(targetUuidOpt.get(), homeName, loc).thenRun(() -> sender.sendMessage(config.getAdminSetHomeSuccessMessage(homePlayerName, homeName)));
         }).exceptionally(ex -> {
             Throwable cause = ex.getCause();
-            if (cause instanceof IslandDoesNotExistException) {
+            if (cause instanceof IslandNotHostedHereException wrongHost) {
+                sender.sendMessage(config.getIslandNotHostedHereMessage(wrongHost.getServer()));
+            } else if (cause instanceof IslandDoesNotExistException) {
                 sender.sendMessage(config.getAdminNoIslandMessage(homePlayerName));
             } else if (cause instanceof LocationNotInIslandException) {
                 sender.sendMessage(config.getAdminMustInIslandSetHomeMessage(homePlayerName));

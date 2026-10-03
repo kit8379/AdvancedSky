@@ -1,4 +1,4 @@
-package org.me.advancedsky.network;
+package org.me.advancedsky.island;
 
 import org.bukkit.entity.Player;
 import org.junit.jupiter.api.Test;
@@ -7,10 +7,9 @@ import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.model.Island;
+import org.me.advancedsky.thread.BukkitAsyncExecutor;
 import org.me.advancedsky.world.WorldHandler;
 import org.mockito.ArgumentCaptor;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
 
 import java.util.Map;
 import java.util.Optional;
@@ -19,7 +18,10 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Predicate;
 
-class IslandOperatorLockTest {
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+class CoreHandlerLockTest {
     private static final int SLOT = 4;
     private final UUID island = UUID.randomUUID();
     private final UUID owner = UUID.randomUUID();
@@ -31,9 +33,13 @@ class IslandOperatorLockTest {
     private final DatabaseHandler database = mock(DatabaseHandler.class);
     private final IslandCache cache = mock(IslandCache.class);
     private final WorldHandler worlds = mock(WorldHandler.class);
-    private final IslandOperator operator = new IslandOperator(plugin, database, worlds, null, cache, null, null, "local");
+    private final CoreHandler core = new CoreHandler(plugin, null, database, null, cache, new LocalIslandTasks(plugin, database, cache, "local"), worlds, null, "local");
 
-    IslandOperatorLockTest() {
+    CoreHandlerLockTest() {
+        BukkitAsyncExecutor async = mock(BukkitAsyncExecutor.class);
+        doAnswer(call -> { call.<Runnable>getArgument(0).run(); return null; }).when(async).execute(any());
+        when(plugin.getBukkitAsyncExecutor()).thenReturn(async);
+        when(database.getIslandServer(island)).thenReturn(Optional.of("local"));
         when(database.toggleIslandLock(actor, island)).thenReturn(true);
         when(database.getIslandSlot(island)).thenReturn(Optional.of(SLOT));
         when(cache.reload(island)).thenReturn(CompletableFuture.completedFuture(null));
@@ -44,7 +50,7 @@ class IslandOperatorLockTest {
     void lockingEvictsByTheReloadedCacheWithoutReadingTheDatabase() {
         when(cache.get(island)).thenReturn(new Island(island, SLOT, true, false, owner, Set.of(member), Set.of(coop), Set.of(), Map.of(), null, 1, 1));
 
-        assertTrue(operator.toggleIslandLock(actor, island).join());
+        assertTrue(core.toggleIslandLock(actor, island).join());
 
         Predicate<Player> evicts = capturedPredicate();
         assertFalse(evicts.test(player(owner)));
@@ -61,7 +67,7 @@ class IslandOperatorLockTest {
         when(database.getIslandPlayers(island)).thenReturn(Map.of(owner, "owner", member, "member"));
         when(database.getIslandCoops(island)).thenReturn(Set.of(coop));
 
-        assertTrue(operator.toggleIslandLock(actor, island).join());
+        assertTrue(core.toggleIslandLock(actor, island).join());
 
         Predicate<Player> evicts = capturedPredicate();
         assertFalse(evicts.test(player(owner)));
@@ -74,7 +80,7 @@ class IslandOperatorLockTest {
     void unlockingEvictsNobody() {
         when(database.toggleIslandLock(actor, island)).thenReturn(false);
 
-        assertFalse(operator.toggleIslandLock(actor, island).join());
+        assertFalse(core.toggleIslandLock(actor, island).join());
 
         verifyNoInteractions(worlds);
     }

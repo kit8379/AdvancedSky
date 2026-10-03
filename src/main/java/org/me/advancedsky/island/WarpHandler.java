@@ -25,14 +25,16 @@ public class WarpHandler {
     private final IslandDistributor islandDistributor;
     private final OnlinePlayerRegistry onlinePlayerRegistry;
     private final IslandGrid islandGrid;
+    private final LocalIslandTasks tasks;
 
-    public WarpHandler(AdvancedSky plugin, ConfigHandler config, DatabaseHandler database, IslandDistributor islandDistributor, OnlinePlayerRegistry onlinePlayerRegistry, IslandGrid islandGrid) {
+    public WarpHandler(AdvancedSky plugin, ConfigHandler config, DatabaseHandler database, IslandDistributor islandDistributor, OnlinePlayerRegistry onlinePlayerRegistry, IslandGrid islandGrid, LocalIslandTasks tasks) {
         this.plugin = plugin;
         this.config = config;
         this.database = database;
         this.islandDistributor = islandDistributor;
         this.onlinePlayerRegistry = onlinePlayerRegistry;
         this.islandGrid = islandGrid;
+        this.tasks = tasks;
     }
 
     /**
@@ -56,12 +58,18 @@ public class WarpHandler {
 
             String warpLocation = location.getX() + "," + location.getY() + "," + location.getZ() + "," + location.getYaw() + "," + location.getPitch();
 
-            return islandDistributor.setWarp(actor, islandUuid, normalizedWarpName, warpLocation);
+            return tasks.<Void>mutate(islandUuid, () -> {
+                database.updateWarpPoint(actor, islandUuid, normalizedWarpName, warpLocation);
+                return null;
+            });
         }, plugin.getBukkitAsyncExecutor()).thenCompose(future -> future);
     }
 
     public CompletableFuture<Void> delWarp(Actor actor, UUID islandUuid, String warpName) {
-        return CompletableFuture.supplyAsync(() -> islandDistributor.deleteWarp(actor, islandUuid, warpName.toLowerCase(Locale.ROOT)), plugin.getBukkitAsyncExecutor()).thenCompose(future -> future);
+        return tasks.mutate(islandUuid, () -> {
+            database.deleteWarpPoint(actor, islandUuid, warpName.toLowerCase(Locale.ROOT));
+            return null;
+        });
     }
 
     /**

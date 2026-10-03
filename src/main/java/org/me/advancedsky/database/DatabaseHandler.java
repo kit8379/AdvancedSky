@@ -872,7 +872,7 @@ public class DatabaseHandler {
      * Writes nothing for an island deleted while it was scanned.
      */
     public void updateIslandLevel(UUID islandUuid, int level) {
-        executeUpdate("INSERT INTO " + prefix + "island_levels (island_uuid, level) SELECT island_uuid, ? FROM " + prefix + "islands WHERE island_uuid = ? " + "ON DUPLICATE KEY UPDATE level = ?;", stmt -> {
+        executeUpdate("INSERT INTO " + prefix + "island_levels (island_uuid, level) SELECT island_uuid, ? FROM " + prefix + "islands WHERE island_uuid = ? AND deleting = FALSE " + "ON DUPLICATE KEY UPDATE level = ?;", stmt -> {
             stmt.setInt(1, level);
             stmt.setString(2, islandUuid.toString());
             stmt.setInt(3, level);
@@ -947,21 +947,25 @@ public class DatabaseHandler {
         });
     }
 
-    /** Keep the row and membership while the host clears the island's physical area. */
+    /** Detach all players and remove island data, keeping only the row that reserves its area. */
     public void beginIslandDeletion(Actor actor, UUID islandUuid) {
         inTransaction(connection -> {
             lockIsland(connection, islandUuid, true);
             requireRole(actor, connection, islandUuid, RequiredRole.OWNER);
             executeUpdate(connection, "UPDATE " + prefix + "islands SET deleting = TRUE WHERE island_uuid = ?", stmt -> stmt.setString(1, islandUuid.toString()));
+            // Homes cascade from membership. Removing it now lets owners and members create or
+            // join another island while this island's host is still clearing its region files.
+            for (String table : List.of("island_players", "island_warps", "island_bans", "island_coops", "island_levels", "island_upgrades")) {
+                executeUpdate(connection, "DELETE FROM " + prefix + table + " WHERE island_uuid = ?", stmt -> stmt.setString(1, islandUuid.toString()));
+            }
             return null;
         });
     }
 
-    /** Called by the host only after physical cleanup has succeeded. */
-    public void deleteIsland(Actor actor, UUID islandUuid) {
+    /** Releases the reserved area after physical cleanup; player authorization happened at begin. */
+    public void finishIslandDeletion(UUID islandUuid) {
         inTransaction(connection -> {
             lockIsland(connection, islandUuid, true);
-            requireRole(actor, connection, islandUuid, RequiredRole.OWNER);
             int deleted = executeUpdate(connection, "DELETE FROM " + prefix + "islands WHERE island_uuid = ? AND deleting = TRUE", stmt -> stmt.setString(1, islandUuid.toString()));
             if (deleted != 1) throw new IllegalStateException("Island deletion has not begun: " + islandUuid);
             return null;

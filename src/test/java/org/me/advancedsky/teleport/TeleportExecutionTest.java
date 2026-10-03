@@ -1,4 +1,4 @@
-package org.me.advancedsky.network;
+package org.me.advancedsky.teleport;
 
 import io.papermc.paper.threadedregions.scheduler.EntityScheduler;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
@@ -8,12 +8,12 @@ import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.cache.IslandCache;
+import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.exceptions.TeleportCancelledException;
 import org.me.advancedsky.teleport.TeleportHandler;
-import org.me.advancedsky.cache.IslandCache;
-import org.me.advancedsky.world.WorldHandler;
-import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.thread.GlobalRegionExecutor;
+import org.me.advancedsky.world.WorldHandler;
 import org.mockito.InOrder;
 import org.mockito.MockedStatic;
 
@@ -25,16 +25,15 @@ import java.util.function.Consumer;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-class IslandOperatorTeleportTest {
+class TeleportExecutionTest {
     private final UUID playerUuid = UUID.randomUUID();
     private final AdvancedSky plugin = mock(AdvancedSky.class);
     private final World world = mock(World.class);
     private final Player player = mock(Player.class);
     private final EntityScheduler scheduler = mock(EntityScheduler.class);
-    private final TeleportHandler teleports = new TeleportHandler();
-    private final IslandOperator operator = new IslandOperator(plugin, null, null, teleports, null, null, null, "local");
+    private final TeleportHandler teleports = new TeleportHandler(plugin, null, null);
 
-    IslandOperatorTeleportTest() {
+    TeleportExecutionTest() {
         GlobalRegionExecutor global = mock(GlobalRegionExecutor.class);
         doAnswer(call -> {
             call.<Runnable>getArgument(0).run();
@@ -83,7 +82,7 @@ class IslandOperatorTeleportTest {
         IslandCache cache = mock(IslandCache.class);
         when(worlds.isIslandLocation(any())).thenReturn(true);
         when(cache.isDeletingAt(any())).thenReturn(true);
-        IslandOperator deleting = new IslandOperator(plugin, null, worlds, teleports, cache, null, null, "local");
+        TeleportHandler deleting = new TeleportHandler(plugin, worlds, cache);
         try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
             bukkit.when(() -> Bukkit.getWorld("skyblock")).thenReturn(world);
             var error = assertThrows(CompletionException.class, () -> deleting.prepareTeleport(playerUuid, "skyblock", "1.5,70.0,1.5,0.0,0.0").join());
@@ -104,7 +103,7 @@ class IslandOperatorTeleportTest {
         try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
             bukkit.when(() -> Bukkit.getPlayer(playerUuid)).thenReturn(player);
             bukkit.when(() -> Bukkit.getWorld("skyblock")).thenReturn(world);
-            return operator.prepareTeleport(playerUuid, "skyblock", "1.5,70.0,1.5,0.0,0.0");
+            return teleports.prepareTeleport(playerUuid, "skyblock", "1.5,70.0,1.5,0.0,0.0");
         }
     }
 }

@@ -17,11 +17,14 @@ import java.util.concurrent.CompletableFuture;
  * /is
  */
 public class IslandPlayerCommand implements CommandExecutor, AsyncCommandTabRouter {
+    private static final Set<String> OWN_ISLAND_COMMANDS = Set.of("delete", "invite", "removemember", "setowner", "leave", "lock", "pvp", "expel", "ban", "unban", "coop", "uncoop", "sethome", "delhome", "setwarp", "delwarp", "biome", "upgrade");
+    private final AdvancedSkyAPI api;
     private final ConfigHandler config;
     private final Map<String, SubCommand> subCommandMap = new HashMap<>();
     private final Set<SubCommand> subCommands = new HashSet<>();
 
     public IslandPlayerCommand(AdvancedSky plugin, AdvancedSkyAPI api, ConfigHandler config) {
+        this.api = api;
         this.config = config;
 
         subCommands.add(new PlayerCreateIslandCommand(plugin, api, config));
@@ -165,6 +168,18 @@ public class IslandPlayerCommand implements CommandExecutor, AsyncCommandTabRout
             return true;
         }
 
+        // Check the canonical command name, so aliases obey the same rule. This callback runs
+        // on the player's thread and the lookup reads only the host's active island cache.
+        if (OWN_ISLAND_COMMANDS.contains(target.getName())) {
+            if (!(sender instanceof Player player)) {
+                sender.sendMessage(config.getOnlyPlayerCanRunCommandMessage());
+                return true;
+            }
+            if (!api.isOnOwnIsland(player.getUniqueId(), player.getLocation())) {
+                player.sendMessage(config.getPlayerMustOnOwnIslandMessage());
+                return true;
+            }
+        }
         boolean success = target.execute(sender, args);
         if (!success) {
             sender.sendMessage(config.getPlayerCommandUsageMessage(target.getName(), target.getSyntax()));

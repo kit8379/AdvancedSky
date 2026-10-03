@@ -16,8 +16,8 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * Operator-level actions on arbitrary islands and players, exempt from every player-facing rule.
- * Obtained via {@code api.admin(sender)} - the sender's name travels with each write into logs
- * and cross-server payloads, which is the only accountability a bypass has.
+ * Obtained via {@code api.admin(sender)}. Management runs on the target island's host; creation
+ * and travel can span servers. The sender's name identifies each bypass in logs.
  */
 public final class AdminActions {
 
@@ -49,6 +49,7 @@ public final class AdminActions {
         return coreHandler.createIsland(ownerPlayerUuid);
     }
 
+    /** Completes after logical deletion; the host continues clearing the reserved area. */
     public CompletableFuture<Void> deleteIsland(UUID islandUuid) {
         return coreHandler.deleteIsland(actor, islandUuid);
     }

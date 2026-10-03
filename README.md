@@ -3,8 +3,10 @@
 Multi-server Skyblock for Paper **and Folia**. Every island is created on one island server and
 stays there for its whole life, so no world is ever loaded or unloaded at runtime.
 
-AdvancedSky has NewSky's feature set and code structure (commands → API → handlers →
-`IslandDistributor` → `IslandOperator` → database / world). What differs is where islands live:
+Local management runs commands → API → feature handlers → database / world, sharing only
+per-island ordering and cache refresh. `IslandDistributor` routes creation, travel, invitation
+acceptance and automatic co-op quit cleanup; incoming requests call the feature handlers directly.
+AdvancedSky has NewSky's feature set. What differs is where islands live:
 NewSky gives each island its own Advanced Slime Paper world and moves it between servers on
 demand; AdvancedSky keeps every island of a server in one pre-loaded world, on a fixed grid.
 
@@ -18,14 +20,14 @@ demand; AdvancedSky keeps every island of a server in one pre-loaded world, on a
   agree (NTP), because a request between servers is refused once it is ten seconds old.
 - **MySQL is the source of truth.** An island row holds its host server and its grid slot; its
   players, homes, warps, bans, co-ops, level and upgrades live in NewSky's tables. Slots are
-  unique across live islands in the network. A deleting island keeps its row and slot until
-  physical cleanup succeeds. Creation chooses the first gap in the occupied slots; no
-  separate slot-recycling table is needed.
+  unique across live islands in the network. A deleting island immediately releases its players
+  and data, keeping only its row and slot until physical cleanup succeeds. Creation chooses the
+  first gap in the occupied slots; no separate slot-recycling table is needed.
 - **The host does the work.** Every change to an island runs on the server that hosts it, in one
   serial chain per island: it writes MySQL, applies the change to its world and refreshes its
-  island cache. Another server asks the host through a Redis Streams request and waits for the
-  answer, so a failure on the host (including a typed one such as "already has an island")
-  reaches the player.
+  island cache. Players manage islands while standing on their own island; admin management
+  also runs on the target island's host. Only creation, travel, invitation acceptance and
+  automatic co-op quit cleanup use Redis Streams requests between servers.
 - **One pre-loaded island world per server.** Islands sit on a square spiral grid; the slot
   number in MySQL maps to a position, so no coordinates are stored. Each island server keeps an
   in-memory cache of all its islands, read in one pass at startup before anyone can join and
@@ -47,7 +49,8 @@ demand; AdvancedSky keeps every island of a server in one pre-loaded world, on a
 
 `/island create` on server A:
 
-1. Async: pick the listed island server with the fewest islands (B).
+1. Async: pick the listed island server with the fewest islands in MySQL (B), using config
+   order to break ties. Concurrent creates may pick the same server before its new rows appear.
 2. If B is A, run the create here; otherwise send an `island.create` request to B and wait.
 3. On B: insert the island row at the first free slot with the owner's `default` home. Clear
    any old files at that position on B, then paste the template on the owning region threads
@@ -61,14 +64,19 @@ destination server to teleport the player. If the player is on another server, t
 keeps the teleport and the player is sent there through the proxy; it fires when they join.
 
 `/island delete` (asked three times, as in NewSky): the host validates ownership under the
-island row lock and sets `deleting = true`, retaining the row, membership and slot. The cache
+island row lock, sets `deleting = true` and removes membership, homes, warps, bans, co-ops,
+levels and upgrades in one transaction. Its row remains only to reserve the old slot. The cache
 blocks entry, edits and island teleports, including operators, while players leave for the
-lobby. The host immediately saves and evicts the area's chunks on their owning region threads,
+lobby. The command completes after this logical deletion, so the former owner and members can
+create or join another island without waiting for cleanup. The host immediately saves and
+evicts the area's chunks on their owning region threads,
 waits for unloaded holders, drains pending writes and closes region-file caches. It deletes
-the region, entity and POI files asynchronously, then deletes the island row and its dependent
-records. Only then is the slot free. The command completes after both steps; there is no
-24-hour sweep or local purge queue. Cross-server create/delete requests allow three minutes
-for this work instead of the ordinary 30 seconds.
+the region, entity and POI files asynchronously, then deletes the reserved island row. Only then
+is the slot free. Cleanup remains in the old island's serial chain; failures are logged and keep
+the reserved row for recovery without preventing its former players from using their new islands.
+There is no 24-hour sweep or local purge queue. Cross-server creation requests allow three
+minutes instead of the ordinary 30 seconds. Deletion runs on the island's host and replies
+after logical deletion, before physical cleanup.
 
 Each island area is exactly one region file. The storage barrier targets Paper/Folia 1.21.11;
 unsupported internals, held chunks or failed file/DB operations retain the deleting row and
@@ -82,7 +90,7 @@ builds are unused and are not automatically dropped.
 - Island create / delete on the least loaded island server
 - Teams: invite, accept, reject, remove member, leave, transfer ownership
 - Co-op, bans, expel, lock, PvP toggle
-- Per-member homes and per-island warps, from any server
+- Per-member homes and per-island warps: travel from any server, edits on the island
 - Island levels from `levels.yml`, `/is top`, `/is value`, and a level scan while players are on
   an island
 - Upgrades bought through Vault: island size, team / co-op / home / warp limits, biome unlocks,
@@ -101,11 +109,14 @@ builds are unused and are not automatically dropped.
 - MySQL / MariaDB (MySQL 8.0+ or MariaDB 10.2.4+, which keep AUTO_INCREMENT across restarts)
 - Redis 5.0 or newer (Streams)
 - Vault with an economy plugin whose balances are shared by every server: an upgrade is paid on
-  the server hosting the island, wherever the buyer is
+  the server hosting the island, while the buyer is on their island
 - Velocity or BungeeCord with the BungeeCord plugin message channel enabled (Velocity: `bungee-plugin-message-channel = true`)
 - PlaceholderAPI (optional)
 
 Runtime libraries (MySQL driver, HikariCP, Jedis) are downloaded by the plugin loader on first start.
+
+Update every AdvancedSky server in the network together: versions with cross-server island
+management use a different request protocol from this version.
 
 ## Configuration
 
@@ -138,6 +149,13 @@ Command aliases, permissions, syntax and descriptions are in `commands.yml`; mes
 
 Base command: `/island`, alias `/is`. Admin: `/islandadmin`, alias `/isadmin`.
 `command.base-command-mode` decides whether a bare `/is` shows help or teleports home.
+
+Island management commands (`delete`, `invite`, `removemember`, `setowner`, `leave`, `lock`,
+`pvp`, `expel`, `ban`, `unban`, `coop`, `uncoop`, `sethome`, `delhome`, `setwarp`, `delwarp`,
+`biome`, `upgrade`) require the player to stand on their own active island. Owners and team
+members qualify; co-ops, visitors and operators using the player commands do not bypass this
+rule. Aliases follow the same rule. Use `/is home` to return first. Creation, invitation
+acceptance/rejection, travel and other read-only commands remain available elsewhere.
 
 ### Player
 
@@ -203,6 +221,11 @@ the server hosting it, inside its 512x512 area.
 | `/isadmin lobby <player>` | `.lobby` | Send a player to the lobby |
 | `/isadmin reload` | `.reload` | Reload the config files; `server.name`, the server lists, `island.world`, the database and Redis settings and `commands.yml` take a restart |
 | `/isadmin help [page]` | `.help` | Admin command list |
+
+Admin commands that modify an existing island must run on that island's host server, including
+from the console. Admins do not have to stand on the target island, except when setting a
+location-dependent home or warp. A command run on another server names the required host.
+Admin creation, travel and read-only queries remain available across the network.
 
 NewSky's `load` and `unload` do not exist: islands never leave their host.
 
@@ -282,8 +305,10 @@ api.player(playerUuid).createIsland();          // acts as that player, on their
 api.admin(sender).deleteIsland(islandUuid);     // arbitrary target, sender's name in logs
 ```
 
-`player(uuid)` can only act as that player on that player's own island; `admin(sender)` takes
-arbitrary targets. Homes, warps and biomes are set at a `Location`, which must lie on the
+`player(uuid)` can only act as that player on that player's own island. Island management
+checks the player's actual current location through their entity scheduler, including calls
+from other plugins. `admin(sender)` takes arbitrary targets on the calling server; creation
+and travel can span servers. Homes, warps and biomes are set at a `Location`, which must lie on the
 island on the server hosting it (admin biomes: any chunk). `getIslandUuidAt(location)` finds the
 island under a location among the islands hosted on the server it runs on. Completions can land on any thread; hop to the right
 region thread yourself before touching world, entity or inventory state.

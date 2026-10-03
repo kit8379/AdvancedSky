@@ -2,6 +2,7 @@ package org.me.advancedsky.command.admin;
 
 import org.bukkit.command.CommandSender;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.exceptions.IslandNotHostedHereException;
 import org.me.advancedsky.api.AdvancedSkyAPI;
 import org.me.advancedsky.command.AsyncTabComplete;
 import org.me.advancedsky.command.SubCommand;
@@ -75,7 +76,9 @@ public class AdminDelWarpCommand implements SubCommand, AsyncTabComplete {
             return api.getIslandUuid(targetUuid).thenCompose(islandUuid -> api.admin(sender).deleteWarp(islandUuid, warpName)).thenRun(() -> sender.sendMessage(config.getAdminDelWarpSuccessMessage(warpPlayerName, warpName)));
         }).exceptionally(ex -> {
             Throwable cause = ex.getCause();
-            if (cause instanceof IslandDoesNotExistException) {
+            if (cause instanceof IslandNotHostedHereException wrongHost) {
+                sender.sendMessage(config.getIslandNotHostedHereMessage(wrongHost.getServer()));
+            } else if (cause instanceof IslandDoesNotExistException) {
                 sender.sendMessage(config.getAdminNoIslandMessage(warpPlayerName));
             } else if (cause instanceof WarpDoesNotExistException) {
                 sender.sendMessage(config.getNoWarpMessage(warpPlayerName, warpName));

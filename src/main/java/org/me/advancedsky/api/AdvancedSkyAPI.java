@@ -21,7 +21,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li><b>Writes go through {@link #player(UUID)} or {@link #admin(CommandSender)}</b>. The
  *       player handle acts as that player only, on that player's own island only - anything else
  *       is unrepresentable, not merely checked. The admin handle acts on arbitrary targets and
- *       carries the sender's name into logs and cross-server payloads.</li>
+ *       carries the sender's name into logs. Player management requires being on one's own
+ *       island; admin management requires running on the target island's host.</li>
  *   <li><b>Reads live on this class</b> - island state is not secret, and a read changes
  *       nothing.</li>
  * </ul>
@@ -71,6 +72,11 @@ public class AdvancedSkyAPI {
     @SuppressWarnings("unused")
     public PlayerActions player(UUID playerUuid) {
         return new PlayerActions(playerUuid, playerChains, coreHandler, playerHandler, homeHandler, warpHandler, banHandler, coopHandler, biomeHandler, upgradeHandler);
+    }
+
+    /** Checks a player-thread location snapshot against this server's active island cache. */
+    public boolean isOnOwnIsland(UUID playerUuid, Location location) {
+        return coreHandler.getOwnIslandAt(playerUuid, location) != null;
     }
 
     /** Act as an operator: arbitrary targets, no player rules, the sender's name goes to logs. */

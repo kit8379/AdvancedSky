@@ -1616,6 +1616,14 @@ public class ConfigHandler {
         return ColorUtils.colorize(messages.getString("messages.player-no-island"));
     }
 
+    public Component getPlayerMustOnOwnIslandMessage() {
+        return ColorUtils.colorize(messages.getString("messages.player-must-on-own-island"));
+    }
+
+    public Component getIslandNotHostedHereMessage(String server) {
+        return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.island-not-hosted-here")).replace("{server}", server));
+    }
+
     public Component getPlayerAlreadyHasIslandMessage() {
         return ColorUtils.colorize(messages.getString("messages.player-already-has-island"));
     }

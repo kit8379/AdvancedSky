@@ -22,8 +22,6 @@ public final class CrossServerMessenger {
     private static final String FIELD_MESSAGE = "message";
     private static final long REQUEST_TIMEOUT_SECONDS = 30L;
     private static final long MAX_MESSAGE_AGE_MILLIS = REQUEST_TIMEOUT_SECONDS * 1000L;
-    // A request is only started while its requester has most of its wait left, so the answer
-    // reaches it before it gives up and acts on a failure the host never had.
     private static final long MAX_REQUEST_AGE_MILLIS = MAX_MESSAGE_AGE_MILLIS / 3;
     private static final int INBOX_MAX_LEN = 1000;
     private static final int READ_BLOCK_MILLIS = 1000;
@@ -59,8 +57,8 @@ public final class CrossServerMessenger {
             }
         });
 
-        // Physical clearing may wait up to two minutes for player transfers/chunk eviction.
-        long timeout = action.equals("island.delete") || action.equals("island.create") ? 180L : REQUEST_TIMEOUT_SECONDS;
+        // Creation includes clearing the reserved area and pasting its template.
+        long timeout = action.equals("island.create") ? 180L : REQUEST_TIMEOUT_SECONDS;
         future.orTimeout(timeout, TimeUnit.SECONDS).whenComplete((result, throwable) -> pendingRequests.remove(message.getMessageId()));
         return future;
     }

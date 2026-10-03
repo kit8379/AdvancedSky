@@ -5,13 +5,16 @@ import org.bukkit.World;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.island.CoreHandler;
 import org.me.advancedsky.island.WarpHandler;
+import org.me.advancedsky.exceptions.PlayerNotOnOwnIslandException;
 import org.me.advancedsky.model.Actor;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CompletionException;
 
 import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 class WarpActionsTest {
     // Location only holds its world weakly.
@@ -19,12 +22,24 @@ class WarpActionsTest {
     private final Location location = new Location(world, 1, 2, 3);
 
     @Test
+    void directApiCallsCannotWriteWarpsWhileThePlayerIsElsewhere() {
+        UUID player = UUID.randomUUID();
+        CoreHandler core = mock(CoreHandler.class);
+        WarpHandler warps = mock(WarpHandler.class);
+        when(core.getOwnIslandHere(player)).thenReturn(CompletableFuture.failedFuture(new PlayerNotOnOwnIslandException()));
+        PlayerActions actions = new PlayerActions(player, new ConcurrentHashMap<>(), core, null, null, warps, null, null, null, null);
+        assertInstanceOf(PlayerNotOnOwnIslandException.class, assertThrows(CompletionException.class, () -> actions.setWarp("shop", location).join()).getCause());
+        assertInstanceOf(PlayerNotOnOwnIslandException.class, assertThrows(CompletionException.class, () -> actions.deleteWarp("shop").join()).getCause());
+        verifyNoInteractions(warps);
+    }
+
+    @Test
     void playerWritesResolveOwnIslandAndKeepActorIdentity() {
         UUID player = UUID.randomUUID();
         UUID island = UUID.randomUUID();
         CoreHandler core = mock(CoreHandler.class);
         WarpHandler warps = mock(WarpHandler.class);
-        when(core.getIslandUuid(player)).thenReturn(CompletableFuture.completedFuture(island));
+        when(core.getOwnIslandHere(player)).thenReturn(CompletableFuture.completedFuture(island));
         when(warps.setWarp(any(), any(), anyString(), any(Location.class))).thenReturn(CompletableFuture.completedFuture(null));
         when(warps.delWarp(any(), any(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
         PlayerActions actions = new PlayerActions(player, new ConcurrentHashMap<>(), core, null, null, warps, null, null, null, null);

@@ -21,6 +21,8 @@ import java.util.function.Supplier;
  * <p>
  * Island roles (OWNER for delete/transfer, MEMBER for the rest) are still enforced where they
  * must be: inside the write transaction, under the island row lock.
+ * Management requires the player to stand on their own island on this server. Creation,
+ * invitation acceptance/rejection and travel remain available from elsewhere.
  */
 public final class PlayerActions {
 
@@ -51,9 +53,8 @@ public final class PlayerActions {
     }
 
     /**
-     * Runs the player's actions one after another, in the order they asked for them, so one
-     * asked right after another (a home deleted just after it was set) cannot overtake it on its
-     * way to the island's host.
+     * Runs the player's actions one after another, so a home deletion cannot overtake its set
+     * and a create cannot overtake the logical deletion of the player's previous island.
      */
     private <T> CompletableFuture<T> inOrder(Supplier<CompletableFuture<T>> action) {
         CompletableFuture<Void> done = new CompletableFuture<>();
@@ -65,13 +66,11 @@ public final class PlayerActions {
     }
 
     /**
-     * The island every island-scoped write on this handle targets. Resolved here, right before
-     * the write, rather than by the caller: fresher than a pre-resolved uuid, and it makes
-     * "another island" unrepresentable. Fails with IslandDoesNotExistException when the player
-     * has none.
+     * Resolves the player's own island from their current location on their entity thread.
+     * An offline player, visitor, co-op or player elsewhere cannot manage the island.
      */
     private CompletableFuture<UUID> ownIsland() {
-        return coreHandler.getIslandUuid(playerUuid);
+        return coreHandler.getOwnIslandHere(playerUuid);
     }
 
     // ---- island lifecycle -------------------------------------------------------------------
@@ -81,7 +80,8 @@ public final class PlayerActions {
     }
 
     /**
-     * OWNER, enforced in the delete transaction.
+     * OWNER, enforced in the delete transaction. Completes after logical deletion, so the player
+     * can create another island while the old area's physical cleanup continues on its host.
      */
     public CompletableFuture<Void> deleteIsland() {
         return inOrder(() -> ownIsland().thenCompose(islandUuid -> coreHandler.deleteIsland(actor, islandUuid)));
@@ -114,7 +114,7 @@ public final class PlayerActions {
             }
 
             Invitation pending = invite.get();
-            return playerHandler.removePendingInvite(playerUuid).thenCompose(v -> playerHandler.addMember(actor, pending.getIslandUuid(), playerUuid, "member")).thenApply(v -> Optional.of(pending));
+            return playerHandler.removePendingInvite(playerUuid).thenCompose(v -> playerHandler.acceptInviteMember(pending.getIslandUuid(), playerUuid)).thenApply(v -> Optional.of(pending));
         }));
     }
 
@@ -191,11 +191,11 @@ public final class PlayerActions {
      * At a location on this player's own island, on the server hosting it.
      */
     public CompletableFuture<Void> setHome(String homeName, Location location) {
-        return inOrder(() -> homeHandler.setHome(actor, playerUuid, homeName, location));
+        return inOrder(() -> ownIsland().thenCompose(islandUuid -> homeHandler.setHome(actor, playerUuid, homeName, location)));
     }
 
     public CompletableFuture<Void> deleteHome(String homeName) {
-        return inOrder(() -> homeHandler.delHome(playerUuid, homeName));
+        return inOrder(() -> ownIsland().thenCompose(islandUuid -> homeHandler.delHome(islandUuid, playerUuid, homeName)));
     }
 
     public CompletableFuture<Void> home(String homeName) {
@@ -227,7 +227,7 @@ public final class PlayerActions {
      * server hosting it.
      */
     public CompletableFuture<Void> applyBiome(Location location, String biomeName) {
-        return inOrder(() -> biomeHandler.applyPlayerChunkBiome(playerUuid, location, biomeName));
+        return inOrder(() -> ownIsland().thenCompose(islandUuid -> biomeHandler.applyPlayerChunkBiome(playerUuid, location, biomeName)));
     }
 
     // ---- upgrades ---------------------------------------------------------------------------

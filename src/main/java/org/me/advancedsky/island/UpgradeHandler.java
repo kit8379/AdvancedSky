@@ -10,10 +10,10 @@ import org.me.advancedsky.exceptions.UpgradeLevelDoesNotExistException;
 import org.me.advancedsky.exceptions.UpgradeMaxedException;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.model.Upgrade;
-import org.me.advancedsky.network.IslandDistributor;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 /**
  * Island upgrades: one level per island for each upgrade id in the config, bought with Vault
@@ -25,20 +25,20 @@ public class UpgradeHandler {
     private final AdvancedSky plugin;
     private final ConfigHandler config;
     private final DatabaseHandler database;
-    private final IslandDistributor islandDistributor;
+    private final LocalIslandTasks tasks;
     private final EconomyHandler economy;
 
-    public UpgradeHandler(AdvancedSky plugin, ConfigHandler config, DatabaseHandler database, IslandDistributor islandDistributor, EconomyHandler economy) {
+    public UpgradeHandler(AdvancedSky plugin, ConfigHandler config, DatabaseHandler database, LocalIslandTasks tasks, EconomyHandler economy) {
         this.plugin = plugin;
         this.config = config;
         this.database = database;
-        this.islandDistributor = islandDistributor;
+        this.tasks = tasks;
         this.economy = economy;
     }
 
     /**
-     * Checks the purchase here; the island's host then withdraws the price and compare-and-sets
-     * the level, refunding a failed write itself. Completes with the level bought.
+     * Checks and charges the purchase on the island host, refunding a failed write.
+     * Completes with the level bought.
      */
     public CompletableFuture<Integer> buyUpgrade(Actor actor, UUID islandUuid, UUID payerUuid, String upgradeId) {
         return CompletableFuture.supplyAsync(() -> {
@@ -57,7 +57,7 @@ public class UpgradeHandler {
             }
 
             return new Purchase(current, next, config.getUpgradePrice(upgradeId, next));
-        }, plugin.getBukkitAsyncExecutor()).thenComposeAsync(purchase -> islandDistributor.buyUpgrade(actor, islandUuid, payerUuid, upgradeId, purchase.current(), purchase.next(), purchase.price()).thenApply(v -> purchase.next()), plugin.getBukkitAsyncExecutor());
+        }, plugin.getBukkitAsyncExecutor()).thenComposeAsync(purchase -> purchase(actor, islandUuid, payerUuid, upgradeId, purchase.current(), purchase.next(), purchase.price()).thenApply(v -> purchase.next()), plugin.getBukkitAsyncExecutor());
     }
 
     /**
@@ -75,7 +75,7 @@ public class UpgradeHandler {
             }
 
             return database.getIslandUpgradeLevel(islandUuid, upgradeId);
-        }, plugin.getBukkitAsyncExecutor()).thenComposeAsync(current -> islandDistributor.setUpgradeLevel(actor, islandUuid, upgradeId, current, level), plugin.getBukkitAsyncExecutor());
+        }, plugin.getBukkitAsyncExecutor()).thenComposeAsync(current -> saveLevel(actor, islandUuid, upgradeId, current, level), plugin.getBukkitAsyncExecutor());
     }
 
     public CompletableFuture<Integer> getUpgradeLevel(UUID islandUuid, String upgradeId) {
@@ -112,5 +112,46 @@ public class UpgradeHandler {
     }
 
     private record Progress(int currentLevel, int islandLevel) {
+    }
+
+    private CompletableFuture<Void> saveLevel(Actor actor, UUID islandUuid, String upgradeId, int expectedLevel, int newLevel) {
+        return tasks.mutate(islandUuid, () -> {
+            database.updateIslandUpgradeLevel(actor, islandUuid, upgradeId, expectedLevel, newLevel);
+            return null;
+        });
+    }
+
+    private CompletableFuture<Void> purchase(Actor actor, UUID islandUuid, UUID payerUuid, String upgradeId, int expectedLevel, int newLevel, double price) {
+        return tasks.execute(islandUuid, () -> economy.withdraw(payerUuid, price).thenComposeAsync(v -> tasks.<Void>refresh(islandUuid, () -> {
+            database.updateIslandUpgradeLevel(actor, islandUuid, upgradeId, expectedLevel, newLevel);
+            return null;
+        }).exceptionallyComposeAsync(error -> {
+            // A write whose commit answer was lost may still have landed: then it is paid for.
+            Throwable cause = error instanceof CompletionException && error.getCause() != null ? error.getCause() : error;
+            if (!LocalIslandTasks.isRuleRejection(cause) && hasLevel(islandUuid, upgradeId, newLevel)) {
+                return CompletableFuture.completedFuture(null);
+            }
+            return refund(payerUuid, price, upgradeId).thenCompose(refunded -> CompletableFuture.failedFuture(error));
+        }, plugin.getBukkitAsyncExecutor()), plugin.getBukkitAsyncExecutor()));
+    }
+
+    private boolean hasLevel(UUID islandUuid, String upgradeId, int level) {
+        try {
+            return database.getIslandUpgradeLevel(islandUuid, upgradeId) == level;
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    private CompletableFuture<Void> refund(UUID payerUuid, double amount, String upgradeId) {
+        return economy.deposit(payerUuid, amount).handle((success, error) -> {
+            String message = "Could not refund " + amount + " to " + payerUuid + " after a failed " + upgradeId + " upgrade purchase.";
+            if (error != null) {
+                plugin.severe(message, error);
+            } else if (!success) {
+                plugin.severe(message);
+            }
+            return null;
+        });
     }
 }
