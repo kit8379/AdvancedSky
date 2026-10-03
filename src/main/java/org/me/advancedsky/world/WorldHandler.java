@@ -249,8 +249,7 @@ public class WorldHandler {
     }
 
     /**
-     * Runs the action on the thread that owns the player; a player who left meanwhile yields
-     * the fallback.
+     * Runs the action on the thread that owns the player; a player who left yields ifGone.
      */
     private <T> CompletableFuture<T> onPlayer(Player player, Supplier<T> action, T ifGone) {
         CompletableFuture<T> result = new CompletableFuture<>();

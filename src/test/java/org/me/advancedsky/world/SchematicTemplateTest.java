@@ -3,8 +3,6 @@ package org.me.advancedsky.world;
 import net.kyori.adventure.nbt.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -21,7 +19,7 @@ class SchematicTemplateTest {
     void theBundledUserSchematicDecodesAndFitsTheDefaultIsland() throws IOException {
         try (InputStream input = getClass().getClassLoader().getResourceAsStream(SchematicTemplate.DEFAULT_PATH)) {
             assertNotNull(input);
-            var decoded = SchematicTemplate.decode(BinaryTagIO.reader().read(input, BinaryTagIO.Compression.GZIP), DATA_VERSION);
+            var decoded = SchematicTemplate.decode(BinaryTagIO.reader().read(input, BinaryTagIO.Compression.GZIP).getCompound("Schematic"), DATA_VERSION);
             assertEquals(16, decoded.width());
             assertEquals(23, decoded.height());
             assertEquals(17, decoded.length());
@@ -34,24 +32,19 @@ class SchematicTemplateTest {
         }
     }
 
-    @ParameterizedTest
-    @ValueSource(ints = {2, 3})
-    void readsCompressedWorldEditRootsAndPreservesOffsetsPropertiesAndChestItems(int version) throws IOException {
+    @Test
+    void readsTheV3RootAndPreservesOffsetsPropertiesAndChestItems() throws IOException {
         CompoundBinaryTag items = CompoundBinaryTag.builder().putByte("Slot", (byte) 0)
                 .putString("id", "minecraft:ice").putInt("count", 2).build();
         CompoundBinaryTag payload = CompoundBinaryTag.builder().put("Items", ListBinaryTag.from(List.of(items)))
                 .putString("CustomName", "{\"text\":\"Starter chest\"}").build();
         CompoundBinaryTag.Builder entity = CompoundBinaryTag.builder().putString("Id", "minecraft:chest").putIntArray("Pos", new int[]{1, 0, 0});
-        CompoundBinaryTag chest = (version == 3 ? entity.put("Data", payload) : entity.put(payload)).build();
-        CompoundBinaryTag source = schematic(version, 2, 2, 2, new int[]{-1, -2, -1}, new byte[]{1, 2, 0, 1, 0, 0, 1, 0});
-        if (version == 3) source = source.put("Blocks", source.getCompound("Blocks").put("BlockEntities", ListBinaryTag.from(List.of(chest))));
-        else source = source.put("BlockEntities", ListBinaryTag.from(List.of(chest)))
-                .putIntArray("Offset", new int[]{10000, 60, -20000})
-                .put("Metadata", CompoundBinaryTag.builder().put("WorldEdit", CompoundBinaryTag.builder()
-                        .putIntArray("Offset", new int[]{-1, -2, -1}).build()).build());
+        CompoundBinaryTag chest = entity.put("Data", payload).build();
+        CompoundBinaryTag source = schematic(2, 2, 2, new int[]{-1, -2, -1}, new byte[]{1, 2, 0, 1, 0, 0, 1, 0});
+        source = source.put("Blocks", source.getCompound("Blocks").put("BlockEntities", ListBinaryTag.from(List.of(chest))));
         Path file = folder.resolve("starter.schem");
         write(file, source);
-        var decoded = SchematicTemplate.decode(BinaryTagIO.reader().read(file, BinaryTagIO.Compression.GZIP), DATA_VERSION);
+        var decoded = SchematicTemplate.decode(BinaryTagIO.reader().read(file, BinaryTagIO.Compression.GZIP).getCompound("Schematic"), DATA_VERSION);
         assertEquals(-1, decoded.offsetX());
         assertEquals(-2, decoded.offsetY());
         assertEquals(-1, decoded.offsetZ());
@@ -73,20 +66,10 @@ class SchematicTemplateTest {
     }
 
     @Test
-    void legacyWorldEditV2MetadataOverridesTheOriginalWorldCoordinates() throws IOException {
-        CompoundBinaryTag source = schematic(2, 1, 1, 1, new int[]{10000, 60, -20000}, new byte[]{1})
-                .put("Metadata", CompoundBinaryTag.builder().putInt("WEOffsetX", -3).putInt("WEOffsetY", -2).putInt("WEOffsetZ", -1).build());
-        var decoded = SchematicTemplate.decode(source, DATA_VERSION);
-        assertEquals(-3, decoded.offsetX());
-        assertEquals(-2, decoded.offsetY());
-        assertEquals(-1, decoded.offsetZ());
-        assertDoesNotThrow(() -> decoded.validateBounds(-64, 320, 100));
-    }
-
-    @Test
     void acceptsSparsePaletteIndicesAndMultibyteVarints() throws IOException {
-        CompoundBinaryTag source = schematic(2, 1, 1, 1, new int[3], new byte[]{(byte) 0x80, 1})
-                .put("Palette", CompoundBinaryTag.builder().putInt("minecraft:stone", 128).build());
+        CompoundBinaryTag source = schematic(1, 1, 1, new int[3], new byte[]{(byte) 0x80, 1});
+        source = source.put("Blocks", source.getCompound("Blocks")
+                .put("Palette", CompoundBinaryTag.builder().putInt("minecraft:stone", 128).build()));
         var decoded = SchematicTemplate.decode(source, DATA_VERSION);
         assertEquals(0, decoded.structure().getList("blocks").getCompound(0).getInt("state"));
         assertEquals("minecraft:stone", decoded.structure().getList("palette").getCompound(0).getString("Name"));
@@ -94,21 +77,23 @@ class SchematicTemplateTest {
 
     @Test
     void refusesDamagedBlockDataAndInvalidPalettes() {
-        CompoundBinaryTag source = schematic(2, 1, 1, 1, new int[3], new byte[]{1});
+        CompoundBinaryTag source = schematic(1, 1, 1, new int[3], new byte[]{1});
         for (byte[] data : List.of(new byte[0], new byte[]{(byte) 0x80}, new byte[]{3}, new byte[]{1, 1},
                 new byte[]{(byte) 0xff, (byte) 0xff, (byte) 0xff, (byte) 0xff, (byte) 0x80})) {
-            assertThrows(IOException.class, () -> SchematicTemplate.decode(source.putByteArray("BlockData", data), DATA_VERSION));
+            assertThrows(IOException.class, () -> SchematicTemplate.decode(source.put("Blocks", source.getCompound("Blocks").putByteArray("Data", data)), DATA_VERSION));
         }
-        assertThrows(IOException.class, () -> SchematicTemplate.decode(source.put("Palette", CompoundBinaryTag.builder()
-                .putInt("minecraft:stone", 1).putInt("minecraft:dirt", 1).build()), DATA_VERSION));
+        assertThrows(IOException.class, () -> SchematicTemplate.decode(source.put("Blocks", source.getCompound("Blocks").put("Palette", CompoundBinaryTag.builder()
+                .putInt("minecraft:stone", 1).putInt("minecraft:dirt", 1).build())), DATA_VERSION));
     }
 
     @Test
     void refusesUnsupportedVersionsEmptySchematicsAndInvalidDimensions() {
-        CompoundBinaryTag source = schematic(2, 1, 1, 1, new int[3], new byte[]{1});
+        CompoundBinaryTag source = schematic(1, 1, 1, new int[3], new byte[]{1});
         assertThrows(IOException.class, () -> SchematicTemplate.decode(source.putInt("Version", 1), DATA_VERSION));
+        assertThrows(IOException.class, () -> SchematicTemplate.decode(source.putInt("Version", 2), DATA_VERSION));
         assertThrows(IOException.class, () -> SchematicTemplate.decode(source.putInt("DataVersion", DATA_VERSION + 1), DATA_VERSION));
-        assertThrows(IOException.class, () -> SchematicTemplate.decode(source.putByteArray("BlockData", new byte[]{0}), DATA_VERSION));
+        assertThrows(IOException.class, () -> SchematicTemplate.decode(source.put("Blocks", source.getCompound("Blocks").putByteArray("Data", new byte[]{0})), DATA_VERSION));
+        assertThrows(IOException.class, () -> SchematicTemplate.decode(source.remove("Offset"), DATA_VERSION));
         assertThrows(IOException.class, () -> SchematicTemplate.decode(source.putShort("Width", (short) 0), DATA_VERSION));
         assertThrows(IOException.class, () -> SchematicTemplate.decode(source.putIntArray("Offset", new int[]{0}), DATA_VERSION));
         assertThrows(IOException.class, () -> SchematicTemplate.decode(source.putShort("Width", (short) -1).putShort("Length", (short) -1), DATA_VERSION));
@@ -116,9 +101,9 @@ class SchematicTemplateTest {
 
     @Test
     void selectionAndOriginMustStayInsideTheIslandRegionAndWorldHeight() throws IOException {
-        var decoded = SchematicTemplate.decode(schematic(2, 2, 1, 1, new int[]{255, 0, 0}, new byte[]{1, 1}), DATA_VERSION);
+        var decoded = SchematicTemplate.decode(schematic(2, 1, 1, new int[]{255, 0, 0}, new byte[]{1, 1}), DATA_VERSION);
         assertThrows(IOException.class, () -> decoded.validateBounds(-64, 320, 100));
-        var edge = SchematicTemplate.decode(schematic(2, 2, 1, 1, new int[]{254, 0, -256}, new byte[]{1, 1}), DATA_VERSION);
+        var edge = SchematicTemplate.decode(schematic(2, 1, 1, new int[]{254, 0, -256}, new byte[]{1, 1}), DATA_VERSION);
         assertDoesNotThrow(() -> edge.validateBounds(-64, 320, 319));
         assertThrows(IOException.class, () -> edge.validateBounds(-64, 320, 320));
         assertThrows(IOException.class, () -> edge.validateBounds(-64, 320, -65));

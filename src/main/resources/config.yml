@@ -67,7 +67,7 @@ cluster-id: default
 # Node clocks must still agree (run NTP): cross-server requests older than 10s are refused.
 
 # ===================================================================
-# Lobby Fallback
+# Lobby Destination
 # ===================================================================
 # Where players are sent when they must leave an island forcibly
 # (e.g., island delete) or run /island lobby. A ready lobby server is picked at random.
@@ -94,7 +94,7 @@ island:
   # Do not change once islands exist: every island position is derived from it.
   height: 100
 
-  # Starter island loaded once at startup from a Sponge .schem file (v2 or v3).
+  # Starter island loaded once at startup from a Sponge .schem v3 file.
   # Path is relative to plugins/AdvancedSky/. Put the same file on every island server.
   # The bundled default is saved to schematics/starter.schem if that file is missing.
   # Existing files are kept; replace the file to use your own starter island.

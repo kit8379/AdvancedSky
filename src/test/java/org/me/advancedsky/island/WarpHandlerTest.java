@@ -180,7 +180,7 @@ class WarpHandlerTest {
     @Test
     void sameNameOnOtherIslandIsIndependentAndCannotBeEditedByMember() throws Exception {
         UUID otherIsland = UUID.randomUUID();
-        sql("INSERT INTO test_islands (island_uuid, server) VALUES (?, 'test')", otherIsland);
+        sql("INSERT INTO test_islands (island_uuid, server, slot) VALUES (?, 'test', 2)", otherIsland);
         set(owner, "shop", 1);
         database.updateWarpPoint(admin, otherIsland, "shop", "other");
         assertThrows(IslandDoesNotExistException.class,

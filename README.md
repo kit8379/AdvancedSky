@@ -32,7 +32,8 @@
 
 > [!WARNING]
 > **AdvancedSky is in alpha.** Run it on a test network first and keep backups of your MySQL database.
-> Update all AdvancedSky servers together: earlier versions used a different cross-server management protocol.
+> Run the same build on every server in the network. Configuration, schemas and messages use
+> the current contract only; there are no upgrade migrations or compatibility paths.
 
 ## What AdvancedSky is
 
@@ -93,11 +94,10 @@ worlds at runtime, and the same JAR runs on both Paper and Folia.
 | Proxy | Velocity or BungeeCord, with the BungeeCord plugin message channel enabled |
 | Economy | Vault and an economy plugin with balances shared across every server |
 | Worlds | One island world loaded **before AdvancedSky enables** on each island server |
-| Starter island | A bundled default, or your own Sponge `.schem` file (v2 or v3); no template world or WorldEdit plugin required |
+| Starter island | A bundled default, or your own Sponge `.schem` v3 file; no template world or WorldEdit plugin required |
 | Optional integration | PlaceholderAPI |
 
-The database versions above preserve `AUTO_INCREMENT` values across restarts. The plugin loader
-downloads the MySQL driver, HikariCP, Jedis and Adventure NBT on first start.
+The plugin loader downloads the MySQL driver, HikariCP, Jedis and Adventure NBT on first start.
 
 ## Installation
 
@@ -180,20 +180,16 @@ lobby:
   seconds; stopping removes a server immediately, and a crash expires its registration within
   thirty seconds. No shared server lists are needed when adding a host. Existing islands keep
   their hosts; they are not moved when that host goes offline.
-- **Upgrading:** old server lists are removed and the local lobby role is preserved unless
-  `lobby-only` is already set. `island.world` is removed. With the server stopped, rename its
-  existing island world folder (and any matching Nether/End folders) to `server.name`, then
-  update `level-name` before restarting. Keep the server identity and world data intact.
 - **Clock synchronization:** run NTP on every server. Incoming requests older than ten seconds
   are refused, using the sender's timestamp.
-- **Lobby fallback:** `/is lobby`, deletion, locks, bans and expulsion send players to a
-  randomly selected configured lobby server at `lobby.location`.
+- **Lobby destination:** `/is lobby`, deletion, locks, bans and expulsion send players to a
+  randomly selected online lobby server at `lobby.location`.
 
 ### Template and island geometry
 
-`island.template.schematic` names a Sponge `.schem` v2 or v3 file relative to
+`island.template.schematic` names a Sponge `.schem` v3 file relative to
 `plugins/AdvancedSky/`. The file is read once at startup. Its saved copy origin lands on the
-new island's centre, using its saved offset (WorldEdit metadata for v2). `island.spawn` sets the new island's
+new island's centre, using its required saved offset. `island.spawn` sets the new island's
 `default` home **relative to that centre**.
 
 The JAR includes a default starter island. When the default path is configured and the file
@@ -204,14 +200,12 @@ Air is skipped. Block properties and block entity data, including chest contents
 are retained; entities and biomes are not copied. The selection and origin must fit inside the
 island's 512 × 512 area and the world's build height at `island.height`. Selections are limited
 to 4,194,304 blocks. Schematics from a newer Minecraft data version are rejected; export for
-the server's Minecraft version. Legacy `.schematic` files are not supported.
+the server's Minecraft version.
 
 To export with WorldEdit on a build server, select the starter island, stand at the desired
 copy origin, run `//copy` and `//schem save sponge starter`, then copy `starter.schem` to every
 island server's configured path. WorldEdit is only needed for exporting, not for running
-AdvancedSky. Existing installations receive the new default schematic path automatically;
-the old template `world`, `anchor`, `min` and `max` settings are removed. Export the old
-template before removing its world from the server's startup configuration.
+AdvancedSky.
 
 | Geometry | Value |
 | --- | --- |
@@ -235,6 +229,8 @@ Folia regions; unusually large loaded areas can still cause regions to merge.
 `/isadmin reload` reloads configuration files except `commands.yml`. Server identity and role,
 the derived island world, database/Redis connections, `cluster-id` and the schematic path/contents
 are read at startup and need a restart. Keep structural settings consistent across the network.
+Files are generated for a fresh installation and then read without rewriting them. Missing required
+settings, invalid types and unknown fields fail validation rather than being filled or converted.
 
 ## Architecture
 

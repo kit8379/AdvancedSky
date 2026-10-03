@@ -10,7 +10,6 @@ import redis.clients.jedis.params.XAddParams;
 import redis.clients.jedis.params.XReadParams;
 import redis.clients.jedis.resps.StreamEntry;
 
-import java.lang.reflect.Constructor;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -195,45 +194,20 @@ public final class CrossServerMessenger {
         }
 
         CompletableFuture.runAsync(() -> {
-            if (CrossServerMessage.STATUS_SUCCESS.equals(message.getStatus())) {
-                future.complete(message.getPayload());
-            } else {
-                future.completeExceptionally(new CompletionException(restoreRemoteException(message)));
+            try {
+                if (CrossServerMessage.STATUS_SUCCESS.equals(message.getStatus())) {
+                    future.complete(message.getPayload());
+                } else {
+                    future.completeExceptionally(new CompletionException(restoreRemoteException(message)));
+                }
+            } catch (RuntimeException protocolError) {
+                future.completeExceptionally(protocolError);
             }
         }, plugin.getBukkitAsyncExecutor());
     }
 
     private Throwable restoreRemoteException(CrossServerMessage message) {
-        String errorType = message.getErrorType();
-        String errorMessage = message.getErrorMessage() == null ? "Remote request failed" : message.getErrorMessage();
-
-        if (errorType == null || errorType.isEmpty()) {
-            return new IllegalStateException(errorMessage);
-        }
-
-        try {
-            Class<?> clazz = Class.forName(errorType);
-            if (!RuntimeException.class.isAssignableFrom(clazz)) {
-                return new IllegalStateException(errorMessage);
-            }
-
-            return instantiateRemoteException(clazz.asSubclass(RuntimeException.class), errorMessage);
-        } catch (Exception e) {
-            plugin.severe("Failed to restore remote exception type: " + errorType, e);
-            return new IllegalStateException(errorMessage);
-        }
-    }
-
-    private RuntimeException instantiateRemoteException(Class<? extends RuntimeException> clazz, String errorMessage) throws Exception {
-        try {
-            Constructor<? extends RuntimeException> constructor = clazz.getDeclaredConstructor(String.class);
-            constructor.setAccessible(true);
-            return constructor.newInstance(errorMessage);
-        } catch (NoSuchMethodException ignored) {
-            Constructor<? extends RuntimeException> constructor = clazz.getDeclaredConstructor();
-            constructor.setAccessible(true);
-            return constructor.newInstance();
-        }
+        return RemoteErrors.decode(message.getErrorType(), message.getErrorMessage());
     }
 
     private void sendAndDelete(StreamEntryID entryId, CrossServerMessage response) {

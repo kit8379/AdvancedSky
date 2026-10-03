@@ -56,7 +56,7 @@ final class SchematicTemplate {
                 throw new IOException("File is missing; export the starter island as a Sponge .schem and put it here");
             }
             CompoundBinaryTag nbt = BinaryTagIO.reader(MAX_NBT_BYTES).read(file, BinaryTagIO.Compression.GZIP);
-            Decoded decoded = decode(nbt, Bukkit.getUnsafe().getDataVersion());
+            Decoded decoded = decode(requiredCompound(nbt, "Schematic"), Bukkit.getUnsafe().getDataVersion());
             decoded.validateBounds(world.getMinHeight(), world.getMaxHeight(), islandHeight);
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
             BinaryTagIO.writer().write(decoded.structure(), bytes, BinaryTagIO.Compression.GZIP);
@@ -81,10 +81,9 @@ final class SchematicTemplate {
     int offsetZ() { return offsetZ; }
 
     /** Package-visible for format tests; no server or world is needed for decoding. */
-    static Decoded decode(CompoundBinaryTag root, int currentDataVersion) throws IOException {
-        CompoundBinaryTag schematic = root.contains("Schematic", BinaryTagTypes.COMPOUND) ? root.getCompound("Schematic") : root;
+    static Decoded decode(CompoundBinaryTag schematic, int currentDataVersion) throws IOException {
         int version = requiredInt(schematic, "Version");
-        if (version != 2 && version != 3) throw new IOException("Only Sponge .schem versions 2 and 3 are supported (found " + version + ")");
+        if (version != 3) throw new IOException("Sponge .schem version 3 is required (found " + version + ")");
         int dataVersion = requiredInt(schematic, "DataVersion");
         if (dataVersion <= 0 || dataVersion > currentDataVersion) throw new IOException("Schematic Minecraft DataVersion " + dataVersion + " is unsupported by this server (" + currentDataVersion + ")");
         int width = dimension(schematic, "Width");
@@ -92,8 +91,8 @@ final class SchematicTemplate {
         int length = dimension(schematic, "Length");
         long volume = (long) width * height * length;
         if (volume > MAX_VOLUME) throw new IOException("Schematic selection exceeds " + MAX_VOLUME + " blocks; use a smaller selection");
-        int[] offset = pasteOffset(schematic, version);
-        CompoundBinaryTag container = version == 3 ? requiredCompound(schematic, "Blocks") : schematic;
+        int[] offset = vector(schematic, "Offset");
+        CompoundBinaryTag container = requiredCompound(schematic, "Blocks");
         CompoundBinaryTag palette = requiredCompound(container, "Palette");
         if (palette.isEmpty()) throw new IOException("Schematic palette is empty");
 
@@ -119,17 +118,15 @@ final class SchematicTemplate {
                 if (pos[0] < 0 || pos[0] >= width || pos[1] < 0 || pos[1] >= height || pos[2] < 0 || pos[2] >= length) throw new IOException("Block entity is outside the schematic selection");
                 String id = entity.getString("Id");
                 if (id.isBlank()) throw new IOException("Block entity is missing its Id");
-                if (version == 3 && entity.contains("Data") && !entity.contains("Data", BinaryTagTypes.COMPOUND)) throw new IOException("Invalid block entity Data compound");
-                CompoundBinaryTag payload = version == 3 ? entity.getCompound("Data") : entity;
+                CompoundBinaryTag payload = requiredCompound(entity, "Data");
                 CompoundBinaryTag vanilla = CompoundBinaryTag.builder().put(payload).remove("Id").remove("Pos")
                         .putString("id", id).putInt("x", pos[0]).putInt("y", pos[1]).putInt("z", pos[2]).build();
                 if (blockEntities.put(pos[0] + pos[2] * width + pos[1] * width * length, vanilla) != null) throw new IOException("Duplicate block entity position");
             }
         }
 
-        String dataKey = version == 3 ? "Data" : "BlockData";
-        if (!container.contains(dataKey, BinaryTagTypes.BYTE_ARRAY)) throw new IOException("Schematic is missing " + dataKey);
-        byte[] data = container.getByteArray(dataKey);
+        if (!container.contains("Data", BinaryTagTypes.BYTE_ARRAY)) throw new IOException("Schematic is missing block Data");
+        byte[] data = container.getByteArray("Data");
         int cursor = 0;
         ListBinaryTag.Builder<CompoundBinaryTag> blocks = ListBinaryTag.builder(BinaryTagTypes.COMPOUND);
         for (int index = 0; index < volume; index++) {
@@ -180,21 +177,6 @@ final class SchematicTemplate {
         return tag.getIntArray(key);
     }
 
-    private static int[] pasteOffset(CompoundBinaryTag schematic, int version) throws IOException {
-        int[] offset = schematic.contains("Offset") ? vector(schematic, "Offset") : new int[3];
-        if (version == 2) {
-            // WorldEdit v2 stores the selection's original WORLD coordinates in Offset.
-            // Its minimum-point-to-copy-origin vector lives in Metadata instead. V3 fixed this.
-            CompoundBinaryTag metadata = schematic.getCompound("Metadata");
-            CompoundBinaryTag worldEdit = metadata.getCompound("WorldEdit");
-            if (worldEdit.contains("Offset")) return vector(worldEdit, "Offset");
-            if (metadata.contains("WEOffsetX") || metadata.contains("WEOffsetY") || metadata.contains("WEOffsetZ")) {
-                return new int[]{requiredInt(metadata, "WEOffsetX"), requiredInt(metadata, "WEOffsetY"), requiredInt(metadata, "WEOffsetZ")};
-            }
-        }
-        return offset;
-    }
-
     private static CompoundBinaryTag requiredCompound(CompoundBinaryTag tag, String key) throws IOException {
         if (!tag.contains(key, BinaryTagTypes.COMPOUND)) throw new IOException("Missing or invalid compound '" + key + "'");
         return tag.getCompound(key);
@@ -207,7 +189,6 @@ final class SchematicTemplate {
     private static CompoundBinaryTag blockData(String state) throws IOException {
         int bracket = state.indexOf('[');
         String name = bracket < 0 ? state : state.substring(0, bracket);
-        if (!name.contains(":")) name = "minecraft:" + name;
         if (!name.matches("[a-z0-9_.-]+:[a-z0-9_./-]+")) throw new IOException("Invalid block name '" + name + "'");
         CompoundBinaryTag.Builder result = CompoundBinaryTag.builder().putString("Name", name);
         if (bracket >= 0) {

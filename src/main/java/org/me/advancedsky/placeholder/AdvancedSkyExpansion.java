@@ -115,7 +115,10 @@ public final class AdvancedSkyExpansion extends PlaceholderExpansion {
 
         UUID playerUuid = player.getUniqueId();
         // Chain only the requested data. An unfinished first load returns immediately via getNow.
-        return playerIslands.get(playerUuid, () -> api.getIslandUuid(playerUuid)).thenCompose(islandUuid -> islandValue(islandUuid, playerUuid, key)).exceptionally(error -> cause(error) instanceof IslandDoesNotExistException ? NO_ISLAND.get(key) : "").getNow("");
+        return playerIslands.get(playerUuid, () -> api.getIslandUuid(playerUuid)).thenCompose(islandUuid -> islandValue(islandUuid, playerUuid, key)).exceptionally(error -> {
+            if (cause(error) instanceof IslandDoesNotExistException) return NO_ISLAND.get(key);
+            throw new CompletionException(cause(error));
+        }).getNow("");
     }
 
     private CompletableFuture<String> islandValue(UUID islandUuid, UUID playerUuid, String key) {
@@ -135,7 +138,7 @@ public final class AdvancedSkyExpansion extends PlaceholderExpansion {
                         case "island_role" ->
                                 CompletableFuture.completedFuture(owner.equals(playerUuid) ? "owner" : "member");
                         default ->
-                                playerNames(Set.of(owner)).thenApply(resolved -> resolved.getOrDefault(owner, owner.toString()));
+                                playerNames(Set.of(owner)).thenApply(resolved -> Objects.requireNonNull(resolved.get(owner), "Missing player name for " + owner));
                     });
             case "island_members", "island_players" ->
                     playerSets.get("members:" + islandUuid, () -> api.getIslandMembers(islandUuid)).thenApply(members -> Integer.toString(members.size() + (key.equals("island_players") ? 1 : 0)));
@@ -164,7 +167,10 @@ public final class AdvancedSkyExpansion extends PlaceholderExpansion {
         }
 
         UUID playerUuid = player.getUniqueId();
-        return playerIslands.get(playerUuid, () -> api.getIslandUuid(playerUuid)).thenCompose(islandUuid -> upgradeLevels.get(upgradeId + ":" + islandUuid, () -> api.getUpgradeLevel(islandUuid, upgradeId))).thenApply(level -> upgradeField(upgradeId, level, max, field)).exceptionally(error -> "").getNow("");
+        return playerIslands.get(playerUuid, () -> api.getIslandUuid(playerUuid)).thenCompose(islandUuid -> upgradeLevels.get(upgradeId + ":" + islandUuid, () -> api.getUpgradeLevel(islandUuid, upgradeId))).thenApply(level -> upgradeField(upgradeId, level, max, field)).exceptionally(error -> {
+            if (cause(error) instanceof IslandDoesNotExistException) return "";
+            throw new CompletionException(cause(error));
+        }).getNow("");
     }
 
     private String upgradeField(String upgradeId, int level, int max, String field) {
@@ -200,11 +206,10 @@ public final class AdvancedSkyExpansion extends PlaceholderExpansion {
         requestedTopLimit = Math.max(requestedTopLimit, position);
         long now = clock.getAsLong();
         if (topCache == null || (topCache.data().isDone() && (loadedTopLimit < requestedTopLimit || now - topCache.requestedAt() >= RANK_REFRESH_NANOS))) {
-            Map<String, String> previous = topCache == null ? Map.of() : topCache.data().getNow(Map.of());
             loadedTopLimit = requestedTopLimit;
-            topCache = new Cached<>(loadTop(loadedTopLimit), previous, now);
+            topCache = new Cached<>(loadTop(loadedTopLimit), now);
         }
-        return topCache.data().getNow(topCache.previous()).getOrDefault(key, "");
+        return topCache.data().getNow(Map.of()).getOrDefault(key, "");
     }
 
     private CompletableFuture<Map<String, String>> loadTop(int limit) {
@@ -218,16 +223,15 @@ public final class AdvancedSkyExpansion extends PlaceholderExpansion {
                 for (int i = 0; i < islands.size(); i++) {
                     IslandTop island = islands.get(i);
                     String prefix = "top_" + (i + 1) + "_";
-                    values.put(prefix + "owner", names.getOrDefault(island.getOwnerUuid(), island.getOwnerUuid().toString()));
+                    values.put(prefix + "owner", Objects.requireNonNull(names.get(island.getOwnerUuid()), "Missing player name for " + island.getOwnerUuid()));
                     values.put(prefix + "level", Integer.toString(island.getLevel()));
                     values.put(prefix + "uuid", island.getIslandUuid().toString());
                     values.put(prefix + "members", Integer.toString(island.getMembers().size()));
                 }
                 return Map.copyOf(values);
             });
-        }).exceptionally(error -> {
-            plugin.severe("Failed to load leaderboard placeholders", error);
-            return Map.of();
+        }).whenComplete((result, error) -> {
+            if (error != null) plugin.severe("Failed to load leaderboard placeholders", error);
         });
     }
 
@@ -250,19 +254,17 @@ public final class AdvancedSkyExpansion extends PlaceholderExpansion {
                 if (current != null && (!current.data().isDone() || now - current.requestedAt() < refreshNanos)) {
                     return current;
                 }
-                V previous = current == null || current.data().isCompletedExceptionally() ? null : current.data().getNow(null);
                 CompletableFuture<V> data = loader.get().whenComplete((result, error) -> {
                     if (error != null && !(cause(error) instanceof IslandDoesNotExistException)) {
                         plugin.severe("Failed to load placeholder data for " + key, cause(error));
                     }
                 });
-                return new Cached<>(data, previous, now);
+                return new Cached<>(data, now);
             });
-            // Keep serving the previous successful value during refresh, without blocking callers.
-            return !cached.data().isDone() && cached.previous() != null ? CompletableFuture.completedFuture(cached.previous()) : cached.data();
+            return cached.data();
         }
     }
 
-    private record Cached<V>(CompletableFuture<V> data, V previous, long requestedAt) {
+    private record Cached<V>(CompletableFuture<V> data, long requestedAt) {
     }
 }

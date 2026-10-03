@@ -185,8 +185,7 @@ public class CoreHandler {
             int createdSlot = slot;
             creating.put(islandUuid, createdSlot);
             islandCache.beginDeletion(islandUuid, createdSlot);
-            // Gaps from older versions may still hold files on this host. Clear before pasting,
-            // while the newly inserted row reserves the position against other creates.
+            // Clear the reserved area before pasting while the row blocks concurrent reuse.
             return worldHandler.deleteIsland(createdSlot).thenCompose(v -> worldHandler.createIsland(createdSlot)).thenComposeAsync(v -> {
                 if (stopping) throw new IllegalStateException("Island lifecycle stopped");
                 database.finishIslandCreation(islandUuid);

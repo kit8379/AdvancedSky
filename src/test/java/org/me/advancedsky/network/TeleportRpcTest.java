@@ -38,14 +38,20 @@ class TeleportRpcTest {
     }
 
     @Test
-    void aLegacyRequestStillPreparesATeleportWithoutAMessage() throws Exception {
+    void anExplicitlyEmptySuccessMessagePreparesATeleportWithoutAMessage() throws Exception {
         when(teleports.prepareTeleport(playerUuid, "skyblock", "1,70,3,0,0", null))
                 .thenReturn(CompletableFuture.completedFuture(true));
 
-        JSONObject response = registeredHandler().handle(payload()).join();
+        JSONObject response = registeredHandler().handle(payload().put("successMessage", JSONObject.NULL)).join();
 
         verify(teleports).prepareTeleport(playerUuid, "skyblock", "1,70,3,0,0", null);
         assertTrue(response.getBoolean("teleported"));
+    }
+
+    @Test
+    void aRequestMissingARequiredProtocolFieldFails() throws Exception {
+        assertThrows(org.json.JSONException.class, () -> registeredHandler().handle(payload()));
+        verifyNoInteractions(teleports);
     }
 
     private JSONObject payload() {

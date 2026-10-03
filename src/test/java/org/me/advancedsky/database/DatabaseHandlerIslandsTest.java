@@ -230,7 +230,7 @@ class DatabaseHandlerIslandsTest {
     }
 
     @Test
-    void deletionDetachesPlayersImmediatelyButReservesTheSlotUntilCleanupFinishes() {
+    void deletionDetachesPlayersImmediatelyButReservesTheSlotUntilCleanupFinishes() throws Exception {
         int slot = database.getIslandSlot(full).orElseThrow();
         database.beginIslandDeletion(new Actor.Player(owner), full);
         assertEquals(slot, database.getIslandSlot(full).orElseThrow());
@@ -254,6 +254,7 @@ class DatabaseHandlerIslandsTest {
         int replacementSlot = database.addIslandData(replacement, owner, "b");
         assertNotEquals(slot, replacementSlot);
         database.finishIslandCreation(replacement);
+        sql("INSERT INTO test_island_homes (player_uuid, home_name, home_location, island_uuid) VALUES (?, 'default', '0,64,0,0,0', ?)", bareOwner, bare);
         database.addIslandPlayer(new Actor.Bypass("test"), bare, member, "member");
         assertEquals(replacement, database.getIslandUuid(owner).orElseThrow());
         assertEquals(bare, database.getIslandUuid(member).orElseThrow());
