@@ -142,10 +142,14 @@ files bundled with the plugin.
 | --- | --- |
 | [config.yml](src/main/resources/config.yml) | Server identity and role, database, Redis, cluster, schematic and spawn locations |
 | [commands.yml](src/main/resources/commands.yml) | Command aliases, permissions, syntax and descriptions |
-| [messages.yml](src/main/resources/messages.yml) | MiniMessage text for commands and events |
+| [messages.yml](src/main/resources/messages.yml) | MiniMessage or legacy `&` color codes for commands and events |
 | [upgrades.yml](src/main/resources/upgrades.yml) | Upgrade levels, prices, limits, biomes and generator rates |
 | [limits.yml](src/main/resources/limits.yml) | Per-island block and entity limits |
 | [levels.yml](src/main/resources/levels.yml) | Block values used to calculate island levels |
+
+Messages support MiniMessage (such as `<green>Hello`) or legacy colors and formatting
+(such as `&aHello`, `&lBold` and `&#12ab34Hello`). A message containing legacy codes is parsed
+entirely as legacy text; use one format per message.
 
 ### Network layout
 
