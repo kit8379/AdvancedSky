@@ -9,8 +9,8 @@ import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.exceptions.*;
 import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.model.Actor;
-import org.me.advancedsky.network.IslandOperator;
 import org.me.advancedsky.network.IslandDistributor;
+import org.me.advancedsky.network.IslandOperator;
 import org.me.advancedsky.util.IslandUtils;
 
 import java.util.Locale;
@@ -74,7 +74,9 @@ public class HomeHandler {
         }, plugin.getBukkitAsyncExecutor()).thenCompose(future -> future);
     }
 
-    /** Uses the island checked at the player's location, so a membership change cannot retarget it. */
+    /**
+     * Uses the island checked at the player's location, so a membership change cannot retarget it.
+     */
     public CompletableFuture<Void> delHome(UUID islandUuid, UUID playerUuid, String homeName) {
         return islandOperator.deleteHome(islandUuid, playerUuid, homeName.toLowerCase(Locale.ROOT));
     }
@@ -83,7 +85,9 @@ public class HomeHandler {
         return home(playerUuid, homeName, targetPlayerUuid, null);
     }
 
-    /** Sends the optional success message on the destination after the teleport succeeds. */
+    /**
+     * Sends the optional success message on the destination after the teleport succeeds.
+     */
     public CompletableFuture<Void> home(UUID playerUuid, String homeName, UUID targetPlayerUuid, Component successMessage) {
         return CompletableFuture.supplyAsync(() -> {
             if (!onlinePlayerRegistry.isOnline(targetPlayerUuid)) {
@@ -94,9 +98,7 @@ public class HomeHandler {
             String homeLocation = Optional.ofNullable(database.getIslandHomes(islandUuid, playerUuid).get(homeName.toLowerCase(Locale.ROOT))).orElseThrow(HomeDoesNotExistException::new);
 
             return new HomeTarget(islandUuid, homeLocation);
-        }, plugin.getBukkitAsyncExecutor()).thenComposeAsync(target -> successMessage == null
-                ? islandDistributor.teleportIsland(target.islandUuid(), targetPlayerUuid, target.homeLocation())
-                : islandDistributor.teleportIsland(target.islandUuid(), targetPlayerUuid, target.homeLocation(), successMessage), plugin.getBukkitAsyncExecutor());
+        }, plugin.getBukkitAsyncExecutor()).thenComposeAsync(target -> successMessage == null ? islandDistributor.teleportIsland(target.islandUuid(), targetPlayerUuid, target.homeLocation()) : islandDistributor.teleportIsland(target.islandUuid(), targetPlayerUuid, target.homeLocation(), successMessage), plugin.getBukkitAsyncExecutor());
     }
 
     public CompletableFuture<Set<String>> getHomeNames(UUID playerUuid) {
