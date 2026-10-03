@@ -139,6 +139,7 @@ class WarpHandlerTest {
                 () -> database.updateWarpPoint(new Actor.Player(member), island, "farm", "changed"));
         assertThrows(IslandDoesNotExistException.class,
                 () -> database.deleteWarpPoint(new Actor.Player(member), island, "farm"));
+        database.beginIslandDeletion(new Actor.Player(owner), island);
         database.deleteIsland(new Actor.Player(owner), island);
         assertTrue(database.getIslandWarps(island).isEmpty());
     }

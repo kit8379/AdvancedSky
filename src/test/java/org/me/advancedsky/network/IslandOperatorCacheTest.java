@@ -31,6 +31,7 @@ class IslandOperatorCacheTest {
         UUID owner = UUID.randomUUID();
         WorldHandler world = mock(WorldHandler.class);
         when(world.createIsland(5)).thenReturn(CompletableFuture.completedFuture(null));
+        when(world.deleteIsland(5)).thenReturn(CompletableFuture.completedFuture(null));
         when(database.addIslandData(island, owner, "local")).thenThrow(new RuntimeException("connection reset during commit"));
         when(database.getIslandSlot(island)).thenReturn(Optional.of(5));
         when(cache.load(island)).thenReturn(CompletableFuture.completedFuture(null));
@@ -38,6 +39,11 @@ class IslandOperatorCacheTest {
 
         assertDoesNotThrow(() -> new IslandOperator(plugin, database, world, null, cache, null, null, "local").createIsland(island, owner).join());
         verify(world).createIsland(5);
+        var order = inOrder(world, database, cache);
+        order.verify(world).deleteIsland(5);
+        order.verify(world).createIsland(5);
+        order.verify(database).finishIslandCreation(island);
+        order.verify(cache).load(island);
     }
 
     @Test
@@ -47,6 +53,7 @@ class IslandOperatorCacheTest {
         when(database.getIslandSlot(island)).thenReturn(Optional.of(5), Optional.empty());
         doThrow(new RuntimeException("connection reset during commit")).when(database).deleteIsland(actor, island);
         LimitHandler limits = mock(LimitHandler.class);
+        inlineAsync();
 
         assertDoesNotThrow(() -> new IslandOperator(plugin, database, world, null, cache, limits, null, "local").deleteIsland(actor, island).join());
         verify(cache).unload(island);
@@ -54,12 +61,13 @@ class IslandOperatorCacheTest {
     }
 
     @Test
-    void aCreateStillBuildingWhenThePluginDisablesIsRolledBack() {
+    void anInterruptedCreateRetainsItsRowForCleanupOnTheNextStartup() {
         UUID owner = UUID.randomUUID();
         UUID built = UUID.randomUUID();
         WorldHandler world = mock(WorldHandler.class);
         when(world.createIsland(5)).thenReturn(new CompletableFuture<>());
         when(world.createIsland(6)).thenReturn(CompletableFuture.completedFuture(null));
+        when(world.deleteIsland(anyInt())).thenReturn(CompletableFuture.completedFuture(null));
         when(database.addIslandData(island, owner, "local")).thenReturn(5);
         when(database.addIslandData(built, owner, "local")).thenReturn(6);
         when(cache.load(any())).thenReturn(CompletableFuture.completedFuture(null));
@@ -70,16 +78,129 @@ class IslandOperatorCacheTest {
 
         operator.abortCreates();
 
-        verify(database).deleteIsland(any(Actor.Bypass.class), eq(island));
-        verify(world).purgeArea(5);
-        verify(database, never()).deleteIsland(any(), eq(built));
-        verify(world, never()).purgeArea(6);
+        verify(database).beginIslandDeletion(any(Actor.Bypass.class), eq(island));
+        verify(database, never()).deleteIsland(any(), any());
+        verify(database, never()).beginIslandDeletion(any(), eq(built));
+        verify(world).stop();
     }
 
     private void inlineAsync() {
         BukkitAsyncExecutor async = mock(BukkitAsyncExecutor.class);
         doAnswer(call -> { call.<Runnable>getArgument(0).run(); return null; }).when(async).execute(any());
         when(plugin.getBukkitAsyncExecutor()).thenReturn(async);
+    }
+
+    @Test
+    void deletionWaitsForPhysicalCleanupBeforeRemovingTheDatabaseRow() {
+        WorldHandler world = mock(WorldHandler.class);
+        CompletableFuture<Void> clearing = new CompletableFuture<>();
+        when(world.deleteIsland(5)).thenReturn(clearing);
+        when(database.getIslandSlot(island)).thenReturn(Optional.of(5));
+        inlineAsync();
+        var deleting = new IslandOperator(plugin, database, world, null, cache, null, null, "local").deleteIsland(actor, island);
+        assertFalse(deleting.isDone());
+        verify(database).beginIslandDeletion(actor, island);
+        verify(cache).beginDeletion(island, 5);
+        verify(database, never()).deleteIsland(any(), any());
+        verify(cache, never()).unload(island);
+        clearing.complete(null);
+        deleting.join();
+        var order = inOrder(database, world, cache);
+        order.verify(database).beginIslandDeletion(actor, island);
+        order.verify(cache).beginDeletion(island, 5);
+        order.verify(world).deleteIsland(5);
+        order.verify(database).deleteIsland(actor, island);
+        order.verify(cache).unload(island);
+    }
+
+    @Test
+    void aPhysicalCleanupFailureRetainsTheDatabaseRowAndBlockedCache() {
+        WorldHandler world = mock(WorldHandler.class);
+        when(world.deleteIsland(5)).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("chunk held")));
+        when(database.getIslandSlot(island)).thenReturn(Optional.of(5));
+        inlineAsync();
+        var deleting = new IslandOperator(plugin, database, world, null, cache, null, null, "local").deleteIsland(actor, island);
+        assertThrows(CompletionException.class, deleting::join);
+        verify(database).beginIslandDeletion(actor, island);
+        verify(database, never()).deleteIsland(any(), any());
+        verify(cache, never()).unload(island);
+    }
+
+    @Test
+    void aDatabaseDeleteFailureCanRetryPhysicalCleanupWithoutFreeingTheSlotEarly() {
+        WorldHandler world = mock(WorldHandler.class);
+        when(world.deleteIsland(5)).thenReturn(CompletableFuture.completedFuture(null));
+        when(database.getIslandSlot(island)).thenReturn(Optional.of(5));
+        doThrow(new IllegalStateException("database down")).doNothing().when(database).deleteIsland(actor, island);
+        inlineAsync();
+        IslandOperator operator = new IslandOperator(plugin, database, world, null, cache, null, null, "local");
+        assertThrows(CompletionException.class, () -> operator.deleteIsland(actor, island).join());
+        verify(cache, never()).unload(island);
+        operator.deleteIsland(actor, island).join();
+        verify(world, times(2)).deleteIsland(5);
+        verify(cache).unload(island);
+    }
+
+    @Test
+    void unauthorizedDeletionNeverTouchesThePhysicalArea() {
+        WorldHandler world = mock(WorldHandler.class);
+        when(database.getIslandSlot(island)).thenReturn(Optional.of(5));
+        doThrow(new IslandDoesNotExistException()).when(database).beginIslandDeletion(actor, island);
+        assertThrows(CompletionException.class, () -> new IslandOperator(plugin, database, world, null, cache, null, null, "local").deleteIsland(actor, island).join());
+        verifyNoInteractions(world);
+        verify(cache, never()).beginDeletion(any(), anyInt());
+    }
+
+    @Test
+    void recoveryClearsOnlyPersistedDeletingRowsAndReportsFailures() {
+        WorldHandler world = mock(WorldHandler.class);
+        UUID failed = UUID.randomUUID();
+        when(database.getDeletingIslands("local")).thenReturn(java.util.Map.of(island, 5, failed, 6));
+        when(database.isIslandDeleting(island)).thenReturn(true);
+        when(database.isIslandDeleting(failed)).thenReturn(true);
+        when(database.getIslandSlot(island)).thenReturn(Optional.of(5));
+        when(database.getIslandSlot(failed)).thenReturn(Optional.of(6));
+        when(world.deleteIsland(5)).thenReturn(CompletableFuture.completedFuture(null));
+        when(world.deleteIsland(6)).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("held")));
+        inlineAsync();
+        var result = new IslandOperator(plugin, database, world, null, cache, null, null, "local").retryDeletions().join();
+        assertEquals(new IslandOperator.DeletionResult(1, 1), result);
+        verify(database).deleteIsland(any(Actor.Bypass.class), eq(island));
+        verify(database, never()).deleteIsland(any(), eq(failed));
+        verify(cache, never()).unload(failed);
+    }
+
+    @Test
+    void aRetryQueuedDuringDeletionDoesNotClearTheSlotAfterTheRowIsGone() {
+        WorldHandler world = mock(WorldHandler.class);
+        CompletableFuture<Void> clearing = new CompletableFuture<>();
+        when(world.deleteIsland(5)).thenReturn(clearing);
+        when(database.getIslandSlot(island)).thenReturn(Optional.of(5));
+        when(database.getDeletingIslands("local")).thenReturn(java.util.Map.of(island, 5));
+        when(database.isIslandDeleting(island)).thenReturn(false);
+        inlineAsync();
+        IslandOperator operator = new IslandOperator(plugin, database, world, null, cache, null, null, "local");
+        CompletableFuture<Void> delete = operator.deleteIsland(actor, island);
+        var retry = operator.retryDeletions();
+        clearing.complete(null);
+        delete.join();
+        assertEquals(new IslandOperator.DeletionResult(0, 0), retry.join());
+        verify(world, times(1)).deleteIsland(5);
+    }
+
+    @Test
+    void aFailedPasteRetainsItsRowWhenPhysicalRollbackFails() {
+        WorldHandler world = mock(WorldHandler.class);
+        UUID owner = UUID.randomUUID();
+        when(database.addIslandData(island, owner, "local")).thenReturn(5);
+        when(world.deleteIsland(5)).thenReturn(CompletableFuture.completedFuture(null), CompletableFuture.failedFuture(new IllegalStateException("cleanup failed")));
+        when(world.createIsland(5)).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("paste failed")));
+        inlineAsync();
+        var created = new IslandOperator(plugin, database, world, null, cache, null, null, "local").createIsland(island, owner);
+        assertThrows(CompletionException.class, created::join);
+        verify(database).beginIslandDeletion(any(Actor.Bypass.class), eq(island));
+        verify(database, never()).deleteIsland(any(), any());
+        verify(cache, never()).unload(island);
     }
 
     @Test

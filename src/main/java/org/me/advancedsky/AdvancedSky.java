@@ -33,7 +33,6 @@ import org.me.advancedsky.thread.BukkitAsyncExecutor;
 import org.me.advancedsky.thread.GlobalRegionExecutor;
 import org.me.advancedsky.util.ServerUtil;
 import org.me.advancedsky.uuid.UuidHandler;
-import org.me.advancedsky.world.RegionPurge;
 import org.me.advancedsky.world.WorldHandler;
 
 import java.lang.reflect.Constructor;
@@ -123,7 +122,7 @@ public class AdvancedSky extends JavaPlugin {
             info("Island cache loaded");
 
             info("Starting world handler");
-            WorldHandler worldHandler = new WorldHandler(this, config, islandGrid, new RegionPurge(getDataFolder().toPath()));
+            WorldHandler worldHandler = new WorldHandler(this, config, islandGrid);
             info("World handler loaded");
 
             info("Starting teleport handler");
@@ -220,6 +219,10 @@ public class AdvancedSky extends JavaPlugin {
 
             crossServerMessenger.start();
             levelUpdateScheduler.start();
+            if (!config.isLobbyOnly()) islandOperator.retryDeletions().exceptionally(error -> {
+                severe("Could not recover incomplete island deletions; rows retained for retry", error);
+                return null;
+            });
 
         } catch (Exception e) {
             getLogger().log(Level.SEVERE, "An error occurred during plugin initialization", e);
@@ -318,6 +321,13 @@ public class AdvancedSky extends JavaPlugin {
         cobblestoneGeneratorHandler.startup();
         levelUpdateScheduler.rescanOccupied();
         info("Plugin configs reloaded!");
+    }
+
+    public CompletableFuture<IslandOperator.DeletionResult> purgeDeletedRegions() {
+        if (config.isLobbyOnly() || islandOperator == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Run region purge on an island server"));
+        }
+        return islandOperator.retryDeletions();
     }
 
     @SuppressWarnings("unused")

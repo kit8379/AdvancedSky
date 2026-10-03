@@ -10,6 +10,9 @@ import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.exceptions.TeleportCancelledException;
 import org.me.advancedsky.teleport.TeleportHandler;
+import org.me.advancedsky.cache.IslandCache;
+import org.me.advancedsky.world.WorldHandler;
+import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.thread.GlobalRegionExecutor;
 import org.mockito.InOrder;
 import org.mockito.MockedStatic;
@@ -72,6 +75,22 @@ class IslandOperatorTeleportTest {
         InOrder order = inOrder(player);
         order.verify(player).leaveVehicle();
         order.verify(player).teleportAsync(any(Location.class));
+    }
+
+    @Test
+    void aTeleportOntoADeletingIslandIsRefusedBeforeLoadingTheDestination() {
+        WorldHandler worlds = mock(WorldHandler.class);
+        IslandCache cache = mock(IslandCache.class);
+        when(worlds.isIslandLocation(any())).thenReturn(true);
+        when(cache.isDeletingAt(any())).thenReturn(true);
+        IslandOperator deleting = new IslandOperator(plugin, null, worlds, teleports, cache, null, null, "local");
+        try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
+            bukkit.when(() -> Bukkit.getWorld("skyblock")).thenReturn(world);
+            var error = assertThrows(CompletionException.class, () -> deleting.prepareTeleport(playerUuid, "skyblock", "1.5,70.0,1.5,0.0,0.0").join());
+            assertInstanceOf(IslandDoesNotExistException.class, error.getCause());
+        }
+        verify(player, never()).teleportAsync(any());
+        assertNull(teleports.removePendingTeleport(playerUuid));
     }
 
     private void runsTasks() {

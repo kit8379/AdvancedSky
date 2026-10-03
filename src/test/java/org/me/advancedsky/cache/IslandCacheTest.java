@@ -56,4 +56,30 @@ class IslandCacheTest {
         assertNull(cache.get(islandUuid));
         assertNull(cache.getIslandUuidAt(grid.center(null, SLOT)));
     }
+
+    @Test
+    void aDeletingIslandStaysIdentifiableButInaccessibleUntilUnloaded() {
+        when(database.getIslandsByServer("sky1")).thenReturn(Map.of(islandUuid, island));
+        cache.loadAll("sky1");
+        cache.beginDeletion(islandUuid, SLOT);
+        var location = grid.center(null, SLOT);
+        assertNull(cache.get(islandUuid));
+        assertTrue(cache.isDeletingAt(location));
+        assertEquals(islandUuid, cache.getIslandUuidAt(location));
+        cache.load(islandUuid).join();
+        verify(database, never()).getIsland(islandUuid);
+        cache.unload(islandUuid);
+        assertFalse(cache.isDeletingAt(location));
+        assertNull(cache.getIslandUuidAt(location));
+    }
+
+    @Test
+    void startupBlocksPersistedDeletingRowsEvenWithoutAnActiveCacheEntry() {
+        when(database.getDeletingIslands("sky1")).thenReturn(Map.of(islandUuid, SLOT));
+        cache.loadAll("sky1");
+        assertTrue(cache.isDeletingAt(grid.center(null, SLOT)));
+        assertNull(cache.get(islandUuid));
+        cache.unload(islandUuid);
+        assertNull(cache.getIslandUuidAt(grid.center(null, SLOT)));
+    }
 }

@@ -40,6 +40,7 @@ class DatabaseHandlerIslandsTest {
     private final UUID bareOwner = UUID.randomUUID();
     private Connection connection;
     private DatabaseHandler database;
+    private ConfigHandler config;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -47,7 +48,7 @@ class DatabaseHandlerIslandsTest {
         connection = DriverManager.getConnection(url);
         HikariDataSource dataSource = mock(HikariDataSource.class);
         when(dataSource.getConnection()).thenAnswer(ignored -> DriverManager.getConnection(url));
-        ConfigHandler config = mock(ConfigHandler.class);
+        config = mock(ConfigHandler.class);
         when(config.getUpgradeLevels(anyString())).thenReturn(List.of(1, 2, 3));
         database = mock(DatabaseHandler.class, CALLS_REAL_METHODS);
         field("dataSource", dataSource);
@@ -193,6 +194,109 @@ class DatabaseHandlerIslandsTest {
         assertEquals(5, database.getIslandLevel(full));
 
         assertDoesNotThrow(() -> database.updateIslandLevel(UUID.randomUUID(), 5));
+    }
+
+    @Test
+    void deletionRetainsTheRowAndSlotUntilPhysicalCleanupFinishes() {
+        int slot = database.getIslandSlot(full).orElseThrow();
+        database.beginIslandDeletion(new Actor.Player(owner), full);
+        assertEquals(slot, database.getIslandSlot(full).orElseThrow());
+        assertEquals(Map.of(full, slot), database.getDeletingIslands("a"));
+        assertTrue(database.getDeletingIslands("b").isEmpty());
+        assertEquals(full, database.getIslandUuid(owner).orElseThrow());
+        assertNull(database.getIsland(full), "deleting islands must not enter the active cache");
+        assertFalse(database.getIslandsByServer("a").containsKey(full));
+        assertThrows(org.me.advancedsky.exceptions.IslandDoesNotExistException.class,
+                () -> database.toggleIslandPvp(new Actor.Player(owner), full));
+        assertNotEquals(slot, database.addIslandData(UUID.randomUUID(), UUID.randomUUID(), "a"));
+        database.deleteIsland(new Actor.Player(owner), full);
+        assertTrue(database.getIslandSlot(full).isEmpty());
+        assertTrue(database.getIslandUuid(owner).isEmpty());
+        assertEquals(slot, database.addIslandData(UUID.randomUUID(), UUID.randomUUID(), "b"));
+    }
+
+    @Test
+    void aStaleDeleteCannotRemoveANewIslandAtTheSameSlot() {
+        int slot = database.getIslandSlot(full).orElseThrow();
+        database.beginIslandDeletion(new Actor.Bypass("test"), full);
+        database.deleteIsland(new Actor.Bypass("test"), full);
+        UUID replacement = UUID.randomUUID();
+        assertEquals(slot, database.addIslandData(replacement, UUID.randomUUID(), "a"));
+        database.finishIslandCreation(replacement);
+        assertThrows(org.me.advancedsky.exceptions.IslandDoesNotExistException.class,
+                () -> database.deleteIsland(new Actor.Bypass("stale"), full));
+        assertEquals(slot, database.getIslandSlot(replacement).orElseThrow());
+        assertFalse(database.isIslandDeleting(replacement));
+    }
+
+    @Test
+    void aFailedCreateRollsBackItsClaimOnAnEmptySlot() {
+        int slot = database.getIslandSlot(full).orElseThrow();
+        database.beginIslandDeletion(new Actor.Bypass("test"), full);
+        database.deleteIsland(new Actor.Bypass("test"), full);
+        UUID failed = UUID.randomUUID();
+        when(config.getIslandSpawnX()).thenThrow(new IllegalStateException("home failed"));
+        assertThrows(IllegalStateException.class, () -> database.addIslandData(failed, UUID.randomUUID(), "a"));
+        assertTrue(database.getIslandSlot(failed).isEmpty());
+        doReturn(0D).when(config).getIslandSpawnX();
+        assertEquals(slot, database.addIslandData(UUID.randomUUID(), UUID.randomUUID(), "a"));
+    }
+
+    @Test
+    void concurrentCreatesOnDifferentHostsCannotClaimTheSameEmptySlot() {
+        int slot = database.getIslandSlot(full).orElseThrow();
+        database.beginIslandDeletion(new Actor.Bypass("test"), full);
+        database.deleteIsland(new Actor.Bypass("test"), full);
+        var first = java.util.concurrent.CompletableFuture.supplyAsync(() -> database.addIslandData(UUID.randomUUID(), UUID.randomUUID(), "a"));
+        var second = java.util.concurrent.CompletableFuture.supplyAsync(() -> database.addIslandData(UUID.randomUUID(), UUID.randomUUID(), "b"));
+        int firstSlot = first.join();
+        int secondSlot = second.join();
+        assertNotEquals(firstSlot, secondSlot);
+        assertTrue(firstSlot == slot || secondSlot == slot);
+    }
+
+    @Test
+    void anUnauthorizedDeletionDoesNotMarkTheRowOrFreeTheSlot() {
+        assertThrows(RuntimeException.class, () -> database.beginIslandDeletion(new Actor.Player(member), full));
+        assertFalse(database.isIslandDeleting(full));
+        assertNotNull(database.getIsland(full));
+        assertThrows(IllegalStateException.class, () -> database.deleteIsland(new Actor.Bypass("not begun"), full));
+        assertTrue(database.getIslandSlot(full).isPresent());
+    }
+
+    @Test
+    void upgradingAnExistingSchemaAddsDeletionStateAndPreservesIslands() throws Exception {
+        sql("ALTER TABLE test_islands DROP COLUMN deleting");
+        Method createTables = DatabaseHandler.class.getDeclaredMethod("createTables");
+        createTables.setAccessible(true);
+        createTables.invoke(database);
+        assertFalse(database.isIslandDeleting(full));
+        assertEquals(Set.of(full, bare), database.getIslandsByServer("a").keySet());
+        try (var result = connection.createStatement().executeQuery("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'TEST_ISLAND_SLOTS'")) {
+            result.next();
+            assertEquals(0, result.getInt(1), "slot recycling needs no separate table");
+        }
+    }
+
+    @Test
+    void slotOneIsAllocatedSafelyWhenTheTableIsEmpty() throws Exception {
+        sql("DELETE FROM test_islands");
+        var first = java.util.concurrent.CompletableFuture.supplyAsync(() -> database.addIslandData(UUID.randomUUID(), UUID.randomUUID(), "a"));
+        var second = java.util.concurrent.CompletableFuture.supplyAsync(() -> database.addIslandData(UUID.randomUUID(), UUID.randomUUID(), "b"));
+        assertEquals(Set.of(1, 2), Set.of(first.join(), second.join()));
+    }
+
+    @Test
+    void anInterruptedCreateIsRecoverableUntilTheHostFinishesPasting() {
+        UUID building = UUID.randomUUID();
+        int slot = database.addIslandData(building, UUID.randomUUID(), "a");
+        assertTrue(database.isIslandDeleting(building));
+        assertEquals(Map.of(building, slot), database.getDeletingIslands("a"));
+        assertNull(database.getIsland(building));
+        database.finishIslandCreation(building);
+        assertFalse(database.isIslandDeleting(building));
+        assertNotNull(database.getIsland(building));
+        assertTrue(database.getDeletingIslands("a").isEmpty());
     }
 
     private static void assertSameIsland(Island expected, Island actual) {

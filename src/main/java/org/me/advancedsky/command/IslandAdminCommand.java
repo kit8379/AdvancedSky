@@ -24,6 +24,7 @@ public class IslandAdminCommand implements CommandExecutor, AsyncCommandTabRoute
         this.config = config;
 
         subCommands.add(new AdminReloadCommand(plugin, config));
+        subCommands.add(new AdminPurgeCommand(plugin, config));
         subCommands.add(new AdminCreateIslandCommand(plugin, api, config));
         subCommands.add(new AdminDeleteIslandCommand(plugin, api, config));
         subCommands.add(new AdminAddMemberCommand(plugin, api, config));

@@ -81,6 +81,7 @@ public class IslandProtectionListener implements Listener {
             return true;
         }
 
+        if (islandCache.isDeletingAt(location)) return false;
         if (player.isOp()) {
             return true;
         }
@@ -593,7 +594,6 @@ public class IslandProtectionListener implements Listener {
         if (!isIslandWorld(to)) {
             return;
         }
-
         // A rider steering a vehicle moves it, and from and to are the vehicle's. Every rider must
         // be allowed in, and Folia's own undo of a cancelled move fails for a passenger, so the
         // vehicle is put back.
@@ -603,6 +603,11 @@ public class IslandProtectionListener implements Listener {
             if (putBack(vehicle, event.getFrom(), to)) {
                 event.setCancelled(true);
             }
+            return;
+        }
+
+        if (islandCache.isDeletingAt(to)) {
+            event.setCancelled(true);
             return;
         }
 
@@ -632,6 +637,12 @@ public class IslandProtectionListener implements Listener {
         // A vehicle that itself rides one moves with it, and the one at the bottom is put back.
         if ((from.getBlockX() == to.getBlockX() && from.getBlockZ() == to.getBlockZ()) || !isIslandWorld(to) || vehicle.getVehicle() != null) {
             return false;
+        }
+
+        if (islandCache.isDeletingAt(to) && !EntityUtils.riders(vehicle).isEmpty()) {
+            vehicle.setVelocity(new Vector());
+            vehicle.teleportAsync(from, PlayerTeleportEvent.TeleportCause.PLUGIN);
+            return true;
         }
 
         Island island = islandCache.getAt(to);

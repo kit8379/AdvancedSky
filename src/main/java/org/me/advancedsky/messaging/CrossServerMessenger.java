@@ -59,7 +59,9 @@ public final class CrossServerMessenger {
             }
         });
 
-        future.orTimeout(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS).whenComplete((result, throwable) -> pendingRequests.remove(message.getMessageId()));
+        // Physical clearing may wait up to two minutes for player transfers/chunk eviction.
+        long timeout = action.equals("island.delete") || action.equals("island.create") ? 180L : REQUEST_TIMEOUT_SECONDS;
+        future.orTimeout(timeout, TimeUnit.SECONDS).whenComplete((result, throwable) -> pendingRequests.remove(message.getMessageId()));
         return future;
     }
 

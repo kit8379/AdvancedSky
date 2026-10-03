@@ -5,6 +5,9 @@ messages:
   # ================================================================================================================
 
   plugin-reloaded: "<green>Plugin reloaded successfully!"
+  region-purge-started: "<yellow>Retrying incomplete island deletions..."
+  region-purge-finished: "<green>Completed {purged} island deletion(s); {deferred} could not finish."
+  region-purge-island-server: "<red>Run this command on an island server."
   unknown-exception: "<red>An unknown error occurred while processing your request. Please try again later or contact the administrator."
 
   # ================================================================================================================

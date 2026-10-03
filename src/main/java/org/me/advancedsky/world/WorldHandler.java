@@ -14,6 +14,7 @@ import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.grid.IslandGrid;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -22,6 +23,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -31,8 +34,8 @@ import java.util.function.Supplier;
  * islands hosted here.
  * <p>
  * Creating an island copies the template built in the template world onto the island centre;
- * deleting lists the region files of the island's area for deletion at the next startup (see
- * {@link RegionPurge}). All block work runs on the region scheduler of the chunk it touches, and
+ * deleting immediately evicts and clears that area's region files before its database row goes.
+ * All block work runs on the region scheduler of the chunk it touches, and
  * where a player stands is read on that player's own scheduler, so it is safe on Folia and on
  * Paper alike.
  */
@@ -40,7 +43,7 @@ public class WorldHandler {
 
     private final AdvancedSky plugin;
     private final IslandGrid grid;
-    private final RegionPurge regionPurge;
+    private volatile boolean stopped;
     private final World world;
     private final List<Path> storageFolders;
     private final World templateWorld;
@@ -48,10 +51,9 @@ public class WorldHandler {
     private final BlockVector templateMin;
     private final BlockVector templateMax;
 
-    public WorldHandler(AdvancedSky plugin, ConfigHandler config, IslandGrid grid, RegionPurge regionPurge) {
+    public WorldHandler(AdvancedSky plugin, ConfigHandler config, IslandGrid grid) {
         this.plugin = plugin;
         this.grid = grid;
-        this.regionPurge = regionPurge;
         this.templateAnchor = new BlockVector(config.getTemplateAnchorX(), config.getTemplateAnchorY(), config.getTemplateAnchorZ());
 
         // Either corner order is accepted, as with a WorldEdit selection.
@@ -94,6 +96,10 @@ public class WorldHandler {
         return requireWorld();
     }
 
+    public boolean isIslandLocation(Location location) {
+        return world != null && world.equals(location.getWorld());
+    }
+
     /**
      * Copies the template onto the island. Completes once every block has been placed.
      */
@@ -102,35 +108,92 @@ public class WorldHandler {
     }
 
     /**
-     * Lists the region files of the island's area for deletion at the next startup and sends
-     * every player in the area to the lobby. Its blocks and entities stay until then, on a slot
-     * nobody may stand on and that is never handed out again.
+     * Clears the physical area now. The caller keeps its database row until this succeeds.
+     * Player transfers and chunk eviction are asynchronous; no region thread waits on I/O.
      */
     public CompletableFuture<Void> deleteIsland(int slot) {
-        purgeArea(slot);
-        return removePlayersFromIsland(slot, player -> true);
+        List<Path> files = regionFiles(slot);
+        Location center = grid.center(requireWorld(), slot);
+        int rx = Math.floorDiv(center.getBlockX(), 512);
+        int rz = Math.floorDiv(center.getBlockZ(), 512);
+        AtomicBoolean cancelled = new AtomicBoolean();
+        return removePlayersFromIsland(slot, player -> true)
+                .thenCompose(v -> awaitRegionUnloaded(rx * 32, rz * 32, 60, cancelled).orTimeout(120, TimeUnit.SECONDS)
+                        .whenComplete((ready, error) -> { if (error != null) cancelled.set(true); }))
+                .thenRunAsync(() -> {
+                    if (stopped) throw new IllegalStateException("Island world handler stopped");
+                    RegionStorageAccess.flushAndEvict(world, rx, rz);
+                    if (stopped || RegionStorageAccess.hasHolders(world, rx * 32, rz * 32)) {
+                        throw new IllegalStateException("Island region is still in use: " + slot);
+                    }
+                    for (Path file : files) {
+                        try { Files.deleteIfExists(file); }
+                        catch (IOException e) { throw new java.io.UncheckedIOException("Could not clear island slot " + slot, e); }
+                    }
+                }, plugin.getBukkitAsyncExecutor());
     }
 
-    /**
-     * Lists the region files of the island's area for deletion at the next startup. Needs no
-     * scheduler, so it also runs while the plugin disables.
-     */
-    public void purgeArea(int slot) {
-        try {
-            regionPurge.schedule(regionFiles(slot));
-        } catch (IOException e) {
-            plugin.severe("Could not list the region files of the island area at slot " + slot + " for deletion; its blocks stay in the world", e);
-        }
+    public void stop() {
+        stopped = true;
     }
 
-    /**
-     * The region, entity and point-of-interest files holding the island's area, which is exactly
-     * one 512x512 region file.
-     */
-    private List<Path> regionFiles(int slot) {
+    /** Every island area occupies exactly one region, with separate entity and POI storage. */
+    public List<Path> regionFiles(int slot) {
         Location center = grid.center(requireWorld(), slot);
         String name = "r." + Math.floorDiv(center.getBlockX(), 512) + "." + Math.floorDiv(center.getBlockZ(), 512) + ".mca";
         return storageFolders.stream().map(folder -> folder.resolve(name)).toList();
+    }
+
+    private CompletableFuture<Void> awaitRegionUnloaded(int baseX, int baseZ, int attempts, AtomicBoolean cancelled) {
+        if (stopped || cancelled.get()) return CompletableFuture.failedFuture(new IllegalStateException("Island cleanup stopped"));
+        List<CompletableFuture<Void>> evictions = new ArrayList<>();
+        for (int x = baseX; x < baseX + 32; x++) {
+            for (int z = baseZ; z < baseZ + 32; z++) {
+                if (!world.isChunkLoaded(x, z)) continue;
+                int cx = x;
+                int cz = z;
+                CompletableFuture<Void> eviction = new CompletableFuture<>();
+                evictions.add(eviction);
+                Bukkit.getRegionScheduler().execute(plugin, world, cx, cz, () -> {
+                    try {
+                        if (stopped || cancelled.get()) throw new IllegalStateException("Island cleanup stopped");
+                        // False can mean a player transfer or chunk ticket is still holding it.
+                        // Retrying on later ticks also covers Folia's deferred unload.
+                        world.unloadChunk(cx, cz, true);
+                        eviction.complete(null);
+                    } catch (Throwable e) {
+                        eviction.completeExceptionally(e);
+                    }
+                });
+            }
+        }
+        return allOf(evictions).thenCompose(v -> {
+            CompletableFuture<Void> result = new CompletableFuture<>();
+            Bukkit.getGlobalRegionScheduler().runDelayed(plugin, task -> {
+                try {
+                    if (stopped || cancelled.get()) throw new IllegalStateException("Island cleanup stopped");
+                    boolean loaded = false;
+                    for (int x = baseX; x < baseX + 32 && !loaded; x++) {
+                        for (int z = baseZ; z < baseZ + 32; z++) {
+                            if (world.isChunkLoaded(x, z)) { loaded = true; break; }
+                        }
+                    }
+                    if (!loaded && !RegionStorageAccess.hasHolders(world, baseX, baseZ)) {
+                        result.complete(null);
+                    } else if (attempts == 1) {
+                        result.completeExceptionally(new IllegalStateException("Island region did not unload; database row retained"));
+                    } else {
+                        awaitRegionUnloaded(baseX, baseZ, attempts - 1, cancelled).whenComplete((ready, error) -> {
+                            if (error == null) result.complete(null);
+                            else result.completeExceptionally(error);
+                        });
+                    }
+                } catch (Throwable e) {
+                    result.completeExceptionally(e);
+                }
+            }, 20L);
+            return result;
+        });
     }
 
     /**
@@ -289,6 +352,7 @@ public class WorldHandler {
             CompletableFuture<Void> done = new CompletableFuture<>();
             Bukkit.getRegionScheduler().run(plugin, target, chunkX, chunkZ, task -> {
                 try {
+                    if (stopped) throw new IllegalStateException("Island world handler stopped");
                     action.apply(chunk).whenComplete((v, ex) -> {
                         if (ex != null) {
                             done.completeExceptionally(ex);

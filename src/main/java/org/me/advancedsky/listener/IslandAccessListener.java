@@ -58,9 +58,14 @@ public class IslandAccessListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerMove(PlayerMoveEvent event) {
         Player player = event.getPlayer();
-        if (!event.hasChangedBlock() || player.isOp() || !isIslandWorld(event.getTo().getWorld())) {
+        if (!event.hasChangedBlock() || !isIslandWorld(event.getTo().getWorld())) {
             return;
         }
+        if (islandCache.isDeletingAt(event.getTo())) {
+            denyAccess(player, config.getIslandLockedMessage());
+            return;
+        }
+        if (player.isOp()) return;
 
         Island island = islandCache.getAt(event.getTo());
         if (island != null) {
@@ -81,11 +86,15 @@ public class IslandAccessListener implements Listener {
      * player's thread.
      */
     private void checkAccess(Player player) {
+        Location location = player.getLocation();
+        if (isIslandWorld(location.getWorld()) && islandCache.isDeletingAt(location)) {
+            denyAccess(player, config.getIslandLockedMessage());
+            return;
+        }
         if (player.isOp()) {
             return;
         }
 
-        Location location = player.getLocation();
         if (!isIslandWorld(location.getWorld())) {
             return;
         }

@@ -267,6 +267,35 @@ public class ConfigHandler {
         return config.getString("mysql.prefix");
     }
 
+    public String[] getAdminPurgeAliases() {
+        return commands.getStringList("commands.admin.purge.aliases").toArray(new String[0]);
+    }
+
+    public String getAdminPurgePermission() {
+        return commands.getString("commands.admin.purge.permission");
+    }
+
+    public String getAdminPurgeSyntax() {
+        return commands.getString("commands.admin.purge.syntax");
+    }
+
+    public String getAdminPurgeDescription() {
+        return commands.getString("commands.admin.purge.description");
+    }
+
+    public Component getRegionPurgeStartedMessage() {
+        return ColorUtils.colorize(messages.getString("messages.region-purge-started"));
+    }
+
+    public Component getRegionPurgeFinishedMessage(int purged, int deferred) {
+        return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.region-purge-finished"))
+                .replace("{purged}", Integer.toString(purged)).replace("{deferred}", Integer.toString(deferred)));
+    }
+
+    public Component getRegionPurgeIslandServerMessage() {
+        return ColorUtils.colorize(messages.getString("messages.region-purge-island-server"));
+    }
+
     public String getRedisHost() {
         return config.getString("redis.host");
     }

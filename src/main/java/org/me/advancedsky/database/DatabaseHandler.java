@@ -164,10 +164,26 @@ public class DatabaseHandler {
 
     private void createTables() {
         // server: the island server hosting the island for its whole life.
-        // slot: the island's position on the grid, the same on every server. AUTO_INCREMENT never hands
-        // out a value twice, so a deleted island's area is never reused while its region files wait
-        // for deletion at the next startup.
-        executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "islands (" + "island_uuid CHAR(36) NOT NULL," + "server VARCHAR(64) NOT NULL," + "slot INT NOT NULL AUTO_INCREMENT," + "`lock` BOOLEAN NOT NULL DEFAULT FALSE," + "pvp BOOLEAN NOT NULL DEFAULT FALSE," + "PRIMARY KEY (island_uuid)," + "UNIQUE KEY uq_islands_slot (slot)," + "KEY idx_islands_server (server)" + ") ENGINE=InnoDB;", stmt -> {
+        // A deleting row keeps its slot occupied until physical cleanup has completed.
+        // Creation explicitly chooses a gap; AUTO_INCREMENT remains for existing schema compatibility.
+        executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "islands (" + "island_uuid CHAR(36) NOT NULL," + "server VARCHAR(64) NOT NULL," + "slot INT NOT NULL AUTO_INCREMENT," + "`lock` BOOLEAN NOT NULL DEFAULT FALSE," + "pvp BOOLEAN NOT NULL DEFAULT FALSE," + "deleting BOOLEAN NOT NULL DEFAULT FALSE," + "PRIMARY KEY (island_uuid)," + "UNIQUE KEY uq_islands_slot (slot)," + "KEY idx_islands_server (server)" + ") ENGINE=InnoDB;", stmt -> {
+        });
+
+        // Upgrade an existing table without replacing its data. Concurrent host upgrades may
+        // both observe a missing column; only the duplicate-column error is harmless.
+        withConnection(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("SELECT deleting FROM " + prefix + "islands WHERE 1 = 0");
+                 ResultSet ignored = statement.executeQuery()) {
+                return null;
+            } catch (SQLException e) {
+                if (!"42S22".equals(e.getSQLState())) throw e;
+                try {
+                    executeUpdate(connection, "ALTER TABLE " + prefix + "islands ADD COLUMN deleting BOOLEAN NOT NULL DEFAULT FALSE", stmt -> {});
+                } catch (SQLException duplicate) {
+                    if (!"42S21".equals(duplicate.getSQLState())) throw duplicate;
+                }
+                return null;
+            }
         });
 
         executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "island_players (" + "player_uuid CHAR(36) NOT NULL," + "island_uuid CHAR(36) NOT NULL," + "role VARCHAR(56) NOT NULL," + "PRIMARY KEY (player_uuid, island_uuid)," + "UNIQUE KEY uq_island_players_player_uuid (player_uuid)," + "KEY idx_island_players_island_role (island_uuid, role)," + "CONSTRAINT fk_island_players_island " + "FOREIGN KEY (island_uuid) REFERENCES " + prefix + "islands(island_uuid) " + "ON DELETE CASCADE" + ") ENGINE=InnoDB;", stmt -> {
@@ -510,48 +526,74 @@ public class DatabaseHandler {
      * Stores a new island hosted on the given server and returns the grid slot it was given.
      */
     public int addIslandData(UUID islandUuid, UUID ownerUuid, String server) {
-        try {
-            return inTransaction(connection -> {
-                if (getPlayerIsland(connection, ownerUuid).isPresent()) {
-                    throw new IslandAlreadyExistException();
-                }
+        for (int attempt = 0; ; attempt++) {
+            try {
+                return inTransaction(connection -> {
+                    if (getPlayerIsland(connection, ownerUuid).isPresent()) {
+                        throw new IslandAlreadyExistException();
+                    }
 
-                executeUpdate(connection, "INSERT INTO " + prefix + "islands (island_uuid, server) VALUES (?, ?);", stmt -> {
-                    stmt.setString(1, islandUuid.toString());
-                    stmt.setString(2, server);
+                    // Lock occupied positions in a consistent order. The unique slot index also
+                    // protects concurrent allocators when the table is empty or has a gap.
+                    int slot = executeQuery(connection, "SELECT slot FROM " + prefix + "islands ORDER BY slot FOR UPDATE", stmt -> {}, rs -> {
+                        int candidate = 1; // Slot zero is the world spawn.
+                        while (rs.next()) {
+                            int occupied = rs.getInt("slot");
+                            if (occupied == candidate) candidate++;
+                            else if (occupied > candidate) break;
+                        }
+                        return candidate;
+                    });
+                    if (slot > IslandGrid.MAX_SLOT) throw new IslandGridFullException();
+                    try {
+                        // An interrupted paste is also cleanup work. Make the row active only
+                        // after the host finishes building, so even a process crash is recoverable.
+                        executeUpdate(connection, "INSERT INTO " + prefix + "islands (island_uuid, server, slot, deleting) VALUES (?, ?, ?, TRUE)", stmt -> {
+                            stmt.setString(1, islandUuid.toString());
+                            stmt.setString(2, server);
+                            stmt.setInt(3, slot);
+                        });
+                    } catch (SQLIntegrityConstraintViolationException collision) {
+                        boolean duplicateIsland = executeQuery(connection, "SELECT 1 FROM " + prefix + "islands WHERE island_uuid = ? FOR UPDATE", stmt -> stmt.setString(1, islandUuid.toString()), ResultSet::next);
+                        if (duplicateIsland) throw new IslandAlreadyExistException();
+                        throw new SlotAllocationCollision(collision);
+                    }
+
+                    executeUpdate(connection, "INSERT INTO " + prefix + "island_players (player_uuid, island_uuid, role) VALUES (?, ?, ?);", stmt -> {
+                        stmt.setString(1, ownerUuid.toString());
+                        stmt.setString(2, islandUuid.toString());
+                        stmt.setString(3, "owner");
+                    });
+
+                    String homePoint = getDefaultHomePoint(slot);
+
+                    executeUpdate(connection, "INSERT INTO " + prefix + "island_homes (player_uuid, island_uuid, home_name, home_location) VALUES (?, ?, ?, ?) " + "ON DUPLICATE KEY UPDATE island_uuid = VALUES(island_uuid), home_location = VALUES(home_location);", stmt -> {
+                        stmt.setString(1, ownerUuid.toString());
+                        stmt.setString(2, islandUuid.toString());
+                        stmt.setString(3, "default");
+                        stmt.setString(4, homePoint);
+                    });
+
+                    return slot;
                 });
-
-                int slot = executeQuery(connection, "SELECT slot FROM " + prefix + "islands WHERE island_uuid = ?", stmt -> {
-                    stmt.setString(1, islandUuid.toString());
-                }, rs -> {
-                    rs.next();
-                    return rs.getInt("slot");
-                });
-
-                if (slot > IslandGrid.MAX_SLOT) {
-                    throw new IslandGridFullException();
-                }
-
-                executeUpdate(connection, "INSERT INTO " + prefix + "island_players (player_uuid, island_uuid, role) VALUES (?, ?, ?);", stmt -> {
-                    stmt.setString(1, ownerUuid.toString());
-                    stmt.setString(2, islandUuid.toString());
-                    stmt.setString(3, "owner");
-                });
-
-                String homePoint = getDefaultHomePoint(slot);
-
-                executeUpdate(connection, "INSERT INTO " + prefix + "island_homes (player_uuid, island_uuid, home_name, home_location) VALUES (?, ?, ?, ?) " + "ON DUPLICATE KEY UPDATE island_uuid = VALUES(island_uuid), home_location = VALUES(home_location);", stmt -> {
-                    stmt.setString(1, ownerUuid.toString());
-                    stmt.setString(2, islandUuid.toString());
-                    stmt.setString(3, "default");
-                    stmt.setString(4, homePoint);
-                });
-
-                return slot;
-            });
-        } catch (ConstraintViolationException e) {
-            throw new IslandAlreadyExistException();
+            } catch (SlotAllocationCollision e) {
+                if (attempt >= 4) throw new IllegalStateException("Could not allocate a free island slot; retry creation", e);
+            } catch (ConstraintViolationException e) {
+                throw new IslandAlreadyExistException();
+            }
         }
+    }
+
+    private static final class SlotAllocationCollision extends RuntimeException {
+        SlotAllocationCollision(SQLException cause) { super(cause); }
+    }
+
+    public void finishIslandCreation(UUID islandUuid) {
+        inTransaction(connection -> {
+            lockIsland(connection, islandUuid, true);
+            executeUpdate(connection, "UPDATE " + prefix + "islands SET deleting = FALSE WHERE island_uuid = ?", stmt -> stmt.setString(1, islandUuid.toString()));
+            return null;
+        });
     }
 
     public void addIslandPlayer(Actor actor, UUID islandUuid, UUID playerUuid, String role) {
@@ -685,7 +727,7 @@ public class DatabaseHandler {
         return inTransaction(connection -> {
             // This select is the island lock as well as the value read, so the role check has to
             // come after it: checking first would read the role without holding the lock.
-            boolean current = executeQuery(connection, "SELECT " + column + " FROM " + prefix + "islands WHERE island_uuid = ? FOR UPDATE", stmt -> {
+            boolean current = executeQuery(connection, "SELECT " + column + " FROM " + prefix + "islands WHERE island_uuid = ? AND deleting = FALSE FOR UPDATE", stmt -> {
                 stmt.setString(1, islandUuid.toString());
             }, rs -> {
                 if (!rs.next()) {
@@ -905,17 +947,37 @@ public class DatabaseHandler {
         });
     }
 
-    public void deleteIsland(Actor actor, UUID islandUuid) {
+    /** Keep the row and membership while the host clears the island's physical area. */
+    public void beginIslandDeletion(Actor actor, UUID islandUuid) {
         inTransaction(connection -> {
-            lockIsland(connection, islandUuid);
+            lockIsland(connection, islandUuid, true);
             requireRole(actor, connection, islandUuid, RequiredRole.OWNER);
-
-            executeUpdate(connection, "DELETE FROM " + prefix + "islands WHERE island_uuid = ?;", stmt -> {
-                stmt.setString(1, islandUuid.toString());
-            });
-
+            executeUpdate(connection, "UPDATE " + prefix + "islands SET deleting = TRUE WHERE island_uuid = ?", stmt -> stmt.setString(1, islandUuid.toString()));
             return null;
         });
+    }
+
+    /** Called by the host only after physical cleanup has succeeded. */
+    public void deleteIsland(Actor actor, UUID islandUuid) {
+        inTransaction(connection -> {
+            lockIsland(connection, islandUuid, true);
+            requireRole(actor, connection, islandUuid, RequiredRole.OWNER);
+            int deleted = executeUpdate(connection, "DELETE FROM " + prefix + "islands WHERE island_uuid = ? AND deleting = TRUE", stmt -> stmt.setString(1, islandUuid.toString()));
+            if (deleted != 1) throw new IllegalStateException("Island deletion has not begun: " + islandUuid);
+            return null;
+        });
+    }
+
+    public Map<UUID, Integer> getDeletingIslands(String server) {
+        return executeQuery("SELECT island_uuid, slot FROM " + prefix + "islands WHERE server = ? AND deleting = TRUE", stmt -> stmt.setString(1, server), rs -> {
+            Map<UUID, Integer> result = new LinkedHashMap<>();
+            while (rs.next()) result.put(UUID.fromString(rs.getString("island_uuid")), rs.getInt("slot"));
+            return result;
+        });
+    }
+
+    public boolean isIslandDeleting(UUID islandUuid) {
+        return executeQuery("SELECT deleting FROM " + prefix + "islands WHERE island_uuid = ?", stmt -> stmt.setString(1, islandUuid.toString()), rs -> rs.next() && rs.getBoolean("deleting"));
     }
 
     public void deleteIslandPlayer(Actor actor, UUID islandUuid, UUID playerUuid) {
@@ -1009,7 +1071,7 @@ public class DatabaseHandler {
     }
 
     public Island getIsland(UUID islandUuid) {
-        return withConnection(connection -> getIslands(connection, "i.island_uuid = ?", stmt -> stmt.setString(1, islandUuid.toString())).get(islandUuid));
+        return withConnection(connection -> getIslands(connection, "i.island_uuid = ? AND i.deleting = FALSE", stmt -> stmt.setString(1, islandUuid.toString())).get(islandUuid));
     }
 
     /**
@@ -1017,7 +1079,7 @@ public class DatabaseHandler {
      * its cache for good.
      */
     public Map<UUID, Island> getIslandsByServer(String server) {
-        return withConnection(connection -> getIslands(connection, "i.server = ?", stmt -> stmt.setString(1, server)));
+        return withConnection(connection -> getIslands(connection, "i.server = ? AND i.deleting = FALSE", stmt -> stmt.setString(1, server)));
     }
 
     /**
@@ -1148,7 +1210,11 @@ public class DatabaseHandler {
     }
 
     private void lockIsland(Connection connection, UUID islandUuid) throws SQLException {
-        boolean exists = executeQuery(connection, "SELECT 1 FROM " + prefix + "islands WHERE island_uuid = ? FOR UPDATE", stmt -> {
+        lockIsland(connection, islandUuid, false);
+    }
+
+    private void lockIsland(Connection connection, UUID islandUuid, boolean allowDeleting) throws SQLException {
+        boolean exists = executeQuery(connection, "SELECT 1 FROM " + prefix + "islands WHERE island_uuid = ?" + (allowDeleting ? "" : " AND deleting = FALSE") + " FOR UPDATE", stmt -> {
             stmt.setString(1, islandUuid.toString());
         }, ResultSet::next);
 

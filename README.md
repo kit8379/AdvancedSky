@@ -18,9 +18,9 @@ demand; AdvancedSky keeps every island of a server in one pre-loaded world, on a
   agree (NTP), because a request between servers is refused once it is ten seconds old.
 - **MySQL is the source of truth.** An island row holds its host server and its grid slot; its
   players, homes, warps, bans, co-ops, level and upgrades live in NewSky's tables. Slots are
-  unique across the whole network and never reused, so an island has the same coordinates on
-  every server and can be moved to another server offline by moving its region file and
-  updating one column.
+  unique across live islands in the network. A deleting island keeps its row and slot until
+  physical cleanup succeeds. Creation chooses the first gap in the occupied slots; no
+  separate slot-recycling table is needed.
 - **The host does the work.** Every change to an island runs on the server that hosts it, in one
   serial chain per island: it writes MySQL, applies the change to its world and refreshes its
   island cache. Another server asks the host through a Redis Streams request and waits for the
@@ -49,23 +49,33 @@ demand; AdvancedSky keeps every island of a server in one pre-loaded world, on a
 
 1. Async: pick the listed island server with the fewest islands (B).
 2. If B is A, run the create here; otherwise send an `island.create` request to B and wait.
-3. On B: insert the island row (MySQL assigns the next slot) with the owner's `default` home,
-   add it to its island cache, then paste the template one chunk at a time on the region threads that
-   own the chunks. If the paste fails, the area and the row are removed again and the failure
-   is returned.
+3. On B: insert the island row at the first free slot with the owner's `default` home. Clear
+   any old files at that position on B, then paste the template on the owning region threads
+   and add the finished island to the cache. Its row carries `deleting = true` until building
+   finishes, then becomes active. If creation fails or crashes, clear the area before removing
+   its row. Interrupted cleanup retains the row for retry.
 4. Take the player to the island's `default` home, as `/island home` does.
 
 `/island home [name]`, `/island warp` and `/island lobby`: read the destination, then ask the
 destination server to teleport the player. If the player is on another server, that server
 keeps the teleport and the player is sent there through the proxy; it fires when they join.
 
-`/island delete` (asked three times, as in NewSky): the host deletes the row (owner only, under
-the island row lock), sends everyone standing in the island area to the lobby, and lists the
-area's region, entity and point-of-interest files in `plugins/AdvancedSky/region-purge.txt`. An
-island area is exactly one region file, so nothing is cleared block by block: the next startup
-deletes the listed files before any world loads, while nothing can have them open or cached, and
-a file it cannot delete stays listed for the startup after. Until then the old blocks stay on a
-slot nobody may stand on. Slots are never handed out twice.
+`/island delete` (asked three times, as in NewSky): the host validates ownership under the
+island row lock and sets `deleting = true`, retaining the row, membership and slot. The cache
+blocks entry, edits and island teleports, including operators, while players leave for the
+lobby. The host immediately saves and evicts the area's chunks on their owning region threads,
+waits for unloaded holders, drains pending writes and closes region-file caches. It deletes
+the region, entity and POI files asynchronously, then deletes the island row and its dependent
+records. Only then is the slot free. The command completes after both steps; there is no
+24-hour sweep or local purge queue. Cross-server create/delete requests allow three minutes
+for this work instead of the ordinary 30 seconds.
+
+Each island area is exactly one region file. The storage barrier targets Paper/Folia 1.21.11;
+unsupported internals, held chunks or failed file/DB operations retain the deleting row and
+slot. Startup retries unfinished deletions, and `/isadmin purge` retries them on demand. An
+interrupted create at shutdown is marked for the same recovery. Existing tables gain the
+`deleting` column automatically; obsolete `island_slots` tables or queue files from earlier
+builds are unused and are not automatically dropped.
 
 ## Features
 

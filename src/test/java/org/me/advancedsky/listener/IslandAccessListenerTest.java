@@ -64,6 +64,14 @@ class IslandAccessListenerTest {
     }
 
     @Test
+    void anOperatorCannotJoinAnIslandBeingDeleted() {
+        when(player.isOp()).thenReturn(true);
+        when(cache.isDeletingAt(location)).thenReturn(true);
+        join();
+        verify(api).lobby(playerUuid);
+    }
+
+    @Test
     void anIslandWhoseCacheEntryIsUnavailableFailsClosed() {
         when(cache.getIslandUuidAt(location)).thenReturn(UUID.randomUUID());
 

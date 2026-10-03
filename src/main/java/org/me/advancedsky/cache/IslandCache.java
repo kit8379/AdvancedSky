@@ -7,6 +7,7 @@ import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.model.Island;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -34,6 +35,7 @@ public class IslandCache {
 
     private final Map<UUID, Island> islands = new ConcurrentHashMap<>();
     private final Map<Integer, UUID> islandsBySlot = new ConcurrentHashMap<>();
+    private final Set<UUID> deleting = ConcurrentHashMap.newKeySet();
     // Each dirty island maps to the retry that owns it, so one failure streak runs one retry.
     private final Map<UUID, Object> dirty = new ConcurrentHashMap<>();
     private final Map<UUID, Long> loading = new ConcurrentHashMap<>();
@@ -46,7 +48,7 @@ public class IslandCache {
     }
 
     public Island get(UUID islandUuid) {
-        if (dirty.containsKey(islandUuid)) {
+        if (deleting.contains(islandUuid) || dirty.containsKey(islandUuid)) {
             return null;
         }
 
@@ -80,11 +82,25 @@ public class IslandCache {
         return slot < 0 ? null : islandsBySlot.get(slot);
     }
 
+    public boolean isDeletingAt(Location location) {
+        UUID islandUuid = getIslandUuidAt(location);
+        return islandUuid != null && deleting.contains(islandUuid);
+    }
+
+    /** Keep the position identifiable but inaccessible while physical deletion is in progress. */
+    public void beginDeletion(UUID islandUuid, int slot) {
+        deleting.add(islandUuid);
+        loading.remove(islandUuid);
+        dirty.remove(islandUuid);
+        islandsBySlot.put(slot, islandUuid);
+    }
+
     /**
      * Loads every island hosted on the server in one read. Called once at startup, before any
      * other load, mutation or listener can touch the cache.
      */
     public void loadAll(String server) {
+        database.getDeletingIslands(server).forEach(this::beginDeletion);
         database.getIslandsByServer(server).forEach((islandUuid, island) -> {
             islands.put(islandUuid, island);
             islandsBySlot.put(island.getSlot(), islandUuid);
@@ -92,6 +108,7 @@ public class IslandCache {
     }
 
     public CompletableFuture<Void> load(UUID islandUuid) {
+        if (deleting.contains(islandUuid)) return CompletableFuture.completedFuture(null);
         long generation = nextLoadGeneration.incrementAndGet();
         loading.put(islandUuid, generation);
 
@@ -166,5 +183,8 @@ public class IslandCache {
             islandsBySlot.remove(island.getSlot(), islandUuid);
         }
         dirty.remove(islandUuid);
+        deleting.remove(islandUuid);
+        // Deletions recovered at startup have a position but no active Island object.
+        islandsBySlot.entrySet().removeIf(entry -> entry.getValue().equals(islandUuid));
     }
 }

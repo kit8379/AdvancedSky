@@ -88,6 +88,14 @@ class IslandProtectionListenerTest {
     }
 
     @Test
+    void deletingIslandsRefuseEntryEvenToOwnersAndOperators() {
+        island(false, Set.of());
+        when(cache.isDeletingAt(inside)).thenReturn(true);
+        assertTrue(move(owner, false, outside, inside));
+        assertTrue(move(visitor, true, outside, inside));
+    }
+
+    @Test
     void movingWithinOrOffTheBoundaryIsNotAnEntry() {
         island(true, Set.of(banned));
 

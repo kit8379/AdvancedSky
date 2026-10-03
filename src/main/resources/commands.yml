@@ -262,6 +262,11 @@ commands:
       permission: 'advancedsky.island.admin.reload'
       syntax: ''
       description: 'Reload plugin configuration files'
+    purge:
+      aliases: []
+      permission: 'advancedsky.island.admin.purge'
+      syntax: ''
+      description: 'Retry incomplete island deletions on this server'
     help:
       aliases: []
       permission: 'advancedsky.island.admin.help'

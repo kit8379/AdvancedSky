@@ -43,6 +43,7 @@ public class IslandOperator {
     private final Map<UUID, CompletableFuture<Void>> chains = new ConcurrentHashMap<>();
     // Creates past their insert and not yet done, by island: the slot each is building.
     private final Map<UUID, Integer> creating = new ConcurrentHashMap<>();
+    private volatile boolean stopping;
 
     public IslandOperator(AdvancedSky plugin, DatabaseHandler database, WorldHandler worldHandler, TeleportHandler teleportHandler, IslandCache islandCache, LimitHandler limitHandler, EconomyHandler economy, String serverID) {
         this.plugin = plugin;
@@ -57,6 +58,7 @@ public class IslandOperator {
 
     public CompletableFuture<Void> createIsland(UUID islandUuid, UUID ownerUuid) {
         return serialized(islandUuid, () -> {
+            if (stopping) throw new IllegalStateException("Island operator stopped");
             int slot;
             try {
                 slot = database.addIslandData(islandUuid, ownerUuid, serverID);
@@ -70,10 +72,16 @@ public class IslandOperator {
             }
             int createdSlot = slot;
             creating.put(islandUuid, createdSlot);
-
-            return islandCache.load(islandUuid).thenCompose(v -> {
-                return worldHandler.createIsland(createdSlot);
-            }).thenRunAsync(() -> {
+            islandCache.beginDeletion(islandUuid, createdSlot);
+            // Gaps from older versions may still hold files on this host. Clear before pasting,
+            // while the newly inserted row reserves the position against other creates.
+            return worldHandler.deleteIsland(createdSlot).thenCompose(v -> worldHandler.createIsland(createdSlot))
+                    .thenComposeAsync(v -> {
+                        if (stopping) throw new IllegalStateException("Island operator stopped");
+                        database.finishIslandCreation(islandUuid);
+                        islandCache.unload(islandUuid);
+                        return islandCache.load(islandUuid);
+                    }, plugin.getBukkitAsyncExecutor()).thenRunAsync(() -> {
                 plugin.debug("IslandOperator", "Created island " + islandUuid + " at slot " + createdSlot + " on server: " + serverID);
             }, plugin.getBukkitAsyncExecutor()).exceptionallyComposeAsync(e -> {
                 return cleanupFailedCreate(islandUuid, createdSlot).thenCompose(v -> {
@@ -84,52 +92,75 @@ public class IslandOperator {
     }
 
     /**
-     * Rolls back the creates still building when the plugin disables: no scheduler is left to
-     * finish or clean them up, and a half-pasted island would stay. Their rows go now and their
-     * areas at the next startup.
+     * Retains interrupted creates as deleting rows. The next startup clears them before deleting
+     * their database rows; a half-built area can never become a free slot during shutdown.
      */
     public void abortCreates() {
+        stopping = true;
+        if (worldHandler != null) worldHandler.stop();
         creating.forEach((islandUuid, slot) -> {
             try {
-                database.deleteIsland(new Actor.Bypass("island create interrupted by shutdown"), islandUuid);
+                database.beginIslandDeletion(new Actor.Bypass("island create interrupted by shutdown"), islandUuid);
+                islandCache.beginDeletion(islandUuid, slot);
             } catch (RuntimeException e) {
                 plugin.severe("Could not roll back the island create interrupted by shutdown: " + islandUuid, e);
             }
-            worldHandler.purgeArea(slot);
-            plugin.warning("Rolled back the create of island " + islandUuid + " at slot " + slot + ", interrupted by shutdown");
+            plugin.warning("Retained interrupted create for cleanup: " + islandUuid + " at slot " + slot);
         });
         creating.clear();
     }
 
     /**
-     * Deletes the island's rows, then sends everyone off its area, whose region files go at the
-     * next startup. Completes once the rows are gone: nothing can reach the island or reuse its
-     * slot any more.
+     * Retains the row while sending players away and clearing its region files. Only successful
+     * physical cleanup deletes the row, at which point a new island may allocate the empty slot.
      */
     public CompletableFuture<Void> deleteIsland(Actor actor, UUID islandUuid) {
-        return serialized(islandUuid, () -> {
-            int slot = getIslandSlot(islandUuid);
+        return serialized(islandUuid, () -> deleteNow(actor, islandUuid, getIslandSlot(islandUuid)));
+    }
+
+    private CompletableFuture<Void> deleteNow(Actor actor, UUID islandUuid, int slot) {
+        if (stopping) return CompletableFuture.failedFuture(new IllegalStateException("Island operator stopped"));
+        try {
+            database.beginIslandDeletion(actor, islandUuid);
+        } catch (RuntimeException e) {
+            if (isRuleRejection(e) || !database.isIslandDeleting(islandUuid)) throw e;
+        }
+        islandCache.beginDeletion(islandUuid, slot);
+        return worldHandler.deleteIsland(slot).thenRunAsync(() -> {
+            if (stopping) throw new IllegalStateException("Island operator stopped");
             try {
                 database.deleteIsland(actor, islandUuid);
             } catch (RuntimeException e) {
-                // A commit whose answer was lost may still have landed: then the island is gone.
-                if (isRuleRejection(e) || database.getIslandSlot(islandUuid).isPresent()) {
-                    throw e;
-                }
+                // A successful commit can lose its answer. The UUID, not the position, identifies it.
+                if (isRuleRejection(e) || database.getIslandSlot(islandUuid).isPresent()) throw e;
             }
             islandCache.unload(islandUuid);
-            limitHandler.unload(islandUuid);
-
-            worldHandler.deleteIsland(slot).whenComplete((v, e) -> {
-                if (e != null) {
-                    plugin.severe("Island rows deleted but not everyone could be sent off its area at slot " + slot + ": " + islandUuid, e);
-                } else {
-                    plugin.debug("IslandOperator", "Deleted island " + islandUuid + " at slot " + slot);
-                }
-            });
-            return CompletableFuture.completedFuture(null);
-        });
+            if (limitHandler != null) limitHandler.unload(islandUuid);
+            plugin.debug("IslandOperator", "Cleared and deleted island " + islandUuid + " at slot " + slot);
+        }, plugin.getBukkitAsyncExecutor());
     }
+
+    /** Startup recovery and manual retry operate on deleting rows only, through the same chain. */
+    public CompletableFuture<DeletionResult> retryDeletions() {
+        return CompletableFuture.supplyAsync(() -> database.getDeletingIslands(serverID), plugin.getBukkitAsyncExecutor())
+                .thenCompose(pending -> {
+                    var results = pending.entrySet().stream().map(entry -> serialized(entry.getKey(), () -> {
+                        if (!database.isIslandDeleting(entry.getKey())) return CompletableFuture.completedFuture(0);
+                        return deleteNow(new Actor.Bypass("incomplete island deletion retry"), entry.getKey(), getIslandSlot(entry.getKey()))
+                                .thenApply(v -> 1);
+                    }).handle((count, error) -> {
+                        if (error != null) plugin.severe("Island cleanup failed; row and slot retained: " + entry.getKey(), error);
+                        return error == null ? count : -1;
+                    })).toList();
+                    return CompletableFuture.allOf(results.toArray(CompletableFuture[]::new)).thenApply(v -> {
+                        int cleaned = (int) results.stream().filter(result -> result.join() == 1).count();
+                        int failed = (int) results.stream().filter(result -> result.join() == -1).count();
+                        return new DeletionResult(cleaned, failed);
+                    });
+                });
+    }
+
+    public record DeletionResult(int purged, int deferred) {}
 
     public CompletableFuture<Boolean> prepareTeleport(UUID playerUuid, String teleportWorld, String teleportLocation) {
         return teleportOrStore(playerUuid, teleportWorld, teleportLocation);
@@ -143,6 +174,9 @@ public class IslandOperator {
     private CompletableFuture<Boolean> teleportOrStore(UUID playerUuid, String teleportWorld, String teleportLocation) {
         return CompletableFuture.supplyAsync(() -> {
             Location location = LocationUtils.stringToLocation(teleportWorld, teleportLocation);
+            if (worldHandler != null && worldHandler.isIslandLocation(location) && islandCache.isDeletingAt(location)) {
+                throw new IslandDoesNotExistException();
+            }
             Player player = Bukkit.getPlayer(playerUuid);
 
             // teleportAsync runs on the thread that owns the player; a player who left meanwhile
@@ -397,18 +431,11 @@ public class IslandOperator {
     }
 
     private CompletableFuture<Void> cleanupFailedCreate(UUID islandUuid, int slot) {
-        return worldHandler.deleteIsland(slot).exceptionally(e -> {
-            plugin.severe("Failed to cleanup area after island create failure: " + islandUuid, e);
+        if (stopping) return CompletableFuture.completedFuture(null);
+        return deleteNow(new Actor.Bypass("island create cleanup"), islandUuid, slot).exceptionally(e -> {
+            plugin.severe("Failed create retained for physical cleanup: " + islandUuid, e);
             return null;
-        }).thenRunAsync(() -> {
-            try {
-                database.deleteIsland(new Actor.Bypass("island create cleanup"), islandUuid);
-            } catch (Exception e) {
-                plugin.severe("Failed to cleanup database after island create failure: " + islandUuid, e);
-            }
-
-            islandCache.unload(islandUuid);
-        }, plugin.getBukkitAsyncExecutor());
+        });
     }
 
     private int getIslandSlot(UUID islandUuid) {

@@ -23,11 +23,6 @@ public class AsyncTabCompleteListener implements Listener {
 
     private final AdvancedSky plugin;
     private final Map<String, AsyncCommandTabRouter> routers = new HashMap<>();
-
-    // Every completion filters its candidates by what is typed of the last argument. Typing asks
-    // again on each keystroke and one completion can cost several database and Redis round trips,
-    // so the unfiltered candidates are kept for a few seconds per sender and everything typed
-    // before that argument, and the next keystrokes only filter them.
     private final Map<String, Candidates> candidates = new ConcurrentHashMap<>();
 
     public AsyncTabCompleteListener(AdvancedSky plugin) {
