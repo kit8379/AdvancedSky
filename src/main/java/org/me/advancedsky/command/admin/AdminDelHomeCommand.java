@@ -108,6 +108,6 @@ public class AdminDelHomeCommand implements SubCommand, AsyncTabComplete {
 
             String prefix = args[2].toLowerCase(Locale.ROOT);
             return api.getHomeNames(uuidOpt.get()).thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()));
-        }).exceptionally(ex -> Collections.emptyList());
+        });
     }
 }

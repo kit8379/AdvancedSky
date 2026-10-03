@@ -118,6 +118,6 @@ public class PlayerRemoveMemberCommand implements SubCommand, AsyncTabComplete {
         String prefix = args[1].toLowerCase(Locale.ROOT);
         UUID playerUuid = player.getUniqueId();
 
-        return api.getIslandUuid(playerUuid).thenCompose(islandUuid -> api.getIslandMembers(islandUuid).thenCompose(members -> api.getPlayerNames(members).thenApply(nameMap -> members.stream().map(uuid -> nameMap.getOrDefault(uuid, uuid.toString())).filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList())))).exceptionally(ex -> Collections.emptyList());
+        return api.getIslandUuid(playerUuid).thenCompose(islandUuid -> api.getIslandMembers(islandUuid).thenCompose(members -> api.getPlayerNames(members).thenApply(nameMap -> members.stream().map(uuid -> java.util.Objects.requireNonNull(nameMap.get(uuid), "Missing player name for " + uuid)).filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()))));
     }
 }

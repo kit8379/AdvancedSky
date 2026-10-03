@@ -69,7 +69,7 @@ public class PlayerBanListCommand implements SubCommand {
             }
 
             return api.getPlayerNames(bannedPlayers).thenAccept(nameMap -> {
-                List<String> playerNames = bannedPlayers.stream().map(uuid -> nameMap.getOrDefault(uuid, uuid.toString())).sorted(String.CASE_INSENSITIVE_ORDER).toList();
+                List<String> playerNames = bannedPlayers.stream().map(uuid -> java.util.Objects.requireNonNull(nameMap.get(uuid), "Missing player name for " + uuid)).sorted(String.CASE_INSENSITIVE_ORDER).toList();
 
                 TextComponent.Builder bannedList = Component.text().append(config.getBannedPlayersHeaderMessage());
 

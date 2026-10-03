@@ -165,34 +165,17 @@ public class DatabaseHandler {
     private void createTables() {
         // server: the island server hosting the island for its whole life.
         // A deleting row keeps its slot occupied until physical cleanup has completed.
-        // Creation explicitly chooses a gap; AUTO_INCREMENT remains for existing schema compatibility.
-        executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "islands (" + "island_uuid CHAR(36) NOT NULL," + "server VARCHAR(64) NOT NULL," + "slot INT NOT NULL AUTO_INCREMENT," + "`lock` BOOLEAN NOT NULL DEFAULT FALSE," + "pvp BOOLEAN NOT NULL DEFAULT FALSE," + "deleting BOOLEAN NOT NULL DEFAULT FALSE," + "PRIMARY KEY (island_uuid)," + "UNIQUE KEY uq_islands_slot (slot)," + "KEY idx_islands_server (server)" + ") ENGINE=InnoDB;", stmt -> {
-        });
-
-        // Upgrade an existing table without replacing its data. Concurrent host upgrades may
-        // both observe a missing column; only the duplicate-column error is harmless.
-        withConnection(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement("SELECT deleting FROM " + prefix + "islands WHERE 1 = 0");
-                 ResultSet ignored = statement.executeQuery()) {
-                return null;
-            } catch (SQLException e) {
-                if (!"42S22".equals(e.getSQLState())) throw e;
-                try {
-                    executeUpdate(connection, "ALTER TABLE " + prefix + "islands ADD COLUMN deleting BOOLEAN NOT NULL DEFAULT FALSE", stmt -> {});
-                } catch (SQLException duplicate) {
-                    if (!"42S21".equals(duplicate.getSQLState())) throw duplicate;
-                }
-                return null;
-            }
+        // Creation explicitly chooses the first free slot.
+        executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "islands (" + "island_uuid CHAR(36) NOT NULL," + "server VARCHAR(64) NOT NULL," + "slot INT NOT NULL," + "`lock` BOOLEAN NOT NULL DEFAULT FALSE," + "pvp BOOLEAN NOT NULL DEFAULT FALSE," + "deleting BOOLEAN NOT NULL DEFAULT FALSE," + "PRIMARY KEY (island_uuid)," + "UNIQUE KEY uq_islands_slot (slot)," + "KEY idx_islands_server (server)" + ") ENGINE=InnoDB;", stmt -> {
         });
 
         executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "island_players (" + "player_uuid CHAR(36) NOT NULL," + "island_uuid CHAR(36) NOT NULL," + "role VARCHAR(56) NOT NULL," + "PRIMARY KEY (player_uuid, island_uuid)," + "UNIQUE KEY uq_island_players_player_uuid (player_uuid)," + "KEY idx_island_players_island_role (island_uuid, role)," + "CONSTRAINT fk_island_players_island " + "FOREIGN KEY (island_uuid) REFERENCES " + prefix + "islands(island_uuid) " + "ON DELETE CASCADE" + ") ENGINE=InnoDB;", stmt -> {
         });
 
-        executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "island_homes (" + "player_uuid CHAR(36) NOT NULL," + "home_name VARCHAR(32) NOT NULL," + "home_location VARCHAR(256)," + "island_uuid CHAR(36) NOT NULL," + "PRIMARY KEY (player_uuid, island_uuid, home_name)," + "KEY idx_island_homes_island_player (island_uuid, player_uuid)," + "CONSTRAINT fk_island_homes_island " + "FOREIGN KEY (island_uuid) REFERENCES " + prefix + "islands(island_uuid) " + "ON DELETE CASCADE," + "CONSTRAINT fk_island_homes_player_membership " + "FOREIGN KEY (player_uuid, island_uuid) REFERENCES " + prefix + "island_players(player_uuid, island_uuid) " + "ON DELETE CASCADE" + ") ENGINE=InnoDB;", stmt -> {
+        executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "island_homes (" + "player_uuid CHAR(36) NOT NULL," + "home_name VARCHAR(32) NOT NULL," + "home_location VARCHAR(256) NOT NULL," + "island_uuid CHAR(36) NOT NULL," + "PRIMARY KEY (player_uuid, island_uuid, home_name)," + "KEY idx_island_homes_island_player (island_uuid, player_uuid)," + "CONSTRAINT fk_island_homes_island " + "FOREIGN KEY (island_uuid) REFERENCES " + prefix + "islands(island_uuid) " + "ON DELETE CASCADE," + "CONSTRAINT fk_island_homes_player_membership " + "FOREIGN KEY (player_uuid, island_uuid) REFERENCES " + prefix + "island_players(player_uuid, island_uuid) " + "ON DELETE CASCADE" + ") ENGINE=InnoDB;", stmt -> {
         });
 
-        executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "island_warps (" + "island_uuid CHAR(36) NOT NULL," + "warp_name VARCHAR(32) NOT NULL," + "warp_location VARCHAR(256)," + "PRIMARY KEY (island_uuid, warp_name)," + "CONSTRAINT fk_island_warps_island " + "FOREIGN KEY (island_uuid) REFERENCES " + prefix + "islands(island_uuid) " + "ON DELETE CASCADE" + ") ENGINE=InnoDB;", stmt -> {
+        executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "island_warps (" + "island_uuid CHAR(36) NOT NULL," + "warp_name VARCHAR(32) NOT NULL," + "warp_location VARCHAR(256) NOT NULL," + "PRIMARY KEY (island_uuid, warp_name)," + "CONSTRAINT fk_island_warps_island " + "FOREIGN KEY (island_uuid) REFERENCES " + prefix + "islands(island_uuid) " + "ON DELETE CASCADE" + ") ENGINE=InnoDB;", stmt -> {
         });
 
         executeUpdate("CREATE TABLE IF NOT EXISTS " + prefix + "island_bans (" + "island_uuid CHAR(36) NOT NULL," + "banned_player CHAR(36) NOT NULL," + "PRIMARY KEY (island_uuid, banned_player)," + "CONSTRAINT fk_island_bans_island " + "FOREIGN KEY (island_uuid) REFERENCES " + prefix + "islands(island_uuid) " + "ON DELETE CASCADE" + ") ENGINE=InnoDB;", stmt -> {
@@ -276,7 +259,7 @@ public class DatabaseHandler {
                     continue;
                 }
 
-                result.put(homeName, homeLocation == null ? "" : homeLocation);
+                result.put(homeName, Objects.requireNonNull(homeLocation, "Missing home location"));
             }
 
             return result.isEmpty() ? Collections.emptyMap() : Map.copyOf(result);
@@ -626,7 +609,8 @@ public class DatabaseHandler {
                 }
 
                 // Seeded under the island lock so it cannot race the owner moving their home.
-                String homePoint = getIslandDefaultHome(connection, islandUuid).orElse(getDefaultHomePoint(getIslandSlot(connection, islandUuid)));
+                String homePoint = getIslandDefaultHome(connection, islandUuid)
+                        .orElseThrow(() -> new IllegalStateException("Island is missing the owner's default home: " + islandUuid));
 
                 executeUpdate(connection, "INSERT INTO " + prefix + "island_players (player_uuid, island_uuid, role) VALUES (?, ?, ?);", stmt -> {
                     stmt.setString(1, playerUuid.toString());

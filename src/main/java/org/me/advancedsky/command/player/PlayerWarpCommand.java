@@ -78,7 +78,7 @@ public class PlayerWarpCommand implements SubCommand, AsyncTabComplete {
 
             UUID targetUuid = targetUuidOpt.get();
 
-            return api.getIslandUuid(targetUuid).thenCompose(islandUuid -> api.player(playerUuid).warp(islandUuid, warpName)).thenRun(() -> api.sendPlayerMessage(playerUuid, config.getWarpSuccessMessage(targetName, warpName)));
+            return api.getIslandUuid(targetUuid).thenCompose(islandUuid -> api.player(playerUuid).warp(islandUuid, warpName, config.getWarpSuccessMessage(targetName, warpName)));
         }).exceptionally(ex -> {
             Throwable cause = ex.getCause();
             if (cause instanceof IslandDoesNotExistException) {
@@ -106,7 +106,7 @@ public class PlayerWarpCommand implements SubCommand, AsyncTabComplete {
         if (args.length == 2) {
             String prefix = args[1].toLowerCase(Locale.ROOT);
 
-            return api.getOnlinePlayersNames().thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList())).exceptionally(ex -> Collections.emptyList());
+            return api.getOnlinePlayersNames().thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()));
         }
 
         if (args.length == 3) {
@@ -120,7 +120,7 @@ public class PlayerWarpCommand implements SubCommand, AsyncTabComplete {
                 UUID targetUuid = targetUuidOpt.get();
 
                 return api.getIslandUuid(targetUuid).thenCompose(api::getWarpNames).thenApply(warps -> warps.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()));
-            }).exceptionally(ex -> Collections.emptyList());
+            });
         }
 
         return CompletableFuture.completedFuture(Collections.emptyList());

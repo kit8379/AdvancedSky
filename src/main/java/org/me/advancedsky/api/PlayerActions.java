@@ -1,5 +1,6 @@
 package org.me.advancedsky.api;
 
+import net.kyori.adventure.text.Component;
 import org.bukkit.Location;
 import org.me.advancedsky.island.*;
 import org.me.advancedsky.model.Actor;
@@ -199,7 +200,14 @@ public final class PlayerActions {
     }
 
     public CompletableFuture<Void> home(String homeName) {
-        return inOrder(() -> homeHandler.home(playerUuid, homeName, playerUuid));
+        return home(homeName, null);
+    }
+
+    /** Sends the optional message to this player only after arrival succeeds. */
+    public CompletableFuture<Void> home(String homeName, Component successMessage) {
+        return inOrder(() -> successMessage == null
+                ? homeHandler.home(playerUuid, homeName, playerUuid)
+                : homeHandler.home(playerUuid, homeName, playerUuid, successMessage));
     }
 
     /**
@@ -217,7 +225,14 @@ public final class PlayerActions {
      * Visit the specified island's shared warp as this player.
      */
     public CompletableFuture<Void> warp(UUID islandUuid, String warpName) {
-        return inOrder(() -> warpHandler.warp(actor, islandUuid, warpName, playerUuid));
+        return warp(islandUuid, warpName, null);
+    }
+
+    /** Sends the optional message to this player only after arrival succeeds. */
+    public CompletableFuture<Void> warp(UUID islandUuid, String warpName, Component successMessage) {
+        return inOrder(() -> successMessage == null
+                ? warpHandler.warp(actor, islandUuid, warpName, playerUuid)
+                : warpHandler.warp(actor, islandUuid, warpName, playerUuid, successMessage));
     }
 
     // ---- world ------------------------------------------------------------------------------

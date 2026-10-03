@@ -10,6 +10,7 @@ import org.me.advancedsky.api.AdvancedSkyAPI;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.cluster.InvitationStore;
 import org.me.advancedsky.cluster.OnlinePlayerRegistry;
+import org.me.advancedsky.cluster.ServerRegistry;
 import org.me.advancedsky.command.AsyncTabCompleteListener;
 import org.me.advancedsky.command.IslandAdminCommand;
 import org.me.advancedsky.command.IslandPlayerCommand;
@@ -29,6 +30,7 @@ import org.me.advancedsky.scheduler.LevelUpdateScheduler;
 import org.me.advancedsky.teleport.TeleportHandler;
 import org.me.advancedsky.thread.BukkitAsyncExecutor;
 import org.me.advancedsky.thread.GlobalRegionExecutor;
+import org.me.advancedsky.util.ComponentUtils;
 import org.me.advancedsky.util.ServerUtil;
 import org.me.advancedsky.uuid.UuidHandler;
 import org.me.advancedsky.world.WorldHandler;
@@ -44,6 +46,7 @@ public class AdvancedSky extends JavaPlugin {
     private RedisHandler redisHandler;
     private DatabaseHandler databaseHandler;
     private OnlinePlayerRegistry onlinePlayerRegistry;
+    private ServerRegistry serverRegistry;
     private LevelUpdateScheduler levelUpdateScheduler;
     private CrossServerMessenger crossServerMessenger;
     private LimitHandler limitHandler;
@@ -82,14 +85,12 @@ public class AdvancedSky extends JavaPlugin {
             info("Server ID loaded success!");
             info("This Server ID: " + serverID);
 
-            // Every server is either an island server or a lobby; anything else is a typo in the lists.
-            if (config.getIslandServerNames().contains(serverID) == config.getLobbyServerNames().contains(serverID)) {
-                throw new IllegalStateException("server.name '" + serverID + "' must be listed under exactly one of servers.island and servers.lobby");
-            }
             info(config.isLobbyOnly() ? "Lobby server: island commands only, no islands hosted here" : "Island server: hosting islands in world '" + config.getIslandWorldName() + "'");
 
             info("Start connecting to Redis now...");
             redisHandler = new RedisHandler(this, config);
+            serverRegistry = new ServerRegistry(this, redisHandler, serverID, config.isLobbyOnly());
+            serverRegistry.start();
             info("Redis connection success!");
 
             IslandGrid islandGrid = new IslandGrid(config.getIslandHeight());
@@ -132,7 +133,7 @@ public class AdvancedSky extends JavaPlugin {
             limitHandler = new LimitHandler(this, config, islandGrid);
             EconomyHandler economyHandler = new EconomyHandler(this);
             LocalIslandTasks localTasks = new LocalIslandTasks(this, databaseHandler, islandCache, serverID);
-            IslandDistributor islandDistributor = new IslandDistributor(this, databaseHandler, teleportHandler, onlinePlayerRegistry, crossServerMessenger, config.getIslandServerNames(), serverID);
+            IslandDistributor islandDistributor = new IslandDistributor(this, databaseHandler, teleportHandler, onlinePlayerRegistry, crossServerMessenger, serverRegistry, serverID);
             info("All handlers for remote requests loaded");
 
             info("Starting player message handler");
@@ -184,7 +185,9 @@ public class AdvancedSky extends JavaPlugin {
             getServer().getPluginManager().registerEvents(new IslandActivityListener(this, config, islandCache, levelUpdateScheduler), this);
             getServer().getPluginManager().registerEvents(new TeleportRequestListener(this, teleportHandler), this);
             getServer().getPluginManager().registerEvents(new IslandProtectionListener(config, islandCache, islandGrid), this);
-            getServer().getPluginManager().registerEvents(new IslandAccessListener(this, config, islandCache), this);
+            IslandAccessListener islandAccessListener = new IslandAccessListener(this, config, islandCache, teleportHandler);
+            teleportHandler.setArrivalCheck(islandAccessListener::checkArrival);
+            getServer().getPluginManager().registerEvents(islandAccessListener, this);
             getServer().getPluginManager().registerEvents(new IslandRespawnListener(this, config, islandCache), this);
             getServer().getPluginManager().registerEvents(new IslandPvPListener(this, config, islandCache), this);
             getServer().getPluginManager().registerEvents(new CobblestoneGeneratorListener(config, islandCache, cobblestoneGeneratorHandler, limitHandler), this);
@@ -217,6 +220,7 @@ public class AdvancedSky extends JavaPlugin {
 
             crossServerMessenger.start();
             levelUpdateScheduler.start();
+            serverRegistry.markReady();
             if (!config.isLobbyOnly()) coreHandler.retryDeletions().exceptionally(error -> {
                 severe("Could not recover incomplete island deletions; rows retained for retry", error);
                 return null;
@@ -230,7 +234,14 @@ public class AdvancedSky extends JavaPlugin {
 
     private void registerCrossServerHandlers(CrossServerMessenger messenger, CoreHandler core, PlayerHandler players, CoopHandler coops, TeleportHandler teleports) {
         messenger.register(IslandDistributor.ACTION_ISLAND_CREATE, payload -> emptyResponse(core.createIsland(uuid(payload, "islandUuid"), uuid(payload, "ownerUuid"))));
-        messenger.register(IslandDistributor.ACTION_ISLAND_TELEPORT_PREPARE, payload -> teleports.prepareTeleport(uuid(payload, "playerUuid"), payload.getString("teleportWorld"), payload.getString("teleportLocation")).thenApply(teleported -> new JSONObject().put("teleported", teleported)));
+        messenger.register(IslandDistributor.ACTION_ISLAND_TELEPORT_PREPARE, payload -> {
+            // Carry completion messaging with the destination, rather than routing it through
+            // a player registry that is changing while the proxy moves the player.
+            Object encodedMessage = payload.get("successMessage");
+            var successMessage = encodedMessage == JSONObject.NULL ? null : ComponentUtils.deserialize(payload.getString("successMessage"));
+            return teleports.prepareTeleport(uuid(payload, "playerUuid"), payload.getString("teleportWorld"), payload.getString("teleportLocation"), successMessage)
+                    .thenApply(teleported -> new JSONObject().put("teleported", teleported));
+        });
         messenger.register(IslandDistributor.ACTION_INVITATION_ACCEPT, payload -> {
             UUID playerUuid = uuid(payload, "playerUuid");
             return emptyResponse(players.addMember(new Actor.Player(playerUuid), uuid(payload, "islandUuid"), playerUuid, "member"));
@@ -265,6 +276,13 @@ public class AdvancedSky extends JavaPlugin {
     }
 
     public void shutdown() {
+        if (serverRegistry != null) {
+            try {
+                serverRegistry.stop();
+            } catch (RuntimeException error) {
+                // Its lease will expire if Redis is unavailable; continue shutting down.
+            }
+        }
         if (placeholderExpansion != null) {
             placeholderExpansion.stop();
             placeholderExpansion = null;

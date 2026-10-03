@@ -117,7 +117,7 @@ public class IslandPlayerCommand implements CommandExecutor, AsyncCommandTabRout
         }
 
         if (target instanceof AsyncTabComplete asyncTabComplete) {
-            return asyncTabComplete.tabCompleteAsync(sender, label, args).thenApply(list -> list == null ? Collections.<String>emptyList() : list).exceptionally(ex -> Collections.emptyList());
+            return asyncTabComplete.tabCompleteAsync(sender, label, args).thenApply(list -> list == null ? Collections.<String>emptyList() : list);
         }
 
         return CompletableFuture.completedFuture(Collections.emptyList());

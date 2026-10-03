@@ -221,7 +221,13 @@ public class AdvancedSkyAPI {
     /** Moves a player to a lobby server. Touches no island state; also the fail-closed bounce. */
     @SuppressWarnings("unused")
     public CompletableFuture<Void> lobby(UUID playerUuid) {
-        return lobbyHandler.lobby(playerUuid);
+        return lobby(playerUuid, null);
+    }
+
+    /** Sends the optional message to the traveler only after arrival succeeds. */
+    @SuppressWarnings("unused")
+    public CompletableFuture<Void> lobby(UUID playerUuid, Component successMessage) {
+        return successMessage == null ? lobbyHandler.lobby(playerUuid) : lobbyHandler.lobby(playerUuid, successMessage);
     }
 
     @SuppressWarnings("unused")

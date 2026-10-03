@@ -30,6 +30,18 @@ public final class ClusterKeys {
         return prefix + ONLINE_PLAYER_SERVERS;
     }
 
+    public String serverLeases() {
+        return prefix + "servers:leases";
+    }
+
+    public String serverRoles() {
+        return prefix + "servers:roles";
+    }
+
+    public String serverSessions() {
+        return prefix + "servers:sessions";
+    }
+
     public String invitation(UUID inviteeUuid) {
         return prefix + INVITATION_PREFIX + inviteeUuid;
     }

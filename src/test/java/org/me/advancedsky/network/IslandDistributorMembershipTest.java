@@ -3,6 +3,7 @@ package org.me.advancedsky.network;
 import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.cluster.ServerRegistry;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.exceptions.IslandNotHostedHereException;
 import org.me.advancedsky.messaging.CrossServerMessenger;
@@ -23,7 +24,7 @@ class IslandDistributorMembershipTest {
     private final UUID player = UUID.randomUUID();
     private final DatabaseHandler database = mock(DatabaseHandler.class);
     private final CrossServerMessenger messenger = mock(CrossServerMessenger.class);
-    private final IslandDistributor distributor = new IslandDistributor(mock(AdvancedSky.class), database, null, null, messenger, List.of("local", "remote"), "local");
+    private final IslandDistributor distributor = new IslandDistributor(mock(AdvancedSky.class), database, null, null, messenger, mock(ServerRegistry.class), "local");
 
     @Test
     void sameHostAcceptanceAndQuitCleanupCallTheLocalHandlersWithoutMessaging() {

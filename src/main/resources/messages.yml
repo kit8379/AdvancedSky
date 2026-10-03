@@ -63,13 +63,18 @@ messages:
   # ================================================================================================================
 
   player-create-island-success: "<green>Island created successfully!"
-  player-delete-first-warning: "<red>Are you sure you want to delete your island? This action is irreversible!"
-  player-delete-final-warning: |
-    <red>This is your final warning!
-    <gray>Your island, items, and progress will be removed.
-    <gray>This action cannot be undone.
-    <red>Type <aqua>/is delete <red>to permanently delete your island!
-  player-delete-island-success: "<green>Your island has been deleted!"
+  player-delete-first-warning: |-
+    <yellow><bold>Island deletion (1/3)</bold>
+    <gray>Your island, its contents, and its progress will be permanently deleted.
+    <gray>Run <aqua>/is delete <gray>again within <yellow>15 seconds <gray>to continue.
+  player-delete-final-warning: |-
+    <red><bold>Final confirmation (2/3)</bold>
+    <red>This action cannot be undone.
+    <gray>Run <aqua>/is delete <gray>once more within <yellow>15 seconds<gray>.
+    <red>The next command will permanently delete your island.
+  player-delete-island-success: |-
+    <green><bold>Deletion complete (3/3)</bold>
+    <gray>Your island has been permanently deleted.
 
   admin-create-island-success: "<green>Successfully created an island for player <aqua>{player}<green>!"
   admin-delete-warning: "<red>Are you sure you want to delete player <aqua>{player}'s <red>island? This action is irreversible!"

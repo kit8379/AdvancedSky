@@ -109,7 +109,7 @@ public class AdminUncoopCommand implements SubCommand, AsyncTabComplete {
     public CompletableFuture<List<String>> tabCompleteAsync(CommandSender sender, String label, String[] args) {
         if (args.length == 2) {
             String prefix = args[1].toLowerCase(Locale.ROOT);
-            return api.getOnlinePlayersNames().thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList())).exceptionally(ex -> Collections.emptyList());
+            return api.getOnlinePlayersNames().thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()));
         }
 
         if (args.length == 3) {
@@ -125,9 +125,9 @@ public class AdminUncoopCommand implements SubCommand, AsyncTabComplete {
                         return CompletableFuture.completedFuture(Collections.<String>emptyList());
                     }
 
-                    return api.getPlayerNames(coopedPlayers).thenApply(nameMap -> coopedPlayers.stream().map(uuid -> nameMap.getOrDefault(uuid, uuid.toString())).filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()));
+                    return api.getPlayerNames(coopedPlayers).thenApply(nameMap -> coopedPlayers.stream().map(uuid -> java.util.Objects.requireNonNull(nameMap.get(uuid), "Missing player name for " + uuid)).filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()));
                 }));
-            }).exceptionally(ex -> Collections.emptyList());
+            });
         }
 
         return CompletableFuture.completedFuture(Collections.emptyList());

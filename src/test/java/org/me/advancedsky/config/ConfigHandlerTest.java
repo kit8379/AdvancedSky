@@ -36,21 +36,22 @@ class ConfigHandlerTest {
     }
 
     @Test
-    void aMissingSettingIsAddedAndCommentsAreKept() throws IOException {
-        write("config.yml", bundled("config.yml").replaceAll("(?m)^debug: false\\r?\\n", "") + "# my own note\n");
+    void aMissingRequiredSettingFailsWithoutCompletingOrRewritingTheFile() throws IOException {
+        String incomplete = bundled("config.yml").replaceAll("(?m)^debug: false\\r?\\n", "") + "# my own note\n";
+        write("config.yml", incomplete);
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> new ConfigHandler(plugin()));
+        assertTrue(error.getMessage().contains("missing required setting 'debug'"));
+        assertEquals(incomplete, read("config.yml"));
+    }
 
+    @Test
+    void readingAndReloadingACompleteConfigKeepsItsCommentsAndFormattingExactly() throws IOException {
+        String original = bundled("config.yml") + "# my own note\n";
+        write("config.yml", original);
         ConfigHandler config = new ConfigHandler(plugin());
-
-        assertFalse(config.isDebug());
-        String saved = read("config.yml");
-        assertTrue(saved.contains("debug: false"));
-        assertTrue(saved.contains("# Must match the server name in your BungeeCord / Velocity config."));
-        assertTrue(saved.contains("# AdvancedSky Configuration"));
-        assertTrue(read("limits.yml").contains("# that block or entity outright; anything not listed is unlimited."));
-
-        // Each reload rewrites the files; one already complete comes back unchanged.
+        assertEquals(original, read("config.yml"));
         config.reload();
-        assertEquals(saved, read("config.yml"));
+        assertEquals(original, read("config.yml"));
     }
 
     @Test
@@ -65,26 +66,57 @@ class ConfigHandlerTest {
         config.reload();
 
         assertEquals(List.of(1, 2, 3, 4), config.getUpgradeLevels("island-size"));
-        // A level the config no longer has reads as no limit, as before.
-        assertEquals("0", config.getUpgradeValue("island-size", 5));
+        assertThrows(IllegalArgumentException.class, () -> config.getUpgradeValue("island-size", 5));
+        assertThrows(IllegalArgumentException.class, () -> config.getUpgradeLimit("island-size", 5));
         assertEquals("150", config.getUpgradeValue("island-size", 4));
+    }
+
+    @Test
+    void anUnknownSettingIsRejectedInsteadOfRemovedOrInterpreted() throws IOException {
+        String invalid = bundled("config.yml") + "unknown-setting: true\n";
+        write("config.yml", invalid);
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> new ConfigHandler(plugin()));
+        assertTrue(error.getMessage().contains("unknown setting 'unknown-setting'"));
+        assertEquals(invalid, read("config.yml"));
     }
 
     @Test
     void aReloadLeavesTheStartupSettingsAndTheCommandsAsTheyWere() throws IOException {
         ConfigHandler config = new ConfigHandler(plugin());
 
-        write("config.yml", read("config.yml").replace("name: sky1", "name: sky2").replace("world: skyblock\n", "world: other\n").replace("debug: false", "debug: true"));
+        write("config.yml", read("config.yml").replace("name: \"sky1\"", "name: \"sky2\"").replace("lobby-only: false", "lobby-only: true").replace("debug: false", "debug: true"));
         write("commands.yml", read("commands.yml").replaceFirst("(?m)^( {4}invite:\\r?\\n {6}aliases: )\\[\\]", "$1[add]"));
         config.reload();
-        assertTrue(read("config.yml").contains("name: sky2"));
+        assertTrue(read("config.yml").contains("name: \"sky2\""));
         assertTrue(read("commands.yml").contains("aliases: [add]"));
 
         assertEquals("sky1", config.getServerName());
-        assertEquals("skyblock", config.getIslandWorldName());
+        assertEquals("sky1", config.getIslandWorldName());
         assertFalse(config.isLobbyOnly());
         assertArrayEquals(new String[0], config.getPlayerInviteAliases());
         assertTrue(config.isDebug());
+    }
+
+    @Test
+    void theLobbyRoleIsReadFromItsRequiredFlag() throws IOException {
+        write("config.yml", bundled("config.yml").replace("name: \"sky1\"", "name: \"lobby\"").replace("lobby-only: false", "lobby-only: true"));
+        ConfigHandler config = new ConfigHandler(plugin());
+        assertTrue(config.isLobbyOnly());
+        assertEquals("lobby", config.getServerName());
+    }
+
+    @Test
+    void theIslandWorldFollowsItsServer() throws IOException {
+        write("config.yml", bundled("config.yml").replace("name: \"sky1\"", "name: \"sky2\""));
+        ConfigHandler config = new ConfigHandler(plugin());
+        assertFalse(config.isLobbyOnly());
+        assertEquals("sky2", config.getIslandWorldName());
+    }
+
+    @Test
+    void rejectsAServerNameThatCouldResolveOutsideTheWorldFolder() throws IOException {
+        write("config.yml", bundled("config.yml").replace("name: \"sky1\"", "name: \"../sky1\""));
+        assertThrows(IllegalStateException.class, () -> new ConfigHandler(plugin()));
     }
 
     private AdvancedSky plugin() {

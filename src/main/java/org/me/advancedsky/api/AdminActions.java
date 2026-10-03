@@ -1,5 +1,6 @@
 package org.me.advancedsky.api;
 
+import net.kyori.adventure.text.Component;
 import org.bukkit.Location;
 import org.me.advancedsky.island.BanHandler;
 import org.me.advancedsky.island.BiomeHandler;
@@ -108,7 +109,14 @@ public final class AdminActions {
     }
 
     public CompletableFuture<Void> home(UUID homeOwnerUuid, String homeName, UUID teleportPlayerUuid) {
-        return homeHandler.home(homeOwnerUuid, homeName, teleportPlayerUuid);
+        return home(homeOwnerUuid, homeName, teleportPlayerUuid, null);
+    }
+
+    /** Sends the optional message to the traveler only after arrival succeeds. */
+    public CompletableFuture<Void> home(UUID homeOwnerUuid, String homeName, UUID teleportPlayerUuid, Component successMessage) {
+        return successMessage == null
+                ? homeHandler.home(homeOwnerUuid, homeName, teleportPlayerUuid)
+                : homeHandler.home(homeOwnerUuid, homeName, teleportPlayerUuid, successMessage);
     }
 
     public CompletableFuture<Void> setWarp(UUID islandUuid, String warpName, Location location) {
@@ -120,7 +128,14 @@ public final class AdminActions {
     }
 
     public CompletableFuture<Void> warp(UUID islandUuid, String warpName, UUID teleportPlayerUuid) {
-        return warpHandler.warp(actor, islandUuid, warpName, teleportPlayerUuid);
+        return warp(islandUuid, warpName, teleportPlayerUuid, null);
+    }
+
+    /** Sends the optional message to the traveler only after arrival succeeds. */
+    public CompletableFuture<Void> warp(UUID islandUuid, String warpName, UUID teleportPlayerUuid, Component successMessage) {
+        return successMessage == null
+                ? warpHandler.warp(actor, islandUuid, warpName, teleportPlayerUuid)
+                : warpHandler.warp(actor, islandUuid, warpName, teleportPlayerUuid, successMessage);
     }
 
     // ---- world ------------------------------------------------------------------------------

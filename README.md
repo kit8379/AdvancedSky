@@ -32,12 +32,13 @@
 
 > [!WARNING]
 > **AdvancedSky is in alpha.** Run it on a test network first and keep backups of your MySQL database.
-> Update all AdvancedSky servers together: earlier versions used a different cross-server management protocol.
+> Run the same build on every server in the network. Configuration, schemas and messages use
+> the current contract only; there are no upgrade migrations or compatibility paths.
 
 ## What AdvancedSky is
 
 AdvancedSky spreads Skyblock islands across a **network of Minecraft servers**. New islands go to
-the configured island server with the fewest islands. Players can use `/is home` from anywhere
+the online island server with the fewest islands. Players can use `/is home` from anywhere
 in the network to return to their island through the proxy.
 
 Each island keeps the same host for its entire lifetime. Every island server uses **one
@@ -48,20 +49,7 @@ worlds at runtime, and the same JAR runs on both Paper and Folia.
 | --- | --- | --- |
 | Teams, homes, warps and cross-server travel | Islands distributed across multiple hosts | Public asynchronous API |
 | Upgrades, levels and a leaderboard | Region-aware scheduling for Paper and Folia | PlaceholderAPI integration |
-| Island protection, co-op and access controls | One island world per host, built-in template copying | Configurable commands and MiniMessage messages |
-
-### How it compares to NewSky
-
-AdvancedSky carries over [NewSky](https://github.com/kit8379/NewSky)'s gameplay features with a
-different world model.
-
-| | AdvancedSky | NewSky |
-| --- | --- | --- |
-| Server software | Paper and Folia | Advanced Slime Paper |
-| Island storage | A grid area in the host's pre-loaded world | A separate slime world per island |
-| Host assignment | Fixed when the island is created | Worlds can move between servers on demand |
-| World lifecycle | Worlds stay loaded; island chunks follow normal server loading | Island worlds load on demand and unload when idle |
-| Starter island | Copy a box from a loaded template world | Clone a template into a slime world |
+| Island protection, co-op and access controls | One island world per host, built-in `.schem` templates | Configurable commands and MiniMessage messages |
 
 ## Contents
 
@@ -105,11 +93,11 @@ different world model.
 | Redis | **5.0+**, with Streams support |
 | Proxy | Velocity or BungeeCord, with the BungeeCord plugin message channel enabled |
 | Economy | Vault and an economy plugin with balances shared across every server |
-| Worlds | Island and template worlds loaded **before AdvancedSky enables** on each island server |
+| Worlds | One island world loaded **before AdvancedSky enables** on each island server |
+| Starter island | A bundled default, or your own Sponge `.schem` v3 file; no template world or WorldEdit plugin required |
 | Optional integration | PlaceholderAPI |
 
-The database versions above preserve `AUTO_INCREMENT` values across restarts. The plugin loader
-downloads the MySQL driver, HikariCP and Jedis on first start.
+The plugin loader downloads the MySQL driver, HikariCP, Jedis and Adventure NBT on first start.
 
 ## Installation
 
@@ -117,15 +105,17 @@ downloads the MySQL driver, HikariCP and Jedis on first start.
    Vault and your shared economy plugin on each server running AdvancedSky.
 2. **Build the plugin.** Follow [Building from source](#building-from-source), then place
    `AdvancedSky.jar` in the `plugins/` folder of each island and lobby server.
-3. **Prepare the worlds.** On each island server, arrange for `skyblock` and
-   `skyblock_template` to be loaded at startup, before AdvancedSky enables. Build the starter
-   island inside the template world's configured selection box. Lobby servers only need their
-   configured lobby world.
+3. **Prepare the island world and schematic.** On each island server, arrange for a world named
+   after `server.name` (for example `sky1` or `sky2`, using `level-name` in `server.properties`)
+   to be loaded at startup, before AdvancedSky enables. The bundled starter island is saved
+   automatically to `plugins/AdvancedSky/schematics/starter.schem` if it is missing. Replace
+   it with your own Sponge `.schem` to customize it. Lobby servers only need their configured
+   lobby world, with no schematic.
 4. **Generate and edit the configuration.** Start once to generate `plugins/AdvancedSky/`,
-   then stop the server. Set database credentials, Redis, server lists, world names, template
-   bounds and a safe lobby spawn in `config.yml`.
+   then stop the server. Set database credentials, Redis, server identity and role, the schematic
+   path and a safe lobby spawn in `config.yml`.
 5. **Share the settings.** Use the same configuration across the network, changing only
-   `server.name` to match each server's name in the proxy. Keep the template contents the same
+   `server.name` to match each server's name in the proxy and `lobby-only` for its role. Keep the schematic file the same
    on all island servers and grant the [player permissions](#permissions).
 6. **Restart and try it.** Join a configured server, run `/is create`, then test `/is home`
    from a lobby server. The proxy should send you to your island's host.
@@ -137,8 +127,11 @@ bungee-plugin-message-channel = true
 ```
 
 > [!IMPORTANT]
-> AdvancedSky expects the island and template worlds to exist and already be loaded. It does
-> not create or load them for you. On Folia, prepare them for startup rather than loading them at runtime.
+> AdvancedSky expects the island world to exist and already be loaded. It does not create or
+> load it for you. On Folia, prepare it for startup rather than loading it at runtime. The starter
+> island comes from a file; no second world is needed. The default file is supplied automatically.
+> A missing custom schematic or an invalid schematic prevents
+> an island server from enabling, with the file path and reason in the log.
 
 ## Configuration
 
@@ -147,7 +140,7 @@ files bundled with the plugin.
 
 | File | Purpose |
 | --- | --- |
-| [config.yml](src/main/resources/config.yml) | Server identity, database, Redis, cluster, server lists, worlds and spawn locations |
+| [config.yml](src/main/resources/config.yml) | Server identity and role, database, Redis, cluster, schematic and spawn locations |
 | [commands.yml](src/main/resources/commands.yml) | Command aliases, permissions, syntax and descriptions |
 | [messages.yml](src/main/resources/messages.yml) | MiniMessage text for commands and events |
 | [upgrades.yml](src/main/resources/upgrades.yml) | Upgrade levels, prices, limits, biomes and generator rates |
@@ -163,23 +156,14 @@ lobby. Merge it into the generated `config.yml`; configure the database and Redi
 server:
   name: "sky1"              # This server's name in the proxy
 
+lobby-only: false           # true on lobby servers; false on island servers
+
 cluster-id: "default"       # Same on every server in this network
 
-servers:
-  island:
-    - "sky1"
-    - "sky2"
-  lobby:
-    - "lobby"
-
 island:
-  world: "skyblock"         # Already loaded on every island server
   height: 100
   template:
-    world: "skyblock_template"
-    anchor: { x: 0, y: 100, z: 0 }
-    min: { x: -32, y: 64, z: -32 }
-    max: { x: 32, y: 160, z: 32 }
+    schematic: "schematics/starter.schem" # Relative to plugins/AdvancedSky/
   spawn: { x: 0.5, y: 1.0, z: 0.5, yaw: 0.0, pitch: 0.0 }
 
 lobby:
@@ -187,24 +171,41 @@ lobby:
   location: { x: 0.0, y: 100.0, z: 0.0, yaw: 0.0, pitch: 0.0 }
 ```
 
-- **Server roles:** every server running AdvancedSky must appear in exactly one list:
-  `servers.island` or `servers.lobby`. Names must match the proxy.
+- **Server roles:** use `lobby-only: false` on island servers and `true` on lobby servers.
+  Each server name must be unique and match the proxy. Island worlds use that same name:
+  `sky1` hosts its islands in `sky1`, and `sky2` in `sky2`.
 - **Shared services:** use the same database, table prefix, Redis settings and `cluster-id`
   everywhere. Give independent networks sharing Redis different cluster IDs.
-- **Availability:** server lists are static. Listed servers are assumed to be online;
-  there are no server heartbeats or automatic failover. Adding a host means updating the lists
-  and restarting the network; existing islands keep their hosts.
+- **Availability:** ready servers register automatically in Redis. Heartbeats run every five
+  seconds; stopping removes a server immediately, and a crash expires its registration within
+  thirty seconds. No shared server lists are needed when adding a host. Existing islands keep
+  their hosts; they are not moved when that host goes offline.
 - **Clock synchronization:** run NTP on every server. Incoming requests older than ten seconds
   are refused, using the sender's timestamp.
-- **Lobby fallback:** `/is lobby`, deletion, locks, bans and expulsion send players to a
-  randomly selected configured lobby server at `lobby.location`.
+- **Lobby destination:** `/is lobby`, deletion, locks, bans and expulsion send players to a
+  randomly selected online lobby server at `lobby.location`.
 
 ### Template and island geometry
 
-`island.template.anchor` is the template block that lands on the new island's centre.
-`min` and `max` are opposite corners of the box to copy, including tile entities.
-`island.spawn` sets the new island's `default` home **relative to its centre**. No schematic
-tooling is needed.
+`island.template.schematic` names a Sponge `.schem` v3 file relative to
+`plugins/AdvancedSky/`. The file is read once at startup. Its saved copy origin lands on the
+new island's centre, using its required saved offset. `island.spawn` sets the new island's
+`default` home **relative to that centre**.
+
+The JAR includes a default starter island. When the default path is configured and the file
+is missing, it is extracted automatically. Existing schematic files are never overwritten;
+changing to a custom path requires supplying that file yourself.
+
+Air is skipped. Block properties and block entity data, including chest contents and sign text,
+are retained; entities and biomes are not copied. The selection and origin must fit inside the
+island's 512 × 512 area and the world's build height at `island.height`. Selections are limited
+to 4,194,304 blocks. Schematics from a newer Minecraft data version are rejected; export for
+the server's Minecraft version.
+
+To export with WorldEdit on a build server, select the starter island, stand at the desired
+copy origin, run `//copy` and `//schem save sponge starter`, then copy `starter.schem` to every
+island server's configured path. WorldEdit is only needed for exporting, not for running
+AdvancedSky.
 
 | Geometry | Value |
 | --- | --- |
@@ -221,13 +222,15 @@ Folia regions; unusually large loaded areas can still cause regions to merge.
 > [!IMPORTANT]
 > Keep `island.height` and the grid constants unchanged once islands exist: island positions
 > are derived from them. Template and spawn edits affect newly created islands; apply changes
-> to the loaded template selection with a restart.
+> to the schematic file with a restart.
 
 ### Reloading
 
-`/isadmin reload` reloads configuration files except `commands.yml`. Server identity, server
-lists, the island world, database/Redis connections, `cluster-id` and the template world/selection
+`/isadmin reload` reloads configuration files except `commands.yml`. Server identity and role,
+the derived island world, database/Redis connections, `cluster-id` and the schematic path/contents
 are read at startup and need a restart. Keep structural settings consistent across the network.
+Files are generated for a fresh installation and then read without rewriting them. Missing required
+settings, invalid types and unknown fields fail validation rather than being filled or converted.
 
 ## Architecture
 
@@ -324,9 +327,9 @@ flowchart TB
     class BUILD,CLEANUP,RETRY pending
 ```
 
-**Creation:** choose the configured island host with the fewest islands in MySQL, breaking
-ties by config order. Reserve the first free slot, create the owner's `default` home, clear
-the old area and copy the template on the owning region threads. Activate the island, cache
+**Creation:** choose the online island host with the fewest islands in MySQL, breaking
+ties by server name order. Reserve the first free slot, create the owner's `default` home, clear
+the old area and paste the cached schematic on the owning region threads. Activate the island, cache
 it and send the player home. Concurrent creates can select the same host before new rows appear.
 
 **Deletion:** `/is delete` requires three confirmations. The host removes island membership
@@ -432,7 +435,7 @@ Permission prefix: `advancedsky.island.player.`. Append the suffix in the second
 Management commands are `delete`, `invite`, `removemember`, `setowner`, `leave`, `lock`, `pvp`,
 `expel`, `ban`, `unban`, `coop`, `uncoop`, `sethome`, `delhome`, `setwarp`, `delwarp`, `biome`
 and `upgrade`. Location-based edits must also be inside the island's 512 × 512 area in
-`island.world` on its host.
+the world named after its host's `server.name`.
 
 </details>
 
@@ -614,8 +617,9 @@ the network.
 
 | Symptom | Check |
 | --- | --- |
-| Plugin refuses to enable | `server.name` must be in exactly one server list; check MySQL, Redis, Vault and the loaded worlds |
-| Island or template world is missing | Load both configured worlds before AdvancedSky enables on each island server |
+| Plugin refuses to enable | Check the unique `server.name`, `lobby-only` role, MySQL, Redis, Vault and loaded worlds |
+| Island world is missing | Load a world named exactly after `server.name` before AdvancedSky enables on each island server |
+| Island schematic cannot be loaded | Check `island.template.schematic`, put the `.schem` file at that path under `plugins/AdvancedSky/`, and check format, Minecraft version and selection bounds |
 | Cross-server travel fails | Check proxy server names, the BungeeCord plugin message channel, Redis connectivity and the destination server |
 | Requests expire or time out | Check that listed servers are online and their clocks are synchronized with NTP |
 | Management says you must be on your island | Use `/is home` first; ownership or a permission alone does not bypass the location rule |

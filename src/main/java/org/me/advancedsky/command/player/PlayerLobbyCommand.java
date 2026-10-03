@@ -55,9 +55,7 @@ public class PlayerLobbyCommand implements SubCommand {
 
         UUID playerUuid = player.getUniqueId();
 
-        api.lobby(playerUuid).thenRun(() -> {
-            api.sendPlayerMessage(playerUuid, config.getPlayerLobbySuccessMessage());
-        }).exceptionally(ex -> {
+        api.lobby(playerUuid, config.getPlayerLobbySuccessMessage()).exceptionally(ex -> {
             // Whatever cancelled a teleport told the player why.
             if (!(ex.getCause() instanceof TeleportCancelledException)) {
                 player.sendMessage(config.getUnknownExceptionMessage());

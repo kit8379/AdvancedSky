@@ -1,13 +1,16 @@
 package org.me.advancedsky.network;
 
-import org.bukkit.Bukkit;
+import net.kyori.adventure.text.Component;
 import org.json.JSONObject;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cluster.OnlinePlayerRegistry;
+import org.me.advancedsky.cluster.ServerRegistry;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.PlayerNotOnlineException;
 import org.me.advancedsky.messaging.CrossServerMessenger;
 import org.me.advancedsky.teleport.TeleportHandler;
+import org.me.advancedsky.util.ComponentUtils;
 import org.me.advancedsky.util.ServerUtil;
 
 import java.util.Comparator;
@@ -21,6 +24,8 @@ import java.util.function.Supplier;
 /**
  * Island management runs locally. Only creation, travel, invitation acceptance and automatic
  * co-op cleanup are routed between servers.
+ * Travel futures acknowledge routing on cross-server trips; the destination delivers any
+ * attached success message independently, after confirmed arrival.
  */
 public class IslandDistributor {
 
@@ -35,16 +40,16 @@ public class IslandDistributor {
     private final TeleportHandler teleportHandler;
     private final OnlinePlayerRegistry onlinePlayerRegistry;
     private final CrossServerMessenger messenger;
-    private final List<String> islandServerNames;
+    private final ServerRegistry serverRegistry;
     private final String serverID;
 
-    public IslandDistributor(AdvancedSky plugin, DatabaseHandler database, TeleportHandler teleportHandler, OnlinePlayerRegistry onlinePlayerRegistry, CrossServerMessenger messenger, List<String> islandServerNames, String serverID) {
+    public IslandDistributor(AdvancedSky plugin, DatabaseHandler database, TeleportHandler teleportHandler, OnlinePlayerRegistry onlinePlayerRegistry, CrossServerMessenger messenger, ServerRegistry serverRegistry, String serverID) {
         this.plugin = plugin;
         this.database = database;
         this.teleportHandler = teleportHandler;
         this.onlinePlayerRegistry = onlinePlayerRegistry;
         this.messenger = messenger;
-        this.islandServerNames = List.copyOf(islandServerNames);
+        this.serverRegistry = serverRegistry;
         this.serverID = serverID;
     }
 
@@ -53,14 +58,14 @@ public class IslandDistributor {
     // =====================================================================================
 
     /**
-     * Picks the listed server with the fewest islands in the database, first in config on a tie.
+     * Picks a ready island server with the fewest islands; ties use server name order.
      */
     public CompletableFuture<Void> createIsland(UUID islandUuid, UUID ownerUuid, Supplier<CompletableFuture<Void>> localCreate) {
         return supply(() -> {
             Map<String, Integer> islandCounts = database.getIslandCountByServer();
-            String targetServer = islandServerNames.stream()
+            String targetServer = serverRegistry.getIslandServers().stream()
                     .min(Comparator.comparingInt(server -> islandCounts.getOrDefault(server, 0)))
-                    .orElseThrow(() -> new IllegalStateException("servers.island lists no island server"));
+                    .orElseThrow(() -> new IllegalStateException("No island server is online"));
 
             if (targetServer.equals(serverID)) {
                 return localCreate.get();
@@ -73,28 +78,45 @@ public class IslandDistributor {
         });
     }
 
-    public CompletableFuture<Void> teleportIsland(UUID islandUuid, UUID playerUuid, String teleportWorld, String teleportLocation) {
-        return supply(() -> teleportViaServer(resolveHost(islandUuid), playerUuid, teleportWorld, teleportLocation));
+    public CompletableFuture<Void> teleportIsland(UUID islandUuid, UUID playerUuid, String teleportLocation) {
+        return teleportIsland(islandUuid, playerUuid, teleportLocation, null);
     }
 
-    public CompletableFuture<Void> teleportLobby(UUID playerUuid, List<String> lobbyServers, String lobbyWorld, String lobbyLocation) {
-        if (lobbyServers.isEmpty()) {
-            return CompletableFuture.failedFuture(new IllegalStateException("servers.lobby lists no lobby server"));
-        }
-
-        String lobbyServer = lobbyServers.get(ThreadLocalRandom.current().nextInt(lobbyServers.size()));
-        return teleportViaServer(lobbyServer, playerUuid, lobbyWorld, lobbyLocation);
+    /** The destination delivers the optional message after the player actually arrives. */
+    public CompletableFuture<Void> teleportIsland(UUID islandUuid, UUID playerUuid, String teleportLocation, Component successMessage) {
+        return supply(() -> {
+            String host = resolveHost(islandUuid);
+            return teleportViaServer(host, playerUuid, host, teleportLocation, successMessage);
+        });
     }
 
-    private CompletableFuture<Void> teleportViaServer(String hostServer, UUID playerUuid, String teleportWorld, String teleportLocation) {
+    public CompletableFuture<Void> teleportLobby(UUID playerUuid, String lobbyWorld, String lobbyLocation) {
+        return teleportLobby(playerUuid, lobbyWorld, lobbyLocation, null);
+    }
+
+    public CompletableFuture<Void> teleportLobby(UUID playerUuid, String lobbyWorld, String lobbyLocation, Component successMessage) {
+        return supply(() -> {
+            List<String> lobbyServers = serverRegistry.getLobbyServers();
+            if (lobbyServers.isEmpty()) {
+                throw new IllegalStateException("No lobby server is online");
+            }
+            String lobbyServer = lobbyServers.get(ThreadLocalRandom.current().nextInt(lobbyServers.size()));
+            return teleportViaServer(lobbyServer, playerUuid, lobbyWorld, lobbyLocation, successMessage);
+        });
+    }
+
+    private CompletableFuture<Void> teleportViaServer(String hostServer, UUID playerUuid, String teleportWorld, String teleportLocation, Component successMessage) {
         CompletableFuture<Boolean> prepared;
         if (hostServer.equals(serverID)) {
-            prepared = teleportHandler.prepareTeleport(playerUuid, teleportWorld, teleportLocation);
+            prepared = successMessage == null
+                    ? teleportHandler.prepareTeleport(playerUuid, teleportWorld, teleportLocation)
+                    : teleportHandler.prepareTeleport(playerUuid, teleportWorld, teleportLocation, successMessage);
         } else {
             JSONObject payload = new JSONObject();
             payload.put("playerUuid", playerUuid.toString());
             payload.put("teleportWorld", teleportWorld);
             payload.put("teleportLocation", teleportLocation);
+            payload.put("successMessage", successMessage == null ? JSONObject.NULL : ComponentUtils.serialize(successMessage));
             prepared = messenger.request(hostServer, ACTION_ISLAND_TELEPORT_PREPARE, payload).thenApply(resp -> resp.getBoolean("teleported"));
         }
 
@@ -105,19 +127,13 @@ public class IslandDistributor {
             }
 
             // The registry read must stay off the global region thread; a local prepare completes there.
-            return CompletableFuture.completedFuture(null).thenComposeAsync(v -> {
-                String registered = onlinePlayerRegistry.getOnlinePlayerServer(playerUuid);
-                if (registered != null) {
-                    return CompletableFuture.completedFuture(registered);
+            return CompletableFuture.supplyAsync(() -> onlinePlayerRegistry.getOnlinePlayerServer(playerUuid),
+                    plugin.getBukkitAsyncExecutor()).thenComposeAsync(playerServer -> {
+                if (playerServer == null) {
+                    return CompletableFuture.failedFuture(new PlayerNotOnlineException());
                 }
-
-                // No entry reads as offline, but a join's entry may not be written yet: a player
-                // here is on this server whatever the registry says.
-                return CompletableFuture.supplyAsync(() -> Bukkit.getPlayer(playerUuid) != null ? serverID : null, plugin.getGlobalRegionExecutor());
-            }, plugin.getBukkitAsyncExecutor()).thenComposeAsync(playerServer -> {
                 // Already on the host (arrived since the prepare step): nothing to do.
-                // Offline: the pending teleport fires on their next join to the host.
-                if (playerServer == null || playerServer.equals(hostServer)) {
+                if (playerServer.equals(hostServer)) {
                     return CompletableFuture.completedFuture(null);
                 }
 

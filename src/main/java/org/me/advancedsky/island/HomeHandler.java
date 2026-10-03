@@ -1,5 +1,6 @@
 package org.me.advancedsky.island;
 
+import net.kyori.adventure.text.Component;
 import org.bukkit.Location;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cluster.OnlinePlayerRegistry;
@@ -84,6 +85,11 @@ public class HomeHandler {
     }
 
     public CompletableFuture<Void> home(UUID playerUuid, String homeName, UUID targetPlayerUuid) {
+        return home(playerUuid, homeName, targetPlayerUuid, null);
+    }
+
+    /** Sends the optional success message on the destination after the teleport succeeds. */
+    public CompletableFuture<Void> home(UUID playerUuid, String homeName, UUID targetPlayerUuid, Component successMessage) {
         return CompletableFuture.supplyAsync(() -> {
             if (!onlinePlayerRegistry.isOnline(targetPlayerUuid)) {
                 throw new PlayerNotOnlineException();
@@ -93,7 +99,9 @@ public class HomeHandler {
             String homeLocation = Optional.ofNullable(database.getIslandHomes(islandUuid, playerUuid).get(homeName.toLowerCase(Locale.ROOT))).orElseThrow(HomeDoesNotExistException::new);
 
             return new HomeTarget(islandUuid, homeLocation);
-        }, plugin.getBukkitAsyncExecutor()).thenComposeAsync(target -> islandDistributor.teleportIsland(target.islandUuid(), targetPlayerUuid, config.getIslandWorldName(), target.homeLocation()), plugin.getBukkitAsyncExecutor());
+        }, plugin.getBukkitAsyncExecutor()).thenComposeAsync(target -> successMessage == null
+                ? islandDistributor.teleportIsland(target.islandUuid(), targetPlayerUuid, target.homeLocation())
+                : islandDistributor.teleportIsland(target.islandUuid(), targetPlayerUuid, target.homeLocation(), successMessage), plugin.getBukkitAsyncExecutor());
     }
 
     public CompletableFuture<Set<String>> getHomeNames(UUID playerUuid) {

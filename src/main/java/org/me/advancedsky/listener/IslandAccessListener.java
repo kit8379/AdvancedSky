@@ -14,6 +14,7 @@ import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.model.Island;
+import org.me.advancedsky.teleport.TeleportHandler;
 
 import java.util.Set;
 import java.util.UUID;
@@ -26,15 +27,21 @@ public class IslandAccessListener implements Listener {
     private final AdvancedSky plugin;
     private final ConfigHandler config;
     private final IslandCache islandCache;
+    private final TeleportHandler teleportHandler;
 
     // Players already sent to the lobby off an island, so the steps they take before the move
     // happens do not send them again.
     private final Set<UUID> sentAway = ConcurrentHashMap.newKeySet();
 
     public IslandAccessListener(AdvancedSky plugin, ConfigHandler config, IslandCache islandCache) {
+        this(plugin, config, islandCache, null);
+    }
+
+    public IslandAccessListener(AdvancedSky plugin, ConfigHandler config, IslandCache islandCache, TeleportHandler teleportHandler) {
         this.plugin = plugin;
         this.config = config;
         this.islandCache = islandCache;
+        this.teleportHandler = teleportHandler;
     }
 
     /**
@@ -42,12 +49,17 @@ public class IslandAccessListener implements Listener {
      */
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerJoin(PlayerJoinEvent event) {
-        checkAccess(event.getPlayer());
+        Player player = event.getPlayer();
+        // A destination received during login has not run yet. Check the actual arrival,
+        // rather than ejecting the player from their temporary spawn before it can run.
+        if (teleportHandler == null || !teleportHandler.hasPendingTeleport(player.getUniqueId())) {
+            checkArrival(player);
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onWorldChange(PlayerChangedWorldEvent event) {
-        checkAccess(event.getPlayer());
+        checkArrival(event.getPlayer());
     }
 
     /**
@@ -85,18 +97,18 @@ public class IslandAccessListener implements Listener {
      * Sends the player to the lobby if they stand on an island they may not be on. Runs on the
      * player's thread.
      */
-    private void checkAccess(Player player) {
+    public boolean checkArrival(Player player) {
         Location location = player.getLocation();
         if (isIslandWorld(location.getWorld()) && islandCache.isDeletingAt(location)) {
             denyAccess(player, config.getIslandLockedMessage());
-            return;
+            return false;
         }
         if (player.isOp()) {
-            return;
+            return true;
         }
 
         if (!isIslandWorld(location.getWorld())) {
-            return;
+            return true;
         }
 
         Island island = islandCache.getAt(location);
@@ -105,13 +117,13 @@ public class IslandAccessListener implements Listener {
             // (the world spawn is in the never-allocated slot 0), and an island whose cache entry
             // is unavailable fails closed.
             denyAccess(player, islandCache.getIslandUuidAt(location) != null ? config.getIslandLockedMessage() : null);
-            return;
+            return false;
         }
 
-        denyIfBarred(player, island);
+        return denyIfBarred(player, island);
     }
 
-    private void denyIfBarred(Player player, Island island) {
+    private boolean denyIfBarred(Player player, Island island) {
         UUID playerUuid = player.getUniqueId();
         boolean banned = island.getBans().contains(playerUuid);
         boolean locked = island.isLock() && !island.getOwner().equals(playerUuid) && !island.getMembers().contains(playerUuid) && !island.getCoops().contains(playerUuid);
@@ -119,7 +131,9 @@ public class IslandAccessListener implements Listener {
         if (banned || locked) {
             denyAccess(player, banned ? config.getPlayerBannedMessage() : config.getIslandLockedMessage());
             plugin.debug("IslandAccessListener", "Player " + player.getName() + " attempted to access island " + island.getIslandUuid() + " but was denied access.");
+            return false;
         }
+        return true;
     }
 
     private boolean isIslandWorld(World world) {
@@ -132,6 +146,10 @@ public class IslandAccessListener implements Listener {
             return;
         }
 
+        // A refused arrival must not later announce a successful trip onto this island.
+        if (teleportHandler != null) {
+            teleportHandler.cancelArrival(playerUuid);
+        }
         plugin.getApi().lobby(playerUuid).whenComplete((v, error) -> {
             if (error != null) {
                 // Sent again on their next step or join.

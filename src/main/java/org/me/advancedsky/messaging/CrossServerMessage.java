@@ -3,6 +3,7 @@ package org.me.advancedsky.messaging;
 import org.json.JSONObject;
 
 import java.util.UUID;
+import java.util.Objects;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 
@@ -35,7 +36,7 @@ public final class CrossServerMessage {
         this.source = source;
         this.target = target;
         this.action = action;
-        this.payload = payload == null ? new JSONObject() : new JSONObject(payload.toString());
+        this.payload = new JSONObject(Objects.requireNonNull(payload, "payload").toString());
         this.status = status;
         this.errorType = errorType;
         this.errorMessage = errorMessage;
@@ -52,30 +53,34 @@ public final class CrossServerMessage {
     }
 
     public static CrossServerMessage failedResponse(CrossServerMessage request, String errorMessage) {
-        return new CrossServerMessage(UUID.randomUUID().toString(), request.messageId, TYPE_RESPONSE, request.target, request.source, request.action, new JSONObject(), STATUS_FAILED, null, errorMessage, System.currentTimeMillis());
+        return failedResponse(request, new IllegalStateException(errorMessage));
     }
 
     public static CrossServerMessage failedResponse(CrossServerMessage request, Throwable throwable) {
         Throwable cause = unwrap(throwable);
-        String message = cause.getMessage() == null ? cause.toString() : cause.getMessage();
-        return new CrossServerMessage(UUID.randomUUID().toString(), request.messageId, TYPE_RESPONSE, request.target, request.source, request.action, new JSONObject(), STATUS_FAILED, cause.getClass().getName(), message, System.currentTimeMillis());
+        return new CrossServerMessage(UUID.randomUUID().toString(), request.messageId, TYPE_RESPONSE, request.target, request.source, request.action, new JSONObject(), STATUS_FAILED, cause.getClass().getName(), cause.getMessage(), System.currentTimeMillis());
     }
 
     public static CrossServerMessage fromJson(String raw) {
         JSONObject json = new JSONObject(raw);
+        if (json.getInt("version") != VERSION) throw new IllegalArgumentException("Unsupported cross-server message version");
         return new CrossServerMessage(
                 json.getString("messageId"),
-                json.optString("correlationId", json.getString("messageId")),
+                json.getString("correlationId"),
                 json.getString("type"),
                 json.getString("source"),
                 json.getString("target"),
                 json.getString("action"),
-                json.optJSONObject("payload"),
-                json.optString("status", null),
-                json.optString("errorType", null),
-                json.optString("errorMessage", null),
+                json.getJSONObject("payload"),
+                nullableString(json, "status"),
+                nullableString(json, "errorType"),
+                nullableString(json, "errorMessage"),
                 json.getLong("timestamp")
         );
+    }
+
+    private static String nullableString(JSONObject json, String key) {
+        return json.get(key) == JSONObject.NULL ? null : json.getString(key);
     }
 
     private static Throwable unwrap(Throwable throwable) {
@@ -98,17 +103,9 @@ public final class CrossServerMessage {
         json.put("payload", payload);
         json.put("timestamp", timestamp);
 
-        if (status != null) {
-            json.put("status", status);
-        }
-
-        if (errorType != null) {
-            json.put("errorType", errorType);
-        }
-
-        if (errorMessage != null) {
-            json.put("errorMessage", errorMessage);
-        }
+        json.put("status", status == null ? JSONObject.NULL : status);
+        json.put("errorType", errorType == null ? JSONObject.NULL : errorType);
+        json.put("errorMessage", errorMessage == null ? JSONObject.NULL : errorMessage);
 
         return json.toString();
     }

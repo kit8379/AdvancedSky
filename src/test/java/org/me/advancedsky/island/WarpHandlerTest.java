@@ -114,12 +114,12 @@ class WarpHandlerTest {
     void teleportUsesIslandUuidWithoutLookingUpPlayerMembership() {
         set(owner, "default", 1);
         when(players.isOnline(visitor)).thenReturn(true);
-        when(distributor.teleportIsland(any(), any(), anyString(), anyString()))
+        when(distributor.teleportIsland(any(), any(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
         handler.warp(new Actor.Player(visitor), island, "default", visitor).join();
         handler.warp(new Actor.Player(visitor), island, "DEFAULT", visitor).join();
         verify(database, never()).getIslandUuid(any());
-        verify(distributor, times(2)).teleportIsland(island, visitor, WORLD, "1.0,70.0,3.0,0.0,0.0");
+        verify(distributor, times(2)).teleportIsland(island, visitor, "1.0,70.0,3.0,0.0,0.0");
     }
 
     @Test
@@ -180,7 +180,7 @@ class WarpHandlerTest {
     @Test
     void sameNameOnOtherIslandIsIndependentAndCannotBeEditedByMember() throws Exception {
         UUID otherIsland = UUID.randomUUID();
-        sql("INSERT INTO test_islands (island_uuid, server) VALUES (?, 'test')", otherIsland);
+        sql("INSERT INTO test_islands (island_uuid, server, slot) VALUES (?, 'test', 2)", otherIsland);
         set(owner, "shop", 1);
         database.updateWarpPoint(admin, otherIsland, "shop", "other");
         assertThrows(IslandDoesNotExistException.class,
@@ -199,12 +199,12 @@ class WarpHandlerTest {
         sql("UPDATE test_islands SET `lock` = TRUE WHERE island_uuid = ?", island);
         assertFailure(IslandLockedException.class, handler.warp(new Actor.Player(visitor), island, "shop", visitor));
         sql("INSERT INTO test_island_coops VALUES (?, ?)", island, visitor);
-        when(distributor.teleportIsland(any(), any(), anyString(), anyString()))
+        when(distributor.teleportIsland(any(), any(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
         handler.warp(new Actor.Player(visitor), island, "shop", visitor).join();
         sql("INSERT INTO test_island_bans VALUES (?, ?)", island, visitor);
         assertFailure(PlayerBannedException.class, handler.warp(new Actor.Player(visitor), island, "shop", visitor));
-        verify(distributor, times(1)).teleportIsland(any(), any(), anyString(), anyString());
+        verify(distributor, times(1)).teleportIsland(any(), any(), anyString());
     }
 
     @Test
@@ -213,10 +213,10 @@ class WarpHandlerTest {
         when(players.isOnline(visitor)).thenReturn(true);
         sql("UPDATE test_islands SET `lock` = TRUE WHERE island_uuid = ?", island);
         sql("INSERT INTO test_island_bans VALUES (?, ?)", island, visitor);
-        when(distributor.teleportIsland(any(), any(), anyString(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
+        when(distributor.teleportIsland(any(), any(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
 
         handler.warp(admin, island, "shop", visitor).join();
-        verify(distributor).teleportIsland(eq(island), eq(visitor), anyString(), anyString());
+        verify(distributor).teleportIsland(eq(island), eq(visitor), anyString());
     }
 
     @Test

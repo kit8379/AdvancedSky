@@ -97,7 +97,7 @@ public class AdminHomeCommand implements SubCommand, AsyncTabComplete {
                     return CompletableFuture.completedFuture(null);
                 }
 
-                return api.admin(sender).home(homePlayerUuidOpt.get(), homeName, teleportPlayerUuid).thenRun(() -> api.sendPlayerMessage(teleportPlayerUuid, config.getAdminHomeSuccessMessage(homePlayerName, homeName)));
+                return api.admin(sender).home(homePlayerUuidOpt.get(), homeName, teleportPlayerUuid, config.getAdminHomeSuccessMessage(homePlayerName, homeName));
             });
         }).exceptionally(ex -> {
             Throwable cause = ex.getCause();
@@ -123,7 +123,7 @@ public class AdminHomeCommand implements SubCommand, AsyncTabComplete {
     public CompletableFuture<List<String>> tabCompleteAsync(CommandSender sender, String label, String[] args) {
         if (args.length == 2) {
             String prefix = args[1].toLowerCase(Locale.ROOT);
-            return api.getOnlinePlayersNames().thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList())).exceptionally(ex -> Collections.emptyList());
+            return api.getOnlinePlayersNames().thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()));
         }
 
         if (args.length == 3) {
@@ -134,12 +134,12 @@ public class AdminHomeCommand implements SubCommand, AsyncTabComplete {
                 }
 
                 return api.getHomeNames(uuidOpt.get()).thenApply(homes -> homes.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()));
-            }).exceptionally(ex -> Collections.emptyList());
+            });
         }
 
         if (args.length == 4) {
             String prefix = args[3].toLowerCase(Locale.ROOT);
-            return api.getOnlinePlayersNames().thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList())).exceptionally(ex -> Collections.emptyList());
+            return api.getOnlinePlayersNames().thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()));
         }
 
         return CompletableFuture.completedFuture(Collections.emptyList());

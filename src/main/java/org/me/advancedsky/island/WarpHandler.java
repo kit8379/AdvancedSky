@@ -1,5 +1,6 @@
 package org.me.advancedsky.island;
 
+import net.kyori.adventure.text.Component;
 import org.bukkit.Location;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cluster.OnlinePlayerRegistry;
@@ -76,6 +77,11 @@ public class WarpHandler {
      * Bans and the lock bar players; an admin's warp, like an admin's home, is not held to them.
      */
     public CompletableFuture<Void> warp(Actor actor, UUID islandUuid, String warpName, UUID targetPlayerUuid) {
+        return warp(actor, islandUuid, warpName, targetPlayerUuid, null);
+    }
+
+    /** Sends the optional success message on the destination after the teleport succeeds. */
+    public CompletableFuture<Void> warp(Actor actor, UUID islandUuid, String warpName, UUID targetPlayerUuid, Component successMessage) {
         return CompletableFuture.supplyAsync(() -> {
             if (!onlinePlayerRegistry.isOnline(targetPlayerUuid)) {
                 throw new PlayerNotOnlineException();
@@ -94,7 +100,9 @@ public class WarpHandler {
             }
 
             return Optional.ofNullable(database.getIslandWarps(islandUuid).get(warpName.toLowerCase(Locale.ROOT))).orElseThrow(WarpDoesNotExistException::new);
-        }, plugin.getBukkitAsyncExecutor()).thenComposeAsync(warpLocation -> islandDistributor.teleportIsland(islandUuid, targetPlayerUuid, config.getIslandWorldName(), warpLocation), plugin.getBukkitAsyncExecutor());
+        }, plugin.getBukkitAsyncExecutor()).thenComposeAsync(warpLocation -> successMessage == null
+                ? islandDistributor.teleportIsland(islandUuid, targetPlayerUuid, warpLocation)
+                : islandDistributor.teleportIsland(islandUuid, targetPlayerUuid, warpLocation, successMessage), plugin.getBukkitAsyncExecutor());
     }
 
     public CompletableFuture<Set<String>> getWarpNames(UUID islandUuid) {

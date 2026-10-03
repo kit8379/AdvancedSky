@@ -67,9 +67,7 @@ public class PlayerHomeCommand implements SubCommand, AsyncTabComplete {
         String homeName = (args.length >= 2) ? args[1] : "default";
         UUID playerUuid = player.getUniqueId();
 
-        api.player(playerUuid).home(homeName).thenRun(() -> {
-            api.sendPlayerMessage(playerUuid, config.getPlayerHomeSuccessMessage(homeName));
-        }).exceptionally(ex -> {
+        api.player(playerUuid).home(homeName, config.getPlayerHomeSuccessMessage(homeName)).exceptionally(ex -> {
             Throwable cause = ex.getCause();
             if (cause instanceof IslandDoesNotExistException) {
                 player.sendMessage(config.getPlayerNoIslandMessage());
@@ -95,6 +93,6 @@ public class PlayerHomeCommand implements SubCommand, AsyncTabComplete {
 
         String prefix = args[1].toLowerCase(Locale.ROOT);
 
-        return api.getHomeNames(player.getUniqueId()).thenApply(homeNames -> homeNames.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList())).exceptionally(ex -> Collections.emptyList());
+        return api.getHomeNames(player.getUniqueId()).thenApply(homeNames -> homeNames.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()));
     }
 }

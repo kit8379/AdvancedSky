@@ -69,7 +69,7 @@ public class PlayerCoopListCommand implements SubCommand {
             }
 
             return api.getPlayerNames(coopedPlayers).thenAccept(nameMap -> {
-                List<String> playerNames = coopedPlayers.stream().map(uuid -> nameMap.getOrDefault(uuid, uuid.toString())).sorted(String.CASE_INSENSITIVE_ORDER).toList();
+                List<String> playerNames = coopedPlayers.stream().map(uuid -> java.util.Objects.requireNonNull(nameMap.get(uuid), "Missing player name for " + uuid)).sorted(String.CASE_INSENSITIVE_ORDER).toList();
 
                 TextComponent.Builder coopedList = Component.text().append(config.getCoopedPlayersHeaderMessage());
 

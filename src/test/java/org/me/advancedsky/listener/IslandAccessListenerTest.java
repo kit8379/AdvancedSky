@@ -14,6 +14,9 @@ import org.me.advancedsky.api.AdvancedSkyAPI;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.model.Island;
+import org.me.advancedsky.teleport.TeleportHandler;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -55,6 +58,31 @@ class IslandAccessListenerTest {
     }
 
     @Test
+    void aLateLoginDestinationRunsBeforeCheckingItsTemporarySpawn() {
+        TeleportHandler teleports = mock(TeleportHandler.class);
+        when(teleports.hasPendingTeleport(playerUuid)).thenReturn(true);
+
+        new IslandAccessListener(plugin, config, cache, teleports)
+                .onPlayerJoin(new PlayerJoinEvent(player, net.kyori.adventure.text.Component.empty()));
+
+        verify(api, never()).lobby(any());
+        verify(teleports, never()).cancelArrival(any());
+        verify(cache, never()).getAt(any());
+    }
+
+    @Test
+    void aRepeatedArrivalCheckStillRefusesTheGapWhenTheLobbyTripIsAlreadyPending() {
+        TeleportHandler teleports = mock(TeleportHandler.class);
+        IslandAccessListener access = new IslandAccessListener(plugin, config, cache, teleports);
+
+        assertFalse(access.checkArrival(player));
+        assertFalse(access.checkArrival(player));
+
+        verify(api, times(1)).lobby(playerUuid);
+        verify(teleports, times(1)).cancelArrival(playerUuid);
+    }
+
+    @Test
     void anOperatorMayStayInTheGap() {
         when(player.isOp()).thenReturn(true);
 
@@ -74,10 +102,16 @@ class IslandAccessListenerTest {
     @Test
     void anIslandWhoseCacheEntryIsUnavailableFailsClosed() {
         when(cache.getIslandUuidAt(location)).thenReturn(UUID.randomUUID());
+        TeleportHandler teleports = mock(TeleportHandler.class);
+        IslandAccessListener access = new IslandAccessListener(plugin, config, cache, teleports);
 
-        join();
+        access.onPlayerJoin(new PlayerJoinEvent(player, net.kyori.adventure.text.Component.empty()));
+        assertFalse(access.checkArrival(player));
 
-        verify(api).lobby(playerUuid);
+        // The lobby request is asynchronous: cancel the arrival confirmation before routing it.
+        var order = inOrder(teleports, api);
+        order.verify(teleports).cancelArrival(playerUuid);
+        order.verify(api).lobby(playerUuid);
     }
 
     @Test
@@ -152,9 +186,14 @@ class IslandAccessListenerTest {
         when(cache.getIslandUuidAt(location)).thenReturn(island.getIslandUuid());
         when(cache.getAt(location)).thenReturn(island);
 
-        join();
+        TeleportHandler teleports = mock(TeleportHandler.class);
+        IslandAccessListener access = new IslandAccessListener(plugin, config, cache, teleports);
+
+        access.onPlayerJoin(new PlayerJoinEvent(player, net.kyori.adventure.text.Component.empty()));
+        assertTrue(access.checkArrival(player));
 
         verify(api, never()).lobby(any());
+        verify(teleports, never()).cancelArrival(any());
     }
 
     private void join() {

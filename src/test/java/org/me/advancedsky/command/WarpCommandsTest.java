@@ -1,5 +1,6 @@
 package org.me.advancedsky.command;
 
+import net.kyori.adventure.text.Component;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
@@ -39,6 +40,7 @@ class WarpCommandsTest {
     private final AdminActions adminActions = mock(AdminActions.class);
     private final World world = mock(World.class);
     private final Location location = new Location(world, 1, 2, 3);
+    private final Component successMessage = Component.text("Teleported to Member's shop warp");
 
     @BeforeEach
     void setUp() {
@@ -51,13 +53,15 @@ class WarpCommandsTest {
         when(api.getIslandUuid(targetId)).thenReturn(CompletableFuture.completedFuture(islandId));
         when(api.getIslandUuid(playerId)).thenReturn(CompletableFuture.completedFuture(islandId));
         when(api.getWarpNames(islandId)).thenReturn(CompletableFuture.completedFuture(Set.of("shop", "farm")));
+        when(config.getWarpSuccessMessage("Member", "shop")).thenReturn(successMessage);
     }
 
     @Test
     void playerWarpResolvesNamedMembersIsland() {
-        when(playerActions.warp(islandId, "shop")).thenReturn(CompletableFuture.completedFuture(null));
+        when(playerActions.warp(islandId, "shop", successMessage)).thenReturn(CompletableFuture.completedFuture(null));
         new PlayerWarpCommand(plugin, api, config).execute(player, new String[]{"warp", "Member", "shop"});
-        verify(playerActions).warp(islandId, "shop");
+        verify(playerActions).warp(islandId, "shop", successMessage);
+        verify(api, never()).sendPlayerMessage(any(), any());
     }
 
     @Test
@@ -72,13 +76,14 @@ class WarpCommandsTest {
 
     @Test
     void adminWarpResolvesIslandForSelfAndNamedTraveler() {
-        when(adminActions.warp(islandId, "shop", playerId)).thenReturn(CompletableFuture.completedFuture(null));
-        when(adminActions.warp(islandId, "shop", targetId)).thenReturn(CompletableFuture.completedFuture(null));
+        when(adminActions.warp(islandId, "shop", playerId, successMessage)).thenReturn(CompletableFuture.completedFuture(null));
+        when(adminActions.warp(islandId, "shop", targetId, successMessage)).thenReturn(CompletableFuture.completedFuture(null));
         AdminWarpCommand command = new AdminWarpCommand(plugin, api, config);
         command.execute(player, new String[]{"warp", "Member", "shop"});
         command.execute(player, new String[]{"warp", "Member", "shop", "Member"});
-        verify(adminActions).warp(islandId, "shop", playerId);
-        verify(adminActions).warp(islandId, "shop", targetId);
+        verify(adminActions).warp(islandId, "shop", playerId, successMessage);
+        verify(adminActions).warp(islandId, "shop", targetId, successMessage);
+        verify(api, never()).sendPlayerMessage(any(), any());
     }
 
     @Test

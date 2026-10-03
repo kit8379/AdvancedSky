@@ -2,7 +2,7 @@
 # AdvancedSky Configuration
 #
 # Design:
-# - `server`   : per-server identity (the only section that differs)
+# - `server.name` and `lobby-only`: per-server identity and role
 # - everything else: usually the same across all servers in the network
 # - an island is created on one island server and stays there forever
 # ===================================================================
@@ -13,6 +13,10 @@
 server:
   # Must match the server name in your BungeeCord / Velocity config.
   name: "sky1"
+
+# true: commands only; false: hosts islands in the world named after server.name.
+# Role and server name are read at startup; restart after changing either.
+lobby-only: false
 
 
 # ===================================================================
@@ -57,29 +61,16 @@ redis:
 cluster-id: default
 
 
-# ===================================================================
-# Servers
-# ===================================================================
-# Names must match BungeeCord / Velocity server names. Every server running this plugin must
-# appear in exactly one of the two lists. All listed servers are assumed to be online, and their
-# clocks must agree (run NTP): a request between servers is refused once it is ten seconds old by
-# the sender's clock.
-servers:
-  # Servers that host islands. A new island goes to the one with the fewest islands.
-  island:
-    - "sky1"
-    - "sky2"
-
-  # Servers that run the plugin for its commands only and never host islands.
-  lobby:
-    - "lobby"
-
+# Servers register their roles in Redis automatically once ready, with a heartbeat every 5s.
+# A stopped server unregisters immediately; a crashed server expires within 30s.
+# New islands go to the online island server with the fewest islands.
+# Node clocks must still agree (run NTP): cross-server requests older than 10s are refused.
 
 # ===================================================================
-# Lobby Fallback
+# Lobby Destination
 # ===================================================================
 # Where players are sent when they must leave an island forcibly
-# (e.g., island delete) or run /island lobby. The server is picked at random from `servers.lobby`.
+# (e.g., island delete) or run /island lobby. A ready lobby server is picked at random.
 lobby:
   # Lobby world name (must exist on all lobby servers).
   world-name: "world"
@@ -97,31 +88,21 @@ lobby:
 # Island
 # ===================================================================
 island:
-  # World that holds the islands, with the same name on every island server. It must already be
-  # loaded when the plugin enables (Folia cannot load worlds at runtime).
-  world: "skyblock"
-
+  # The island world name is server.name (e.g. sky1). It must already be loaded when the
+  # plugin enables. Set level-name in server.properties accordingly; Folia cannot load it later.
   # Y level of the island centre block.
   # Do not change once islands exist: every island position is derived from it.
   height: 100
 
-  # Starter island copied onto every new island. Build it in a separate world that every island
-  # server has loaded at startup (Folia cannot load worlds at runtime). `anchor` is the template
-  # block that lands on the island centre; `min` and `max` are opposite corners of the box to copy.
+  # Starter island loaded once at startup from a Sponge .schem v3 file.
+  # Path is relative to plugins/AdvancedSky/. Put the same file on every island server.
+  # The bundled default is saved to schematics/starter.schem if that file is missing.
+  # Existing files are kept; replace the file to use your own starter island.
+  # The schematic's copy origin lands on the island centre. Air is skipped; block entity
+  # data (including chest contents) is kept. Entities and biomes are not copied.
+  # No template world or WorldEdit plugin is needed. Restart after changing the file.
   template:
-    world: "skyblock_template"
-    anchor:
-      x: 0
-      y: 100
-      z: 0
-    min:
-      x: -32
-      y: 64
-      z: -32
-    max:
-      x: 32
-      y: 160
-      z: 32
+    schematic: "schematics/starter.schem"
 
   # Where a new island's default home is, relative to its centre block.
   spawn:

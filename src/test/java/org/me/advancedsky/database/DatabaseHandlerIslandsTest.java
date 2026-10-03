@@ -61,7 +61,7 @@ class DatabaseHandlerIslandsTest {
         createTables.invoke(database);
 
         // Server a: one island with everything a cached island carries, one with nothing but its owner.
-        sql("INSERT INTO test_islands (island_uuid, server) VALUES (?, 'a')", full);
+        sql("INSERT INTO test_islands (island_uuid, server, slot) VALUES (?, 'a', 1)", full);
         sql("UPDATE test_islands SET `lock` = TRUE WHERE island_uuid = ?", full);
         sql("INSERT INTO test_island_players (player_uuid, island_uuid, role) VALUES (?, ?, 'owner')", owner, full);
         sql("INSERT INTO test_island_players (player_uuid, island_uuid, role) VALUES (?, ?, 'member')", member, full);
@@ -77,13 +77,13 @@ class DatabaseHandlerIslandsTest {
         sql("INSERT INTO test_island_upgrades (island_uuid, upgrade_id, level) VALUES (?, 'generator-rates', 3)", full);
         sql("INSERT INTO test_island_upgrades (island_uuid, upgrade_id, level) VALUES (?, 'coop-limit', 3)", full);
 
-        sql("INSERT INTO test_islands (island_uuid, server) VALUES (?, 'a')", bare);
+        sql("INSERT INTO test_islands (island_uuid, server, slot) VALUES (?, 'a', 2)", bare);
         sql("UPDATE test_islands SET pvp = TRUE WHERE island_uuid = ?", bare);
         sql("INSERT INTO test_island_players (player_uuid, island_uuid, role) VALUES (?, ?, 'owner')", bareOwner, bare);
 
         // Server b: its rows must not leak into server a's islands.
         UUID elsewhereOwner = UUID.randomUUID();
-        sql("INSERT INTO test_islands (island_uuid, server) VALUES (?, 'b')", elsewhere);
+        sql("INSERT INTO test_islands (island_uuid, server, slot) VALUES (?, 'b', 3)", elsewhere);
         sql("INSERT INTO test_island_players (player_uuid, island_uuid, role) VALUES (?, ?, 'owner')", elsewhereOwner, elsewhere);
         sql("INSERT INTO test_island_players (player_uuid, island_uuid, role) VALUES (?, ?, 'member')", UUID.randomUUID(), elsewhere);
         sql("INSERT INTO test_island_coops (island_uuid, cooped_player) VALUES (?, ?)", elsewhere, UUID.randomUUID());
@@ -167,7 +167,7 @@ class DatabaseHandlerIslandsTest {
         Method createTables = DatabaseHandler.class.getDeclaredMethod("createTables");
         createTables.setAccessible(true);
         createTables.invoke(database);
-        sql("INSERT INTO test_islands (island_uuid, server) VALUES (?, 'a')", full);
+        sql("INSERT INTO test_islands (island_uuid, server, slot) VALUES (?, 'a', 1)", full);
         sql("INSERT INTO test_island_players (player_uuid, island_uuid, role) VALUES (?, ?, 'owner')", owner, full);
 
         assertTrue(database.toggleIslandPvp(new Actor.Player(owner), full));
@@ -230,7 +230,7 @@ class DatabaseHandlerIslandsTest {
     }
 
     @Test
-    void deletionDetachesPlayersImmediatelyButReservesTheSlotUntilCleanupFinishes() {
+    void deletionDetachesPlayersImmediatelyButReservesTheSlotUntilCleanupFinishes() throws Exception {
         int slot = database.getIslandSlot(full).orElseThrow();
         database.beginIslandDeletion(new Actor.Player(owner), full);
         assertEquals(slot, database.getIslandSlot(full).orElseThrow());
@@ -254,6 +254,7 @@ class DatabaseHandlerIslandsTest {
         int replacementSlot = database.addIslandData(replacement, owner, "b");
         assertNotEquals(slot, replacementSlot);
         database.finishIslandCreation(replacement);
+        sql("INSERT INTO test_island_homes (player_uuid, home_name, home_location, island_uuid) VALUES (?, 'default', '0,64,0,0,0', ?)", bareOwner, bare);
         database.addIslandPlayer(new Actor.Bypass("test"), bare, member, "member");
         assertEquals(replacement, database.getIslandUuid(owner).orElseThrow());
         assertEquals(bare, database.getIslandUuid(member).orElseThrow());
@@ -319,19 +320,6 @@ class DatabaseHandlerIslandsTest {
         assertFalse(database.getIslandWarps(full).isEmpty());
     }
 
-    @Test
-    void upgradingAnExistingSchemaAddsDeletionStateAndPreservesIslands() throws Exception {
-        sql("ALTER TABLE test_islands DROP COLUMN deleting");
-        Method createTables = DatabaseHandler.class.getDeclaredMethod("createTables");
-        createTables.setAccessible(true);
-        createTables.invoke(database);
-        assertFalse(database.isIslandDeleting(full));
-        assertEquals(Set.of(full, bare), database.getIslandsByServer("a").keySet());
-        try (var result = connection.createStatement().executeQuery("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'TEST_ISLAND_SLOTS'")) {
-            result.next();
-            assertEquals(0, result.getInt(1), "slot recycling needs no separate table");
-        }
-    }
 
     @Test
     void slotOneIsAllocatedSafelyWhenTheTableIsEmpty() throws Exception {

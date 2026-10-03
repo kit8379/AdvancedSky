@@ -2,13 +2,11 @@ package org.me.advancedsky.world;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
-import org.bukkit.ChunkSnapshot;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.block.BlockState;
 import org.bukkit.entity.Player;
-import org.bukkit.util.BlockVector;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.grid.IslandGrid;
@@ -33,7 +31,7 @@ import java.util.function.Supplier;
  * Applies island changes to this server's island world. Called by the local island handlers for
  * islands hosted here.
  * <p>
- * Creating an island copies the template built in the template world onto the island centre;
+ * Creating an island copies a schematic template onto the island centre;
  * deleting immediately evicts and clears that area's region files before its database row goes.
  * All block work runs on the region scheduler of the chunk it touches, and
  * where a player stands is read on that player's own scheduler, so it is safe on Folia and on
@@ -46,29 +44,25 @@ public class WorldHandler {
     private volatile boolean stopped;
     private final World world;
     private final List<Path> storageFolders;
-    private final World templateWorld;
-    private final BlockVector templateAnchor;
-    private final BlockVector templateMin;
-    private final BlockVector templateMax;
+    private final SchematicTemplate template;
 
     public WorldHandler(AdvancedSky plugin, ConfigHandler config, IslandGrid grid) {
         this.plugin = plugin;
         this.grid = grid;
-        this.templateAnchor = new BlockVector(config.getTemplateAnchorX(), config.getTemplateAnchorY(), config.getTemplateAnchorZ());
-
-        // Either corner order is accepted, as with a WorldEdit selection.
-        this.templateMin = new BlockVector(Math.min(config.getTemplateMinX(), config.getTemplateMaxX()), Math.min(config.getTemplateMinY(), config.getTemplateMaxY()), Math.min(config.getTemplateMinZ(), config.getTemplateMaxZ()));
-        this.templateMax = new BlockVector(Math.max(config.getTemplateMinX(), config.getTemplateMaxX()), Math.max(config.getTemplateMinY(), config.getTemplateMaxY()), Math.max(config.getTemplateMinZ(), config.getTemplateMaxZ()));
-
         if (config.isLobbyOnly()) {
             this.world = null;
-            this.templateWorld = null;
+            this.template = null;
             this.storageFolders = List.of();
         } else {
             // Worlds are all loaded before plugins enable; on Folia none can be added later.
             this.world = requireLoadedWorld(config.getIslandWorldName(), "island world");
-            this.templateWorld = requireLoadedWorld(config.getTemplateWorldName(), "template world");
             this.storageFolders = storageFolders(world);
+            Path dataFolder = plugin.getDataFolder().toPath();
+            String schematic = config.getTemplateSchematic();
+            if (SchematicTemplate.DEFAULT_PATH.equals(schematic) && !Files.exists(dataFolder.resolve(schematic))) {
+                plugin.saveResource(SchematicTemplate.DEFAULT_PATH, false);
+            }
+            this.template = SchematicTemplate.load(dataFolder, schematic, world, config.getIslandHeight());
         }
     }
 
@@ -255,8 +249,7 @@ public class WorldHandler {
     }
 
     /**
-     * Runs the action on the thread that owns the player; a player who left meanwhile yields
-     * the fallback.
+     * Runs the action on the thread that owns the player; a player who left yields ifGone.
      */
     private <T> CompletableFuture<T> onPlayer(Player player, Supplier<T> action, T ifGone) {
         CompletableFuture<T> result = new CompletableFuture<>();
@@ -279,56 +272,22 @@ public class WorldHandler {
     // ===================================================================
 
     private CompletableFuture<Void> pasteTemplate(Location center) {
-        int dx = center.getBlockX() - templateAnchor.getBlockX();
-        int dy = center.getBlockY() - templateAnchor.getBlockY();
-        int dz = center.getBlockZ() - templateAnchor.getBlockZ();
-
-        List<CompletableFuture<Void>> copies = new ArrayList<>();
-        for (int cx = templateMin.getBlockX() >> 4; cx <= templateMax.getBlockX() >> 4; cx++) {
-            for (int cz = templateMin.getBlockZ() >> 4; cz <= templateMax.getBlockZ() >> 4; cz++) {
-                copies.add(onChunk(templateWorld, cx, cz, true, chunk -> copyTemplateChunk(chunk, dx, dy, dz)));
-            }
-        }
-        return allOf(copies);
-    }
-
-    /**
-     * Runs on the template chunk's thread: snapshots every non-air block inside the template box,
-     * then places the snapshots on the threads owning the target chunks. Block states carry tile
-     * entity data, so chests keep their contents. Air, most of the box, is found in a chunk
-     * snapshot, so only the blocks that are copied are looked up in the world.
-     */
-    private CompletableFuture<Void> copyTemplateChunk(Chunk chunk, int dx, int dy, int dz) {
-        int fromX = Math.max(templateMin.getBlockX(), chunk.getX() << 4);
-        int toX = Math.min(templateMax.getBlockX(), (chunk.getX() << 4) + 15);
-        int fromZ = Math.max(templateMin.getBlockZ(), chunk.getZ() << 4);
-        int toZ = Math.min(templateMax.getBlockZ(), (chunk.getZ() << 4) + 15);
-        int minHeight = templateWorld.getMinHeight();
-        int fromY = Math.max(templateMin.getBlockY(), minHeight);
-        int toY = Math.min(templateMax.getBlockY(), templateWorld.getMaxHeight() - 1);
-        ChunkSnapshot snapshot = chunk.getChunkSnapshot(false, false, false, false);
-
+        int dx = center.getBlockX() + template.offsetX();
+        int dy = center.getBlockY() + template.offsetY();
+        int dz = center.getBlockZ() + template.offsetZ();
         Map<ChunkPos, List<BlockState>> byTargetChunk = new HashMap<>();
-        for (int y = fromY; y <= toY; y++) {
-            // isSectionEmpty takes a 0-based index counted from the lowest section of the world.
-            if (snapshot.isSectionEmpty((y - minHeight) >> 4)) {
-                continue;
-            }
-            for (int x = fromX; x <= toX; x++) {
-                for (int z = fromZ; z <= toZ; z++) {
-                    if (snapshot.getBlockType(x & 15, y, z & 15).isAir()) {
-                        continue;
-                    }
-                    Location target = new Location(world, x + dx, y + dy, z + dz);
-                    byTargetChunk.computeIfAbsent(new ChunkPos(target.getBlockX() >> 4, target.getBlockZ() >> 4), key -> new ArrayList<>()).add(templateWorld.getBlockAt(x, y, z).getState().copy(target));
-                }
-            }
+        for (BlockState state : template.blocks()) {
+            ChunkPos pos = new ChunkPos((state.getX() + dx) >> 4, (state.getZ() + dz) >> 4);
+            byTargetChunk.computeIfAbsent(pos, key -> new ArrayList<>()).add(state);
         }
-
         List<CompletableFuture<Void>> placements = new ArrayList<>();
         byTargetChunk.forEach((pos, states) -> placements.add(onChunk(world, pos.x(), pos.z(), true, targetChunk -> {
             for (BlockState state : states) {
-                state.update(true, false);
+                // Each paste gets its own tile-entity snapshot, on the destination's thread.
+                Location target = new Location(world, state.getX() + dx, state.getY() + dy, state.getZ() + dz);
+                if (!state.copy(target).update(true, false)) {
+                    throw new IllegalStateException("Could not place schematic block at " + target);
+                }
             }
             return CompletableFuture.completedFuture(null);
         })));

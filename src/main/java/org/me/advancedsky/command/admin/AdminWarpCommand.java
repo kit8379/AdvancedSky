@@ -86,9 +86,7 @@ public class AdminWarpCommand implements SubCommand, AsyncTabComplete {
 
             return api.getIslandUuid(warpPlayerUuid).thenCompose(islandUuid -> {
                 if (teleportPlayerName == null) {
-                    return api.admin(sender).warp(islandUuid, warpName, finalSenderUuid).thenRun(() -> {
-                        api.sendPlayerMessage(finalSenderUuid, config.getWarpSuccessMessage(warpPlayerName, warpName));
-                    });
+                    return api.admin(sender).warp(islandUuid, warpName, finalSenderUuid, config.getWarpSuccessMessage(warpPlayerName, warpName));
                 }
 
                 return api.getPlayerUuid(teleportPlayerName).thenCompose(teleportPlayerUuidOpt -> {
@@ -99,7 +97,7 @@ public class AdminWarpCommand implements SubCommand, AsyncTabComplete {
 
                     UUID teleportPlayerUuid = teleportPlayerUuidOpt.get();
 
-                    return api.admin(sender).warp(islandUuid, warpName, teleportPlayerUuid).thenRun(() -> api.sendPlayerMessage(teleportPlayerUuid, config.getWarpSuccessMessage(warpPlayerName, warpName)));
+                    return api.admin(sender).warp(islandUuid, warpName, teleportPlayerUuid, config.getWarpSuccessMessage(warpPlayerName, warpName));
                 });
             });
         }).exceptionally(ex -> {
@@ -131,7 +129,7 @@ public class AdminWarpCommand implements SubCommand, AsyncTabComplete {
     public CompletableFuture<List<String>> tabCompleteAsync(CommandSender sender, String label, String[] args) {
         if (args.length == 2) {
             String prefix = args[1].toLowerCase(Locale.ROOT);
-            return api.getOnlinePlayersNames().thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList())).exceptionally(ex -> Collections.emptyList());
+            return api.getOnlinePlayersNames().thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()));
         }
 
         if (args.length == 3) {
@@ -144,12 +142,12 @@ public class AdminWarpCommand implements SubCommand, AsyncTabComplete {
                 UUID ownerUuid = ownerUuidOpt.get();
 
                 return api.getIslandUuid(ownerUuid).thenCompose(api::getWarpNames).thenApply(warps -> warps.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()));
-            }).exceptionally(ex -> Collections.emptyList());
+            });
         }
 
         if (args.length == 4) {
             String prefix = args[3].toLowerCase(Locale.ROOT);
-            return api.getOnlinePlayersNames().thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList())).exceptionally(ex -> Collections.emptyList());
+            return api.getOnlinePlayersNames().thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()));
         }
 
         return CompletableFuture.completedFuture(Collections.emptyList());

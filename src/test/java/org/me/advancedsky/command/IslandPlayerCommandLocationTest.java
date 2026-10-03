@@ -60,12 +60,16 @@ class IslandPlayerCommandLocationTest {
 
     @Test
     void homeAndLobbyStillWorkFromOutsideTheIsland() {
-        when(actions.home("default")).thenReturn(CompletableFuture.completedFuture(null));
-        when(api.lobby(playerId)).thenReturn(CompletableFuture.completedFuture(null));
+        Component homeMessage = Component.text("Teleported to home default");
+        Component lobbyMessage = Component.text("Teleported to lobby");
+        when(config.getPlayerHomeSuccessMessage("default")).thenReturn(homeMessage);
+        when(config.getPlayerLobbySuccessMessage()).thenReturn(lobbyMessage);
+        when(actions.home("default", homeMessage)).thenReturn(CompletableFuture.completedFuture(null));
+        when(api.lobby(playerId, lobbyMessage)).thenReturn(CompletableFuture.completedFuture(null));
         command.onCommand(player, mock(Command.class), "is", new String[]{"home"});
         command.onCommand(player, mock(Command.class), "is", new String[]{"lobby"});
-        verify(actions).home("default");
-        verify(api).lobby(playerId);
+        verify(actions).home("default", homeMessage);
+        verify(api).lobby(playerId, lobbyMessage);
         verify(api, never()).isOnOwnIsland(any(), any());
     }
 }

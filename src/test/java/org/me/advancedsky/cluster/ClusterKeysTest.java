@@ -23,6 +23,7 @@ class ClusterKeysTest {
     }
 
     private List<String> allKeys(ClusterKeys keys) {
-        return List.of(keys.onlinePlayers(), keys.onlinePlayerServers(), keys.invitation(uuid), keys.messagingInbox("server1"));
+        return List.of(keys.onlinePlayers(), keys.onlinePlayerServers(), keys.invitation(uuid), keys.messagingInbox("server1"),
+                keys.serverLeases(), keys.serverRoles(), keys.serverSessions());
     }
 }

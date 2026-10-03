@@ -8,6 +8,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.teleport.TeleportHandler;
 
@@ -25,15 +26,18 @@ public class TeleportRequestListener implements Listener {
      * A player arriving through a pending teleport spawns at its location instead of being
      * teleported from the join event, which Folia refuses: the player is not in the world yet.
      */
+    @SuppressWarnings("UnstableApiUsage")
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onSpawnLocation(AsyncPlayerSpawnLocationEvent event) {
         PlayerProfile profile = event.getConnection().getProfile();
-        Location pendingLocation = teleportHandler.removePendingTeleport(profile.getId());
-        if (pendingLocation == null) {
+        TeleportHandler.PendingTeleport pending = teleportHandler.takeSpawnTeleport(profile.getId());
+        if (pending == null) {
             return;
         }
+        Location pendingLocation = pending.location();
 
         if (!pendingLocation.isWorldLoaded()) {
+            teleportHandler.clearSpawnArrival(profile.getId());
             plugin.warning("Dropping pending teleport for " + profile.getName() + ": target world is no longer loaded.");
             return;
         }
@@ -49,12 +53,49 @@ public class TeleportRequestListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
-        Location pendingLocation = teleportHandler.removePendingTeleport(player.getUniqueId());
-        if (pendingLocation == null || !pendingLocation.isWorldLoaded()) {
+        TeleportHandler.JoinTeleport arrival = teleportHandler.claimJoinTeleport(player.getUniqueId());
+        if (arrival == null) {
             return;
         }
+        TeleportHandler.PendingTeleport pending = arrival.pendingTeleport();
+        if (player.getScheduler().runDelayed(plugin, task -> {
+            if (!player.isOnline()) {
+                teleportHandler.completeArrival(player.getUniqueId(), pending);
+                return;
+            }
+            if (!pending.location().isWorldLoaded() || !teleportHandler.isArrivalCurrent(player.getUniqueId(), pending)) {
+                teleportHandler.checkFailedArrival(player, pending);
+                return;
+            }
+            if (arrival.spawned()) {
+                confirmArrival(player, pending);
+                return;
+            }
+            try {
+                player.leaveVehicle();
+                player.teleportAsync(pending.location()).whenComplete((moved, error) -> {
+                    if (error != null || !Boolean.TRUE.equals(moved)) {
+                        teleportHandler.checkFailedArrival(player, pending);
+                        return;
+                    }
+                    teleportHandler.confirmTeleport(player, pending);
+                });
+                plugin.debug("TeleportRequestListener", "Teleporting " + player.getName() + " to a pending location stored while logging in.");
+            } catch (Throwable error) {
+                teleportHandler.checkFailedArrival(player, pending);
+                plugin.warning("Failed to teleport " + player.getName() + " to their pending location: " + error.getMessage());
+            }
+        }, () -> teleportHandler.completeArrival(player.getUniqueId(), pending), 1L) == null) {
+            teleportHandler.completeArrival(player.getUniqueId(), pending);
+        }
+    }
 
-        player.getScheduler().runDelayed(plugin, task -> player.teleportAsync(pendingLocation), null, 1L);
-        plugin.debug("TeleportRequestListener", "Teleporting " + player.getName() + " to a pending location stored while logging in.");
+    private void confirmArrival(Player player, TeleportHandler.PendingTeleport pending) {
+        teleportHandler.confirmArrival(player, pending);
+    }
+
+    @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        teleportHandler.clearSpawnArrival(event.getPlayer().getUniqueId());
     }
 }

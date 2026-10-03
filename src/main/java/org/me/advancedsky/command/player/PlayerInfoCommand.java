@@ -95,9 +95,9 @@ public class PlayerInfoCommand implements SubCommand, AsyncTabComplete {
                 uuidsToResolve.addAll(members);
 
                 return api.getPlayerNames(uuidsToResolve).thenAccept(nameMap -> {
-                    String ownerName = nameMap.getOrDefault(ownerUuid, ownerUuid.toString());
+                    String ownerName = java.util.Objects.requireNonNull(nameMap.get(ownerUuid), "Missing player name for " + ownerUuid);
 
-                    String memberNames = members.stream().map(uuid -> nameMap.getOrDefault(uuid, uuid.toString())).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.joining(", "));
+                    String memberNames = members.stream().map(uuid -> java.util.Objects.requireNonNull(nameMap.get(uuid), "Missing player name for " + uuid)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.joining(", "));
 
                     sender.sendMessage(config.getIslandInfoHeaderMessage());
                     sender.sendMessage(config.getIslandInfoUUIDMessage(islandUuid));
@@ -133,6 +133,6 @@ public class PlayerInfoCommand implements SubCommand, AsyncTabComplete {
 
         String prefix = args[1].toLowerCase(Locale.ROOT);
 
-        return api.getOnlinePlayersNames().thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList())).exceptionally(ex -> Collections.emptyList());
+        return api.getOnlinePlayersNames().thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()));
     }
 }

@@ -48,8 +48,9 @@ class DatabaseHandlerUpgradeTest {
         Method createTables = DatabaseHandler.class.getDeclaredMethod("createTables");
         createTables.setAccessible(true);
         createTables.invoke(database);
-        sql("INSERT INTO test_islands (island_uuid, server) VALUES (?, 'test')", island);
+        sql("INSERT INTO test_islands (island_uuid, server, slot) VALUES (?, 'test', 1)", island);
         sql("INSERT INTO test_island_players VALUES (?, ?, 'owner')", owner, island);
+        sql("INSERT INTO test_island_homes (player_uuid, island_uuid, home_name, home_location) VALUES (?, ?, 'default', '0,64,0,0,0')", owner, island);
     }
 
     @AfterEach
