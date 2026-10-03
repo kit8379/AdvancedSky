@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="340" viewBox="0 0 1200 340" role="img" aria-labelledby="title description">
+  <title id="title">AdvancedSky</title>
+  <desc id="description">Multi-server Skyblock for Paper and Folia. Three connected floating islands on a dark sky.</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#101e35"/>
+      <stop offset="1" stop-color="#153d46"/>
+    </linearGradient>
+    <linearGradient id="grass" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#8ee6b0"/>
+      <stop offset="1" stop-color="#4bbd89"/>
+    </linearGradient>
+    <pattern id="stars" width="96" height="88" patternUnits="userSpaceOnUse">
+      <circle cx="18" cy="22" r="1" fill="#d4f4ee" opacity=".25"/>
+      <circle cx="69" cy="65" r="1.5" fill="#d4f4ee" opacity=".16"/>
+    </pattern>
+    <g id="island">
+      <ellipse cx="0" cy="112" rx="78" ry="15" fill="#061321" opacity=".28"/>
+      <path d="M-78 0 0 38 78 0 58 53 17 80-20 72-60 43Z" fill="#35465c"/>
+      <path d="M0 38 78 0 58 53 17 80 0 63Z" fill="#25384c"/>
+      <path d="M-78 0 0 38 0 57-66 27Z" fill="#946c51"/>
+      <path d="M0 38 78 0 67 26 0 57Z" fill="#70513f"/>
+      <path d="M-78 0 0-38 78 0 0 38Z" fill="url(#grass)"/>
+      <path d="M-78 0 0 38 0 46-78 9Z" fill="#3b9d72"/>
+      <path d="M0 38 78 0 78 9 0 46Z" fill="#2b7d60"/>
+      <path d="M-45-16 0 6 45-16M-45 16 0-6 45 16" fill="none" stroke="#b8f6ca" stroke-width="1" opacity=".25"/>
+      <path d="M-41 39-27 46-27 57-41 50Z" fill="#75859b" opacity=".55"/>
+      <path d="M25 50 37 44 37 55 25 61Z" fill="#56718b" opacity=".55"/>
+    </g>
+    <g id="tree">
+      <path d="M-7 0 0 4 7 0 7-44 0-48-7-44Z" fill="#8d6244"/>
+      <path d="M0 4 7 0 7-44 0-40Z" fill="#684830"/>
+      <path d="M-31-48 0-32 31-48 31-78 0-94-31-78Z" fill="#3caa77"/>
+      <path d="M0-32 31-48 31-78 0-62Z" fill="#278860"/>
+      <path d="M-31-78 0-94 31-78 0-62Z" fill="#72d998"/>
+      <path d="M-22-79 0-90 22-79 0-68Z" fill="#91e7ac" opacity=".35"/>
+    </g>
+  </defs>
+  <rect width="1200" height="340" rx="20" fill="url(#sky)"/>
+  <rect width="1200" height="340" rx="20" fill="url(#stars)"/>
+  <path d="M730 340 925 0M860 340 1055 0M990 340 1185 0M670 288H1200M716 208H1200M761 128H1200" stroke="#72d7c4" opacity=".06"/>
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <rect x="54" y="48" width="215" height="30" rx="15" fill="#79dfb6" opacity=".12"/>
+    <text x="72" y="68" fill="#99ebc5" font-size="12" font-weight="700" letter-spacing="2">MULTI-SERVER SKYBLOCK</text>
+    <text x="52" y="158" fill="#f4fbff" font-size="66" font-weight="750" letter-spacing="-2">AdvancedSky</text>
+    <text x="56" y="201" fill="#bbd3e3" font-size="23">One network. A sky full of islands.</text>
+    <text x="56" y="275" fill="#8ce7bc" font-size="15" font-weight="600" letter-spacing="1">PAPER + FOLIA</text>
+    <circle cx="208" cy="269" r="2" fill="#6b95a1"/>
+    <text x="223" y="275" fill="#a4bdca" font-size="15">Fixed hosts. Cross-server travel.</text>
+  </g>
+  <path d="M770 227Q835 248 917 141Q980 70 1087 212" fill="none" stroke="#82dfc8" stroke-width="2" stroke-dasharray="5 7" opacity=".6"/>
+  <circle cx="833" cy="213" r="4" fill="#a6f1d3"/>
+  <circle cx="1014" cy="128" r="4" fill="#a6f1d3"/>
+  <g transform="translate(766 211) scale(.72)">
+    <use href="#island"/>
+    <use href="#tree" transform="translate(-12 -7) scale(.7)"/>
+    <path d="M26 2 40-5 54 2 40 9Z" fill="#efc577"/>
+    <path d="M26 2 40 9 40 22 26 15Z" fill="#b98042"/>
+    <path d="M40 9 54 2 54 15 40 22Z" fill="#966335"/>
+  </g>
+  <g transform="translate(918 141)">
+    <use href="#island"/>
+    <use href="#tree" transform="translate(-19 -9)"/>
+    <path d="M24 3 40-5 56 3 40 11Z" fill="#edcb85"/>
+    <path d="M24 3 40 11 40 28 24 20Z" fill="#ba8748"/>
+    <path d="M40 11 56 3 56 20 40 28Z" fill="#936135"/>
+    <path d="M38 13 43 11 43 17 38 19Z" fill="#ffe5a1"/>
+  </g>
+  <g transform="translate(1087 212) scale(.8)">
+    <use href="#island"/>
+    <use href="#tree" transform="translate(13 -4) scale(.85)"/>
+    <path d="M-48 4-26-7-11 0-33 11Z" fill="#8cbff0"/>
+  </g>
+  <g font-family="Segoe UI, Arial, sans-serif" font-size="11" font-weight="600" letter-spacing="2" text-anchor="middle" fill="#94bdcc">
+    <text x="766" y="314">SKY 01</text>
+    <text x="918" y="276">SKY 02</text>
+    <text x="1087" y="318">SKY 03</text>
+  </g>
+  <path d="m1105 50 3 8 8 3-8 3-3 8-3-8-8-3 8-3Z" fill="#8ce7bc" opacity=".7"/>
+  <path d="m711 104 2 5 5 2-5 2-2 5-2-5-5-2 5-2Z" fill="#badcea" opacity=".55"/>
+</svg>
