@@ -1,10 +1,6 @@
 package org.me.advancedsky.world;
 
-import org.bukkit.Bukkit;
-import org.bukkit.Chunk;
-import org.bukkit.Location;
-import org.bukkit.NamespacedKey;
-import org.bukkit.World;
+import org.bukkit.*;
 import org.bukkit.block.BlockState;
 import org.bukkit.entity.Player;
 import org.me.advancedsky.AdvancedSky;
@@ -14,12 +10,7 @@ import org.me.advancedsky.grid.IslandGrid;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -111,27 +102,31 @@ public class WorldHandler {
         int rx = Math.floorDiv(center.getBlockX(), 512);
         int rz = Math.floorDiv(center.getBlockZ(), 512);
         AtomicBoolean cancelled = new AtomicBoolean();
-        return removePlayersFromIsland(slot, player -> true)
-                .thenCompose(v -> awaitRegionUnloaded(rx * 32, rz * 32, 60, cancelled).orTimeout(120, TimeUnit.SECONDS)
-                        .whenComplete((ready, error) -> { if (error != null) cancelled.set(true); }))
-                .thenRunAsync(() -> {
-                    if (stopped) throw new IllegalStateException("Island world handler stopped");
-                    RegionStorageAccess.flushAndEvict(world, rx, rz);
-                    if (stopped || RegionStorageAccess.hasHolders(world, rx * 32, rz * 32)) {
-                        throw new IllegalStateException("Island region is still in use: " + slot);
-                    }
-                    for (Path file : files) {
-                        try { Files.deleteIfExists(file); }
-                        catch (IOException e) { throw new java.io.UncheckedIOException("Could not clear island slot " + slot, e); }
-                    }
-                }, plugin.getBukkitAsyncExecutor());
+        return removePlayersFromIsland(slot, player -> true).thenCompose(v -> awaitRegionUnloaded(rx * 32, rz * 32, 60, cancelled).orTimeout(120, TimeUnit.SECONDS).whenComplete((ready, error) -> {
+            if (error != null) cancelled.set(true);
+        })).thenRunAsync(() -> {
+            if (stopped) throw new IllegalStateException("Island world handler stopped");
+            RegionStorageAccess.flushAndEvict(world, rx, rz);
+            if (stopped || RegionStorageAccess.hasHolders(world, rx * 32, rz * 32)) {
+                throw new IllegalStateException("Island region is still in use: " + slot);
+            }
+            for (Path file : files) {
+                try {
+                    Files.deleteIfExists(file);
+                } catch (IOException e) {
+                    throw new java.io.UncheckedIOException("Could not clear island slot " + slot, e);
+                }
+            }
+        }, plugin.getBukkitAsyncExecutor());
     }
 
     public void stop() {
         stopped = true;
     }
 
-    /** Every island area occupies exactly one region, with separate entity and POI storage. */
+    /**
+     * Every island area occupies exactly one region, with separate entity and POI storage.
+     */
     public List<Path> regionFiles(int slot) {
         Location center = grid.center(requireWorld(), slot);
         String name = "r." + Math.floorDiv(center.getBlockX(), 512) + "." + Math.floorDiv(center.getBlockZ(), 512) + ".mca";
@@ -139,7 +134,8 @@ public class WorldHandler {
     }
 
     private CompletableFuture<Void> awaitRegionUnloaded(int baseX, int baseZ, int attempts, AtomicBoolean cancelled) {
-        if (stopped || cancelled.get()) return CompletableFuture.failedFuture(new IllegalStateException("Island cleanup stopped"));
+        if (stopped || cancelled.get())
+            return CompletableFuture.failedFuture(new IllegalStateException("Island cleanup stopped"));
         List<CompletableFuture<Void>> evictions = new ArrayList<>();
         for (int x = baseX; x < baseX + 32; x++) {
             for (int z = baseZ; z < baseZ + 32; z++) {
@@ -169,7 +165,10 @@ public class WorldHandler {
                     boolean loaded = false;
                     for (int x = baseX; x < baseX + 32 && !loaded; x++) {
                         for (int z = baseZ; z < baseZ + 32; z++) {
-                            if (world.isChunkLoaded(x, z)) { loaded = true; break; }
+                            if (world.isChunkLoaded(x, z)) {
+                                loaded = true;
+                                break;
+                            }
                         }
                     }
                     if (!loaded && !RegionStorageAccess.hasHolders(world, baseX, baseZ)) {

@@ -24,7 +24,7 @@ class ConfigHandlerTest {
     @Test
     void anEntryTakenOutOfAnOperatorsListStaysOut() throws IOException {
         write("limits.yml", bundled("limits.yml").replaceAll("(?m)^ {4}HOPPER: 50\\r?\\n", ""));
-        write("upgrades.yml", bundled("upgrades.yml").replaceAll("(?m)^ {4}'5':\\r?\\n {6}require-level: 1400\\r?\\n {6}price: 1000000\\r?\\n {6}size: 175\\r?\\n", ""));
+        write("upgrades.yml", bundled("upgrades.yml").replaceAll("(?m)^ {4}'5':\\r?\\n {6}require-level: 1400\\r?\\n {6}price: 1000000\\r?\\n {6}size: 160\\r?\\n", ""));
 
         ConfigHandler config = new ConfigHandler(plugin());
 
@@ -58,17 +58,17 @@ class ConfigHandlerTest {
     void upgradeLevelsAndValuesFollowAReload() throws IOException {
         ConfigHandler config = new ConfigHandler(plugin());
         assertEquals(List.of(1, 2, 3, 4, 5), config.getUpgradeLevels("island-size"));
-        assertEquals("175", config.getUpgradeValue("island-size", 5));
+        assertEquals("160", config.getUpgradeValue("island-size", 5));
         assertTrue(config.isUpgrade("island-size"));
         assertFalse(config.isUpgrade("flight"));
 
-        write("upgrades.yml", read("upgrades.yml").replaceAll("(?m)^ {4}'5':\\r?\\n {6}require-level: 1400\\r?\\n {6}price: 1000000\\r?\\n {6}size: 175\\r?\\n", ""));
+        write("upgrades.yml", read("upgrades.yml").replaceAll("(?m)^ {4}'5':\\r?\\n {6}require-level: 1400\\r?\\n {6}price: 1000000\\r?\\n {6}size: 160\\r?\\n", ""));
         config.reload();
 
         assertEquals(List.of(1, 2, 3, 4), config.getUpgradeLevels("island-size"));
         assertThrows(IllegalArgumentException.class, () -> config.getUpgradeValue("island-size", 5));
         assertThrows(IllegalArgumentException.class, () -> config.getUpgradeLimit("island-size", 5));
-        assertEquals("150", config.getUpgradeValue("island-size", 4));
+        assertEquals("144", config.getUpgradeValue("island-size", 4));
     }
 
     @Test

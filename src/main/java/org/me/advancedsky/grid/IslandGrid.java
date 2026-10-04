@@ -104,16 +104,24 @@ public final class IslandGrid {
     }
 
     /**
-     * Whether the block column lies inside the island boundary of the given size: from -size/2 to
-     * size - size/2 - 1 blocks of the island centre.
+     * Minimum block offset of the boundary from the island centre. Whole-chunk widths start on
+     * a chunk edge; odd chunk counts extend one more chunk on the negative side of the centre.
+     */
+    public static int boundaryMinOffset(int size) {
+        int offset = -size / 2;
+        return size % 16 == 0 ? Math.floorDiv(offset, 16) * 16 : offset;
+    }
+
+    /**
+     * Whether the block column lies inside the island boundary of the given size.
      */
     public boolean isInsideIsland(int slot, int size, int blockX, int blockZ) {
         int[] cell = spiralCell(slot);
         int x = blockX - (cell[0] * SPACING + CENTER_OFFSET);
         int z = blockZ - (cell[1] * SPACING + CENTER_OFFSET);
-        int half = size / 2;
-        int max = size - half - 1;
-        return x >= -half && x <= max && z >= -half && z <= max;
+        int min = boundaryMinOffset(size);
+        int max = min + size - 1;
+        return x >= min && x <= max && z >= min && z <= max;
     }
 
     /**

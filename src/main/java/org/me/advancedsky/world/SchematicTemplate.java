@@ -65,8 +65,7 @@ final class SchematicTemplate {
                 structure = Bukkit.getStructureManager().loadStructure(input);
             }
             List<BlockState> states = structure.getPalettes().getFirst().getBlocks();
-            if (states.isEmpty() || states.size() != decoded.structure().getList("blocks").size()
-                    || states.stream().anyMatch(state -> isAir(state.getType()))) {
+            if (states.isEmpty() || states.size() != decoded.structure().getList("blocks").size() || states.stream().anyMatch(state -> isAir(state.getType()))) {
                 throw new IOException("Schematic contains no usable blocks or blocks unsupported by this Minecraft version");
             }
             return new SchematicTemplate(states, decoded);
@@ -75,22 +74,37 @@ final class SchematicTemplate {
         }
     }
 
-    List<BlockState> blocks() { return blocks; }
-    int offsetX() { return offsetX; }
-    int offsetY() { return offsetY; }
-    int offsetZ() { return offsetZ; }
+    List<BlockState> blocks() {
+        return blocks;
+    }
 
-    /** Package-visible for format tests; no server or world is needed for decoding. */
+    int offsetX() {
+        return offsetX;
+    }
+
+    int offsetY() {
+        return offsetY;
+    }
+
+    int offsetZ() {
+        return offsetZ;
+    }
+
+    /**
+     * Package-visible for format tests; no server or world is needed for decoding.
+     */
     static Decoded decode(CompoundBinaryTag schematic, int currentDataVersion) throws IOException {
         int version = requiredInt(schematic, "Version");
         if (version != 3) throw new IOException("Sponge .schem version 3 is required (found " + version + ")");
         int dataVersion = requiredInt(schematic, "DataVersion");
-        if (dataVersion <= 0 || dataVersion > currentDataVersion) throw new IOException("Schematic Minecraft DataVersion " + dataVersion + " is unsupported by this server (" + currentDataVersion + ")");
+        if (dataVersion <= 0 || dataVersion > currentDataVersion)
+            throw new IOException("Schematic Minecraft DataVersion " + dataVersion + " is unsupported by this server (" + currentDataVersion + ")");
         int width = dimension(schematic, "Width");
         int height = dimension(schematic, "Height");
         int length = dimension(schematic, "Length");
         long volume = (long) width * height * length;
-        if (volume > MAX_VOLUME) throw new IOException("Schematic selection exceeds " + MAX_VOLUME + " blocks; use a smaller selection");
+        if (volume > MAX_VOLUME)
+            throw new IOException("Schematic selection exceeds " + MAX_VOLUME + " blocks; use a smaller selection");
         int[] offset = vector(schematic, "Offset");
         CompoundBinaryTag container = requiredCompound(schematic, "Blocks");
         CompoundBinaryTag palette = requiredCompound(container, "Palette");
@@ -101,7 +115,8 @@ final class SchematicTemplate {
         ListBinaryTag.Builder<CompoundBinaryTag> vanillaPalette = ListBinaryTag.builder(BinaryTagTypes.COMPOUND);
         for (String state : palette.keySet()) {
             int id = requiredInt(palette, state);
-            if (id < 0 || indices.putIfAbsent(id, indices.size()) != null) throw new IOException("Invalid or duplicate palette index " + id);
+            if (id < 0 || indices.putIfAbsent(id, indices.size()) != null)
+                throw new IOException("Invalid or duplicate palette index " + id);
             CompoundBinaryTag blockData = blockData(state);
             vanillaPalette.add(blockData);
             String name = blockData.getString("Name");
@@ -110,22 +125,24 @@ final class SchematicTemplate {
 
         Map<Integer, CompoundBinaryTag> blockEntities = new HashMap<>();
         if (container.contains("BlockEntities")) {
-            if (!(container.get("BlockEntities") instanceof ListBinaryTag list)
-                    || (!list.isEmpty() && list.elementType() != BinaryTagTypes.COMPOUND)) throw new IOException("Invalid BlockEntities list");
+            if (!(container.get("BlockEntities") instanceof ListBinaryTag list) || (!list.isEmpty() && list.elementType() != BinaryTagTypes.COMPOUND))
+                throw new IOException("Invalid BlockEntities list");
             for (BinaryTag tag : list) {
                 CompoundBinaryTag entity = (CompoundBinaryTag) tag;
                 int[] pos = vector(entity, "Pos");
-                if (pos[0] < 0 || pos[0] >= width || pos[1] < 0 || pos[1] >= height || pos[2] < 0 || pos[2] >= length) throw new IOException("Block entity is outside the schematic selection");
+                if (pos[0] < 0 || pos[0] >= width || pos[1] < 0 || pos[1] >= height || pos[2] < 0 || pos[2] >= length)
+                    throw new IOException("Block entity is outside the schematic selection");
                 String id = entity.getString("Id");
                 if (id.isBlank()) throw new IOException("Block entity is missing its Id");
                 CompoundBinaryTag payload = requiredCompound(entity, "Data");
-                CompoundBinaryTag vanilla = CompoundBinaryTag.builder().put(payload).remove("Id").remove("Pos")
-                        .putString("id", id).putInt("x", pos[0]).putInt("y", pos[1]).putInt("z", pos[2]).build();
-                if (blockEntities.put(pos[0] + pos[2] * width + pos[1] * width * length, vanilla) != null) throw new IOException("Duplicate block entity position");
+                CompoundBinaryTag vanilla = CompoundBinaryTag.builder().put(payload).remove("Id").remove("Pos").putString("id", id).putInt("x", pos[0]).putInt("y", pos[1]).putInt("z", pos[2]).build();
+                if (blockEntities.put(pos[0] + pos[2] * width + pos[1] * width * length, vanilla) != null)
+                    throw new IOException("Duplicate block entity position");
             }
         }
 
-        if (!container.contains("Data", BinaryTagTypes.BYTE_ARRAY)) throw new IOException("Schematic is missing block Data");
+        if (!container.contains("Data", BinaryTagTypes.BYTE_ARRAY))
+            throw new IOException("Schematic is missing block Data");
         byte[] data = container.getByteArray("Data");
         int cursor = 0;
         ListBinaryTag.Builder<CompoundBinaryTag> blocks = ListBinaryTag.builder(BinaryTagTypes.COMPOUND);
@@ -155,30 +172,32 @@ final class SchematicTemplate {
             blocks.add(block.build());
         }
         if (cursor != data.length) throw new IOException("Schematic block data contains extra entries");
-        CompoundBinaryTag structure = CompoundBinaryTag.builder().putInt("DataVersion", dataVersion)
-                .put("size", ints(width, height, length)).put("palette", vanillaPalette.build())
-                .put("blocks", blocks.build()).put("entities", ListBinaryTag.empty()).build();
+        CompoundBinaryTag structure = CompoundBinaryTag.builder().putInt("DataVersion", dataVersion).put("size", ints(width, height, length)).put("palette", vanillaPalette.build()).put("blocks", blocks.build()).put("entities", ListBinaryTag.empty()).build();
         if (structure.getList("blocks").isEmpty()) throw new IOException("Schematic contains only air");
         return new Decoded(structure, offset[0], offset[1], offset[2], width, height, length);
     }
 
     private static int requiredInt(CompoundBinaryTag tag, String key) throws IOException {
-        if (!(tag.get(key) instanceof IntBinaryTag number)) throw new IOException("Missing or invalid integer '" + key + "'");
+        if (!(tag.get(key) instanceof IntBinaryTag number))
+            throw new IOException("Missing or invalid integer '" + key + "'");
         return number.value();
     }
 
     private static int dimension(CompoundBinaryTag tag, String key) throws IOException {
-        if (!(tag.get(key) instanceof ShortBinaryTag number) || (number.value() & 0xffff) == 0) throw new IOException("Missing or invalid dimension '" + key + "'");
+        if (!(tag.get(key) instanceof ShortBinaryTag number) || (number.value() & 0xffff) == 0)
+            throw new IOException("Missing or invalid dimension '" + key + "'");
         return number.value() & 0xffff;
     }
 
     private static int[] vector(CompoundBinaryTag tag, String key) throws IOException {
-        if (!tag.contains(key, BinaryTagTypes.INT_ARRAY) || tag.getIntArray(key).length != 3) throw new IOException("'" + key + "' must contain exactly three integers");
+        if (!tag.contains(key, BinaryTagTypes.INT_ARRAY) || tag.getIntArray(key).length != 3)
+            throw new IOException("'" + key + "' must contain exactly three integers");
         return tag.getIntArray(key);
     }
 
     private static CompoundBinaryTag requiredCompound(CompoundBinaryTag tag, String key) throws IOException {
-        if (!tag.contains(key, BinaryTagTypes.COMPOUND)) throw new IOException("Missing or invalid compound '" + key + "'");
+        if (!tag.contains(key, BinaryTagTypes.COMPOUND))
+            throw new IOException("Missing or invalid compound '" + key + "'");
         return tag.getCompound(key);
     }
 
@@ -196,7 +215,8 @@ final class SchematicTemplate {
             CompoundBinaryTag.Builder properties = CompoundBinaryTag.builder();
             for (String property : state.substring(bracket + 1, state.length() - 1).split(",")) {
                 String[] pair = property.split("=", -1);
-                if (pair.length != 2 || pair[0].isBlank() || pair[1].isBlank()) throw new IOException("Invalid block property '" + property + "'");
+                if (pair.length != 2 || pair[0].isBlank() || pair[1].isBlank())
+                    throw new IOException("Invalid block property '" + property + "'");
                 properties.putString(pair[0], pair[1]);
             }
             result.put("Properties", properties.build());
@@ -208,14 +228,16 @@ final class SchematicTemplate {
         return type == Material.AIR || type == Material.CAVE_AIR || type == Material.VOID_AIR;
     }
 
-    record Decoded(CompoundBinaryTag structure, int offsetX, int offsetY, int offsetZ, int width, int height, int length) {
+    record Decoded(CompoundBinaryTag structure, int offsetX, int offsetY, int offsetZ, int width, int height,
+                   int length) {
         void validateBounds(int minHeight, int maxHeight, int islandHeight) throws IOException {
             int radius = IslandGrid.AREA_RADIUS;
             if (offsetX < -radius || (long) offsetX + width > radius || offsetZ < -radius || (long) offsetZ + length > radius) {
                 throw new IOException("Schematic selection and copy origin must fit inside the island's 512 x 512 area");
             }
             long bottom = (long) islandHeight + offsetY;
-            if (bottom < minHeight || bottom + height > maxHeight) throw new IOException("Schematic is outside the island world's build height at island.height=" + islandHeight);
+            if (bottom < minHeight || bottom + height > maxHeight)
+                throw new IOException("Schematic is outside the island world's build height at island.height=" + islandHeight);
         }
     }
 }

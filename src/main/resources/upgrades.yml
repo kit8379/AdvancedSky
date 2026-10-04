@@ -6,26 +6,26 @@
 # island level needed to buy that level and `price` is charged through Vault
 # from the buying member's balance; the lowest level needs neither.
 upgrades:
-  # Island width in blocks (75 means 75x75).
+  # Island width in blocks. Multiples of 16 align all four edges with chunks.
   island-size:
     '1':
-      size: 75
+      size: 48
     '2':
       require-level: 200
       price: 60000
-      size: 100
+      size: 80
     '3':
       require-level: 450
       price: 180000
-      size: 125
+      size: 112
     '4':
       require-level: 850
       price: 450000
-      size: 150
+      size: 144
     '5':
       require-level: 1400
       price: 1000000
-      size: 175
+      size: 160
 
   # Maximum co-op members of an island.
   coop-limit:

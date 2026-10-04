@@ -11,7 +11,8 @@ import java.util.Map;
  * An unsupported server fails closed: the purge keeps its reservation instead of reusing dirt.
  */
 final class RegionStorageAccess {
-    private RegionStorageAccess() {}
+    private RegionStorageAccess() {
+    }
 
     static boolean hasHolders(World world, int baseX, int baseZ) {
         try {
@@ -35,13 +36,12 @@ final class RegionStorageAccess {
             Object handle = world.getClass().getMethod("getHandle").invoke(world);
             Class<?> io = Class.forName("ca.spottedleaf.moonrise.patches.chunk_system.io.MoonriseRegionFileIO", true, handle.getClass().getClassLoader());
             // Run off-thread. Drain chunk, entity and POI writes before closing their cached files.
-            Method flush = java.util.Arrays.stream(io.getMethods()).filter(method -> method.getName().equals("flush")
-                    && method.getParameterCount() == 1 && method.getParameterTypes()[0].isInstance(handle)).findFirst().orElseThrow();
+            Method flush = java.util.Arrays.stream(io.getMethods()).filter(method -> method.getName().equals("flush") && method.getParameterCount() == 1 && method.getParameterTypes()[0].isInstance(handle)).findFirst().orElseThrow();
             flush.invoke(null, handle);
-            if (hasHolders(world, regionX * 32, regionZ * 32)) throw new IllegalStateException("Region was loaded again during cleanup");
+            if (hasHolders(world, regionX * 32, regionZ * 32))
+                throw new IllegalStateException("Region was loaded again during cleanup");
             Class<?> type = Class.forName(io.getName() + "$RegionFileType", true, handle.getClass().getClassLoader());
-            Method controller = java.util.Arrays.stream(io.getMethods()).filter(method -> method.getName().equals("getControllerFor")
-                    && method.getParameterCount() == 2).findFirst().orElseThrow();
+            Method controller = java.util.Arrays.stream(io.getMethods()).filter(method -> method.getName().equals("getControllerFor") && method.getParameterCount() == 2).findFirst().orElseThrow();
             long key = (regionX & 0xffffffffL) | ((long) regionZ << 32);
             for (Object kind : type.getEnumConstants()) {
                 Object data = controller.invoke(null, handle, kind);

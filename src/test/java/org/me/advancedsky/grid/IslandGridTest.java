@@ -2,6 +2,8 @@ package org.me.advancedsky.grid;
 
 import org.bukkit.Location;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -60,5 +62,34 @@ class IslandGridTest {
         // Even size 100: -50 .. 49.
         assertTrue(grid.isInsideIsland(slot, 100, cx - 50, cz + 49));
         assertFalse(grid.isInsideIsland(slot, 100, cx + 50, cz));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"48, -32", "80, -48", "112, -64", "144, -80", "160, -80"})
+    void upgradeBoundariesContainCompleteChunksAtPositiveAndNegativeCoordinates(int size, int minOffset) {
+        assertEquals(minOffset, IslandGrid.boundaryMinOffset(size));
+        for (int slot : new int[]{0, 1, 5, 7}) {
+            Location center = grid.center(null, slot);
+            int minX = center.getBlockX() + minOffset;
+            int minZ = center.getBlockZ() + minOffset;
+            int maxX = minX + size - 1;
+            int maxZ = minZ + size - 1;
+            assertEquals(0, Math.floorMod(minX, 16));
+            assertEquals(0, Math.floorMod(minZ, 16));
+            assertEquals(0, Math.floorMod(maxX + 1, 16));
+            assertEquals(0, Math.floorMod(maxZ + 1, 16));
+            for (int x : new int[]{minX - 1, minX, maxX, maxX + 1}) {
+                for (int z : new int[]{minZ - 1, minZ, maxZ, maxZ + 1}) {
+                    assertEquals(x >= minX && x <= maxX && z >= minZ && z <= maxZ,
+                            grid.isInsideIsland(slot, size, x, z));
+                }
+            }
+            for (int upgradedSize : new int[]{48, 80, 112, 144, 160}) {
+                if (upgradedSize > size) {
+                    assertTrue(grid.isInsideIsland(slot, upgradedSize, minX, minZ));
+                    assertTrue(grid.isInsideIsland(slot, upgradedSize, maxX, maxZ));
+                }
+            }
+        }
     }
 }

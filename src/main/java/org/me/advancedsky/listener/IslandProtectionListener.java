@@ -663,8 +663,9 @@ public class IslandProtectionListener implements Listener {
 
         int size = config.getUpgradeLimit("island-size", island.getSizeLevel());
         Location center = islandGrid.center(from.getWorld(), island.getSlot());
-        int minX = center.getBlockX() - size / 2;
-        int minZ = center.getBlockZ() - size / 2;
+        int minOffset = IslandGrid.boundaryMinOffset(size);
+        int minX = center.getBlockX() + minOffset;
+        int minZ = center.getBlockZ() + minOffset;
         int maxX = minX + size - 1;
         int maxZ = minZ + size - 1;
         return (to.getBlockX() < minX && to.getBlockX() < from.getBlockX()) || (to.getBlockX() > maxX && to.getBlockX() > from.getBlockX()) || (to.getBlockZ() < minZ && to.getBlockZ() < from.getBlockZ()) || (to.getBlockZ() > maxZ && to.getBlockZ() > from.getBlockZ());

@@ -281,8 +281,9 @@ public class LimitHandler {
 
         int size = config.getUpgradeLimit("island-size", island.getSizeLevel());
         Location center = islandGrid.center(world, island.getSlot());
-        int minX = center.getBlockX() - size / 2;
-        int minZ = center.getBlockZ() - size / 2;
+        int minOffset = IslandGrid.boundaryMinOffset(size);
+        int minX = center.getBlockX() + minOffset;
+        int minZ = center.getBlockZ() + minOffset;
         BoundingBox boundary = new BoundingBox(minX, world.getMinHeight(), minZ, minX + size, world.getMaxHeight(), minZ + size);
 
         // An entity whose box only reaches over the boundary stands outside it.

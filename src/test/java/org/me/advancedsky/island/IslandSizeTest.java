@@ -5,8 +5,12 @@ import org.bukkit.block.Block;
 import org.bukkit.block.data.Bisected;
 import org.bukkit.block.data.type.Door;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.util.BoundingBox;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -37,12 +41,14 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class IslandSizeTest {
-    private static final int[] SIZES = {75, 100, 125, 150, 175};
+    private static final int[] SIZES = {48, 80, 112, 144, 160};
+    private static final int[] MIN_OFFSETS = {-32, -48, -64, -80, -80};
     private static final String ISLAND_WORLD = "islands";
     // Slot 7 lies on the negative z side of the origin, so boundaries cross negative block coordinates.
     private static final int SLOT = 7;
@@ -90,7 +96,7 @@ class IslandSizeTest {
         }
         assertTrue(realConfig.isUpgrade("island-size"));
         assertEquals(List.of(1, 2, 3, 4, 5), realConfig.getUpgradeLevels("island-size"));
-        int[] sizes = {75, 100, 125, 150, 175};
+        int[] sizes = {48, 80, 112, 144, 160};
         int[] requirements = {0, 200, 450, 850, 1400};
         double[] prices = {0, 60000, 180000, 450000, 1000000};
         for (int i = 0; i < sizes.length; i++) {
@@ -103,7 +109,7 @@ class IslandSizeTest {
 
     @ParameterizedTest
     @ValueSource(ints = {1, 2, 3, 4, 5})
-    void protectionUsesConfiguredWidthAroundTheIslandCentre(int level) {
+    void protectionAndMovementUseTheAlignedUpgradeBoundary(int level) {
         int size = SIZES[level - 1];
         Island island = island(level);
         when(cache.getAt(any(Location.class))).thenAnswer(call -> {
@@ -114,10 +120,10 @@ class IslandSizeTest {
         IslandProtectionListener protection = new IslandProtectionListener(config, cache, grid);
         Player player = mock(Player.class);
         when(player.getUniqueId()).thenReturn(owner);
-        Location center = grid.center(null, SLOT);
-        int minX = center.getBlockX() - size / 2;
+        Location center = grid.center(world, SLOT);
+        int minX = center.getBlockX() + MIN_OFFSETS[level - 1];
         int maxX = minX + size - 1;
-        int minZ = center.getBlockZ() - size / 2;
+        int minZ = center.getBlockZ() + MIN_OFFSETS[level - 1];
         int maxZ = minZ + size - 1;
         for (int x : new int[]{minX - 1, minX, maxX, maxX + 1}) {
             for (int z : new int[]{minZ - 1, minZ, maxZ, maxZ + 1}) {
@@ -126,8 +132,40 @@ class IslandSizeTest {
                 BlockBreakEvent event = new BlockBreakEvent(block, player);
                 protection.onBlockBreak(event);
                 assertEquals(x < minX || x > maxX || z < minZ || z > maxZ, event.isCancelled(), x + "," + z);
+                PlayerMoveEvent move = new PlayerMoveEvent(player, center, block.getLocation());
+                protection.onPlayerMove(move);
+                assertEquals(event.isCancelled(), move.isCancelled(), x + "," + z);
             }
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2, 3, 4, 5})
+    void entityLimitIncludesEntitiesAtTheAlignedWestEdge(int level) {
+        int size = SIZES[level - 1];
+        Location center = grid.center(world, SLOT);
+        int minX = center.getBlockX() + MIN_OFFSETS[level - 1];
+        int minZ = center.getBlockZ() + MIN_OFFSETS[level - 1];
+        when(config.getEntityLimits()).thenReturn(Map.of("MINECART", 1));
+        when(world.getMinHeight()).thenReturn(0);
+        when(world.getMaxHeight()).thenReturn(128);
+        Entity minecart = mock(Entity.class);
+        when(minecart.getType()).thenReturn(EntityType.MINECART);
+        when(minecart.getLocation()).thenReturn(new Location(world, minX + 0.5, 70, minZ + 0.5));
+        when(world.getNearbyEntities(any(BoundingBox.class), any())).thenAnswer(call -> {
+            BoundingBox boundary = call.getArgument(0);
+            Predicate<Entity> filter = call.getArgument(1);
+            return boundary.contains(minecart.getLocation().toVector()) && filter.test(minecart) ? List.of(minecart) : List.of();
+        });
+
+        LimitHandler limits = new LimitHandler(plugin, config, grid);
+        assertFalse(limits.canSpawnEntity(island(level), world, EntityType.MINECART));
+        ArgumentCaptor<BoundingBox> boundary = ArgumentCaptor.forClass(BoundingBox.class);
+        verify(world).getNearbyEntities(boundary.capture(), any());
+        assertEquals(minX, boundary.getValue().getMinX());
+        assertEquals(minZ, boundary.getValue().getMinZ());
+        assertEquals(minX + size, boundary.getValue().getMaxX());
+        assertEquals(minZ + size, boundary.getValue().getMaxZ());
     }
 
     @Test
@@ -204,6 +242,16 @@ class IslandSizeTest {
         ArgumentCaptor<int[]> counts = ArgumentCaptor.forClass(int[].class);
         verify(limits).finishScan(eq(islandId), any(), counts.capture());
         assertEquals(size * size, counts.getValue()[Material.STONE.ordinal()]);
+        Location center = grid.center(world, SLOT);
+        int minChunkX = Math.floorDiv(center.getBlockX() + MIN_OFFSETS[level - 1], 16);
+        int minChunkZ = Math.floorDiv(center.getBlockZ() + MIN_OFFSETS[level - 1], 16);
+        int width = size / 16;
+        verify(worlds, times(width * width)).onChunk(eq(world), anyInt(), anyInt(), eq(false), any());
+        for (int chunkX = minChunkX; chunkX < minChunkX + width; chunkX++) {
+            for (int chunkZ = minChunkZ; chunkZ < minChunkZ + width; chunkZ++) {
+                verify(worlds).onChunk(eq(world), eq(chunkX), eq(chunkZ), eq(false), any());
+            }
+        }
     }
 
     @Test

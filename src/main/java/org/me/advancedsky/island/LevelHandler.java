@@ -90,9 +90,10 @@ public class LevelHandler {
         World world = worldHandler.getWorld();
         Location center = islandGrid.center(world, island.getSlot());
         int size = config.getUpgradeLimit("island-size", island.getSizeLevel());
-        int minBlockX = center.getBlockX() - size / 2;
+        int minOffset = IslandGrid.boundaryMinOffset(size);
+        int minBlockX = center.getBlockX() + minOffset;
         int maxBlockX = minBlockX + size - 1;
-        int minBlockZ = center.getBlockZ() - size / 2;
+        int minBlockZ = center.getBlockZ() + minOffset;
         int maxBlockZ = minBlockZ + size - 1;
 
         int minChunkX = Math.floorDiv(minBlockX, 16);
