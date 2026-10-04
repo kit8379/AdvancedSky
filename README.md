@@ -506,7 +506,7 @@ These features use the island's area rather than a separate island world.
 
 | Setting or feature | Behaviour |
 | --- | --- |
-| `island-size` | Island width; controls protection, per-player borders, level scan area and entity limit area |
+| `island-size` | Island width; controls protection, movement limits, level scan area and entity limit area |
 | `team-limit` / `coop-limit` | Maximum owner-plus-member count / co-op count |
 | `home-limit` / `warp-limit` | Named home and island warp limits |
 | `biomes` | Biomes unlocked for the per-chunk biome changer |
@@ -515,13 +515,17 @@ These features use the island's area rather than a separate island world.
 | Block limits | Counts come from level scans; capped block placement is refused until the first scan after restart |
 | Entity limits | Count entities inside the current island boundary |
 
-The first player to arrive starts automatic level scans. They repeat every few minutes while
-players are present; the first scan after the last player leaves is the final one. Block
-counts then stay cached until the island is deleted. `/is level`, `/is top` and `/is value`
-expose the results and configured block values.
+Player locations are checked every 20 player ticks on their entity schedulers, including after
+teleports and respawns. The first player detected on an island starts automatic level scans.
+They repeat every few minutes while players are present; the first scan after the last player
+leaves is the final one. Block counts then stay cached until the island is deleted. `/is level`,
+`/is top` and `/is value` expose the results and configured block values.
 
-Each player receives a border around the island they stand on, and movement outside the
-island boundary is refused for every player, including operators and vehicle passengers.
+Movement outside the island boundary is refused for every player, including operators and
+vehicle passengers. Islands do not send per-player world borders.
+PvP protection blocks damage and knockback attributed to another player. Mace Wind Burst
+knockback remains vanilla because Paper/Folia 1.21.11 does not expose its causing player through
+the current knockback API.
 Co-op access ends a few seconds after a player disconnects and
 is not online elsewhere. A five-minute sweep also removes co-ops no longer listed online,
 covering missed quit events after shutdowns or crashes once the registry is corrected.

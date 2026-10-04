@@ -34,7 +34,7 @@ import java.util.UUID;
 
 /**
  * Enforces limits.yml on islands. Runs after protection has had its say, so a placement
- * outside the border or by a non-member is already cancelled here. Break and burn release a
+ * outside the boundary or by a non-member is already cancelled here. Break and burn release a
  * block's count; anything else that removes blocks is caught up by the next level scan.
  * Capped blocks formed (a generator's roll) or put down by a dispenser are counted as well.
  */

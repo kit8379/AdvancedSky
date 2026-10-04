@@ -4,9 +4,7 @@ import com.google.common.base.Function;
 import com.google.common.base.Functions;
 import io.papermc.paper.event.entity.EntityKnockbackEvent;
 import io.papermc.paper.event.entity.EntityPushedByEntityAttackEvent;
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
-import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.damage.DamageSource;
 import org.bukkit.entity.Entity;
@@ -14,17 +12,15 @@ import org.bukkit.entity.EnderCrystal;
 import org.bukkit.entity.LightningStrike;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.TNTPrimed;
+import org.bukkit.entity.WindCharge;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
-import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.util.Vector;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.model.Island;
-import org.mockito.MockedStatic;
 
 import java.util.EnumMap;
 import java.util.Map;
@@ -80,29 +76,56 @@ class IslandPvPListenerTest {
     }
 
     @Test
-    void theWindBurstOfAMaceHitIsHeldToThePvpSetting() {
+    void playerAttributedExplosionKnockbackIsHeldToThePvpSetting() {
         island(false);
-        try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
-            bukkit.when(Bukkit::getCurrentTick).thenReturn(100);
+        // Paper identifies the causing player for wind charges and player-lit TNT/crystals.
+        assertTrue(knockback(EntityKnockbackEvent.Cause.EXPLOSION, attacker));
+        assertFalse(knockback(EntityKnockbackEvent.Cause.EXPLOSION, victim));
 
-            // Explosions the attacker set off without a wind burst stay vanilla, as TNT does.
-            assertFalse(knockback(EntityKnockbackEvent.Cause.EXPLOSION, attacker));
-            assertFalse(knockback(EntityKnockbackEvent.Cause.EXPLOSION, null));
+        island(true);
+        assertFalse(knockback(EntityKnockbackEvent.Cause.EXPLOSION, attacker));
+    }
 
-            ItemStack mace = mock(ItemStack.class);
-            when(mace.getType()).thenReturn(Material.MACE);
-            PlayerInventory inventory = mock(PlayerInventory.class);
-            when(inventory.getItemInMainHand()).thenReturn(mace);
-            when(attacker.getInventory()).thenReturn(inventory);
-            listener.onMaceHit(damageEvent(attacker, mock(Entity.class)));
-            // The burst names no one; it is the mace player's, and lifts the player themself as usual.
-            assertTrue(knockback(EntityKnockbackEvent.Cause.EXPLOSION, null));
-            assertFalse(knockback(attacker, EntityKnockbackEvent.Cause.EXPLOSION, null));
-            assertFalse(knockback(EntityKnockbackEvent.Cause.EXPLOSION, mock(Entity.class)));
+    @Test
+    void aPlayerProjectileIsTracedToItsShooterWithoutAHitMarker() {
+        island(false);
+        WindCharge charge = mock(WindCharge.class);
+        when(charge.getShooter()).thenReturn(attacker);
 
-            bukkit.when(Bukkit::getCurrentTick).thenReturn(101);
-            assertFalse(knockback(EntityKnockbackEvent.Cause.EXPLOSION, null));
-        }
+        assertTrue(knockback(EntityKnockbackEvent.Cause.EXPLOSION, charge));
+        assertTrue(knockback(EntityKnockbackEvent.Cause.PUSH, charge));
+
+        when(charge.getShooter()).thenReturn(victim);
+        assertFalse(knockback(EntityKnockbackEvent.Cause.EXPLOSION, charge));
+
+        when(charge.getShooter()).thenReturn(null);
+        assertFalse(knockback(EntityKnockbackEvent.Cause.EXPLOSION, charge));
+
+        island(true);
+        when(charge.getShooter()).thenReturn(attacker);
+        assertFalse(knockback(EntityKnockbackEvent.Cause.EXPLOSION, charge));
+    }
+
+    @Test
+    void aPriorPlayerExplosionCannotSupplyAnAttackerForLaterUnownedKnockback() {
+        island(false);
+        assertTrue(knockback(EntityKnockbackEvent.Cause.EXPLOSION, attacker));
+
+        assertFalse(knockback(EntityKnockbackEvent.Cause.EXPLOSION, null));
+        assertFalse(knockback(EntityKnockbackEvent.Cause.EXPLOSION, mock(TNTPrimed.class)));
+        assertFalse(knockback(EntityKnockbackEvent.Cause.EXPLOSION, mock(WindCharge.class)));
+        assertFalse(knockback(EntityKnockbackEvent.Cause.PUSH, mock(Entity.class)));
+    }
+
+    @Test
+    void aDamageEventCannotSupplyAnAttackerForSourceLessWindBurst() {
+        island(false);
+        listener.onEntityDamageByEntity(damageEvent(attacker, mock(Entity.class)));
+
+        // Wind Burst carries no attacker in the current API, including the wielder's own lift.
+        assertFalse(knockback(EntityKnockbackEvent.Cause.EXPLOSION, null));
+        assertFalse(knockback(attacker, EntityKnockbackEvent.Cause.EXPLOSION, null));
+        verify(attacker, never()).getInventory();
     }
 
     /**

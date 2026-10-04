@@ -5,7 +5,7 @@
 # unknown name or a negative value fails startup. A value of 0 forbids
 # that block or entity outright; anything not listed is unlimited.
 limit:
-  # Maximum blocks of each type inside the island border. Counted by the
+  # Maximum blocks of each type inside the island boundary. Counted by the
   # periodic level scan and adjusted live on place, break and burn, and
   # when a generator forms or a dispenser puts down a capped block.
   blocks:
@@ -15,7 +15,7 @@ limit:
     OBSERVER: 100
     PISTON: 500
 
-  # Maximum entities of each type inside the island border, checked when a
+  # Maximum entities of each type inside the island boundary, checked when a
   # creature spawns, a vehicle is placed or dispensed, or a player places an
   # armor stand or hanging.
   entities:

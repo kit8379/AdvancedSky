@@ -581,8 +581,8 @@ public class IslandProtectionListener implements Listener {
     }
 
     /**
-     * Walking or flying onto an island from outside its boundary follows the same rule as
-     * teleporting there. Silent, because a refused step is tried again every tick.
+     * Walking and flying stay inside the current island boundary. Entry follows the island's
+     * access rule. Silent, because a refused step is tried again every tick.
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPlayerMove(PlayerMoveEvent event) {
@@ -594,9 +594,7 @@ public class IslandProtectionListener implements Listener {
         if (!isIslandWorld(to)) {
             return;
         }
-        // A rider steering a vehicle moves it, and from and to are the vehicle's. Every rider must
-        // be allowed in, and Folia's own undo of a cancelled move fails for a passenger, so the
-        // vehicle is put back.
+
         Player player = event.getPlayer();
         Entity vehicle = player.getVehicle();
         if (vehicle != null) {
@@ -606,19 +604,52 @@ public class IslandProtectionListener implements Listener {
             return;
         }
 
+        if (refusesMove(player, event.getFrom(), to)) {
+            event.setCancelled(true);
+        }
+    }
+
+    private boolean refusesMove(Player player, Location from, Location to) {
         if (islandCache.isDeletingAt(to)) {
-            event.setCancelled(true);
-            return;
+            return true;
         }
 
-        Island island = islandCache.getAt(to);
-        if (island == null || player.isOp() || mayEnter(player, island)) {
-            return;
+        Island source = isIslandWorld(from) ? islandCache.getAt(from) : null;
+        // The cache logs failed loads and retries them. Without current island data, movement
+        // cannot be checked against its boundary.
+        if (source == null && isIslandWorld(from) && islandCache.getIslandUuidAt(from) != null) {
+            return true;
+        }
+        if (movesBeyondBoundary(source, from, to)) {
+            return true;
         }
 
-        if (isInsideIslandBoundary(island, to) && !isInsideIslandBoundary(island, event.getFrom())) {
-            event.setCancelled(true);
+        Island target = islandCache.getAt(to);
+        if (target == null) {
+            return islandCache.getIslandUuidAt(to) != null;
         }
+
+        return !player.isOp() && !mayEnter(player, target)
+                && isInsideIslandBoundary(target, to) && !isInsideIslandBoundary(target, from);
+    }
+
+    private boolean movesBeyondBoundary(Island island, Location from, Location to) {
+        if (island == null) {
+            return false;
+        }
+
+        int size = config.getUpgradeLimit("island-size", island.getSizeLevel());
+        Location center = islandGrid.center(from.getWorld(), island.getSlot());
+        int minX = center.getBlockX() - size / 2;
+        int minZ = center.getBlockZ() - size / 2;
+        int maxX = minX + size - 1;
+        int maxZ = minZ + size - 1;
+        // A player already outside after a size change or an external teleport can return,
+        // but cannot move farther out. This also refuses crossings from inside the boundary.
+        return (to.getBlockX() < minX && to.getBlockX() < from.getBlockX())
+                || (to.getBlockX() > maxX && to.getBlockX() > from.getBlockX())
+                || (to.getBlockZ() < minZ && to.getBlockZ() < from.getBlockZ())
+                || (to.getBlockZ() > maxZ && to.getBlockZ() > from.getBlockZ());
     }
 
     /**
@@ -630,8 +661,7 @@ public class IslandProtectionListener implements Listener {
     }
 
     /**
-     * Puts the vehicle back where it came from, riders and all, when the move would carry a
-     * player who may not enter onto an island.
+     * Puts the vehicle and all riders back when any player's movement is refused.
      */
     private boolean putBack(Entity vehicle, Location from, Location to) {
         // A vehicle that itself rides one moves with it, and the one at the bottom is put back.
@@ -639,19 +669,8 @@ public class IslandProtectionListener implements Listener {
             return false;
         }
 
-        if (islandCache.isDeletingAt(to) && !EntityUtils.riders(vehicle).isEmpty()) {
-            vehicle.setVelocity(new Vector());
-            vehicle.teleportAsync(from, PlayerTeleportEvent.TeleportCause.PLUGIN);
-            return true;
-        }
-
-        Island island = islandCache.getAt(to);
-        if (!isInsideIslandBoundary(island, to) || isInsideIslandBoundary(island, from)) {
-            return false;
-        }
-
         for (Player player : EntityUtils.riders(vehicle)) {
-            if (!player.isOp() && !mayEnter(player, island)) {
+            if (refusesMove(player, from, to)) {
                 vehicle.setVelocity(new Vector());
                 vehicle.teleportAsync(from, PlayerTeleportEvent.TeleportCause.PLUGIN);
                 return true;

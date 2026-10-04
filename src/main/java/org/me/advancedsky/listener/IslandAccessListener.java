@@ -16,6 +16,7 @@ import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.model.Island;
 import org.me.advancedsky.teleport.TeleportHandler;
 
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -33,15 +34,11 @@ public class IslandAccessListener implements Listener {
     // happens do not send them again.
     private final Set<UUID> sentAway = ConcurrentHashMap.newKeySet();
 
-    public IslandAccessListener(AdvancedSky plugin, ConfigHandler config, IslandCache islandCache) {
-        this(plugin, config, islandCache, null);
-    }
-
     public IslandAccessListener(AdvancedSky plugin, ConfigHandler config, IslandCache islandCache, TeleportHandler teleportHandler) {
         this.plugin = plugin;
         this.config = config;
         this.islandCache = islandCache;
-        this.teleportHandler = teleportHandler;
+        this.teleportHandler = Objects.requireNonNull(teleportHandler, "teleportHandler");
     }
 
     /**
@@ -52,7 +49,7 @@ public class IslandAccessListener implements Listener {
         Player player = event.getPlayer();
         // A destination received during login has not run yet. Check the actual arrival,
         // rather than ejecting the player from their temporary spawn before it can run.
-        if (teleportHandler == null || !teleportHandler.hasPendingTeleport(player.getUniqueId())) {
+        if (!teleportHandler.hasPendingTeleport(player.getUniqueId())) {
             checkArrival(player);
         }
     }
@@ -147,9 +144,7 @@ public class IslandAccessListener implements Listener {
         }
 
         // A refused arrival must not later announce a successful trip onto this island.
-        if (teleportHandler != null) {
-            teleportHandler.cancelArrival(playerUuid);
-        }
+        teleportHandler.cancelArrival(playerUuid);
         plugin.getApi().lobby(playerUuid).whenComplete((v, error) -> {
             if (error != null) {
                 // Sent again on their next step or join.

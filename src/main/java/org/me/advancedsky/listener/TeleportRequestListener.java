@@ -68,7 +68,7 @@ public class TeleportRequestListener implements Listener {
                 return;
             }
             if (arrival.spawned()) {
-                confirmArrival(player, pending);
+                teleportHandler.confirmArrival(player, pending);
                 return;
             }
             try {
@@ -88,10 +88,6 @@ public class TeleportRequestListener implements Listener {
         }, () -> teleportHandler.completeArrival(player.getUniqueId(), pending), 1L) == null) {
             teleportHandler.completeArrival(player.getUniqueId(), pending);
         }
-    }
-
-    private void confirmArrival(Player player, TeleportHandler.PendingTeleport pending) {
-        teleportHandler.confirmArrival(player, pending);
     }
 
     @EventHandler

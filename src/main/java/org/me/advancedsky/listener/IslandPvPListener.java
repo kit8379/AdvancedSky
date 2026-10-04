@@ -2,11 +2,8 @@ package org.me.advancedsky.listener;
 
 import io.papermc.paper.event.entity.EntityKnockbackEvent;
 import io.papermc.paper.event.entity.EntityPushedByEntityAttackEvent;
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
-import org.bukkit.Material;
 import org.bukkit.World;
-import org.bukkit.entity.AbstractWindCharge;
 import org.bukkit.entity.AreaEffectCloud;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LightningStrike;
@@ -20,7 +17,6 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.AreaEffectCloudApplyEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.PotionSplashEvent;
-import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.event.player.PlayerFishEvent;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectTypeCategory;
@@ -37,10 +33,6 @@ public class IslandPvPListener implements Listener {
     private final AdvancedSky plugin;
     private final ConfigHandler config;
     private final IslandCache islandCache;
-
-    // The handlers run on the region thread that owns the entities; the burst follows the
-    // projectile or mace hit within the same call stack, so a tick-scoped mark per thread is enough.
-    private final ThreadLocal<WindBurst> windBurst = new ThreadLocal<>();
 
     public IslandPvPListener(AdvancedSky plugin, ConfigHandler config, IslandCache islandCache) {
         this.plugin = plugin;
@@ -132,32 +124,8 @@ public class IslandPvPListener implements Listener {
     }
 
     /**
-     * The knockback event carries the causing player for wind charges and player-lit TNT/crystals
-     * alike, and none at all for a mace's Wind Burst. A wind charge's hit marks the tick and its
-     * shooter, and only explosion knockback matching that mark is treated as a wind burst — TNT
-     * and crystal knockback stays fully vanilla.
-     */
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onWindChargeHit(ProjectileHitEvent event) {
-        if (event.getEntity() instanceof AbstractWindCharge windCharge && windCharge.getShooter() instanceof Player shooter) {
-            windBurst.set(new WindBurst(Bukkit.getCurrentTick(), shooter));
-        }
-    }
-
-    /**
-     * A mace hit marks its attacker the same way: Wind Burst on the mace bursts around them once
-     * the hit lands.
-     */
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onMaceHit(EntityDamageByEntityEvent event) {
-        if (event.getDamager() instanceof Player attacker && attacker.getInventory().getItemInMainHand().getType() == Material.MACE) {
-            windBurst.set(new WindBurst(Bukkit.getCurrentTick(), attacker));
-        }
-    }
-
-    /**
-     * Knockback another player gives without damage: a wind burst, or the push a mace smash gives
-     * everyone near its target.
+     * Protect against player-attributed explosion knockback and mace smash pushes. The current
+     * API provides no attacker for a mace's Wind Burst, so that source-less knockback stays vanilla.
      */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onKnockback(EntityKnockbackEvent event) {
@@ -170,21 +138,11 @@ public class IslandPvPListener implements Listener {
             return;
         }
 
-        Entity pushedBy = event instanceof EntityPushedByEntityAttackEvent pushed ? pushed.getPushedBy() : null;
-        Player attacker = resolvePlayer(pushedBy);
-        if (cause == EntityKnockbackEvent.Cause.EXPLOSION) {
-            WindBurst burst = windBurst.get();
-            if (burst == null || burst.tick() != Bukkit.getCurrentTick() || (pushedBy != null && (attacker == null || !attacker.getUniqueId().equals(burst.player().getUniqueId())))) {
-                return;
-            }
-            attacker = burst.player();
-        }
-
-        if (attacker == null || attacker.getUniqueId().equals(victim.getUniqueId())) {
+        if (!(event instanceof EntityPushedByEntityAttackEvent pushed)) {
             return;
         }
-
-        if (isPvpAllowed(victim)) {
+        Player attacker = resolvePlayer(pushed.getPushedBy());
+        if (attacker == null || !isBlockedTarget(victim, attacker.getUniqueId())) {
             return;
         }
 
@@ -243,8 +201,5 @@ public class IslandPvPListener implements Listener {
         if (event.getAffectedEntities().size() < affectedBefore) {
             attacker.sendMessage(config.getIslandPvpDisabledMessage());
         }
-    }
-
-    private record WindBurst(int tick, Player player) {
     }
 }

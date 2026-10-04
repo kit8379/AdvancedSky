@@ -33,6 +33,8 @@ import org.bukkit.event.block.BlockDispenseEvent;
 import org.bukkit.event.weather.LightningStrikeEvent;
 import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.grid.IslandGrid;
@@ -96,11 +98,98 @@ class IslandProtectionListenerTest {
     }
 
     @Test
-    void movingWithinOrOffTheBoundaryIsNotAnEntry() {
+    void movementWithinTheBoundaryDoesNotCheckEntryAgain() {
         island(true, Set.of(banned));
 
         assertFalse(move(banned, false, inside, inside.clone().add(1, 0, 0)));
-        assertFalse(move(banned, false, inside, outside));
+        assertTrue(move(banned, false, inside, outside));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void leavingTheBoundaryIsRefusedWithoutAClientBorder(boolean operator) {
+        island(false, Set.of());
+
+        assertTrue(move(visitor, operator, inside, outside));
+        assertFalse(move(visitor, operator, inside, inside.clone().add(1, 0, 0)));
+    }
+
+    @Test
+    void anExpandedBoundaryUsesTheCurrentSizeImmediately() {
+        island(false, Set.of());
+        assertTrue(move(member, false, inside, outside));
+
+        when(config.getUpgradeLimit("island-size", 1)).thenReturn(100);
+
+        assertFalse(move(member, false, inside, outside));
+    }
+
+    @Test
+    void aPlayerAlreadyOutsideCanReturnButCannotMoveFartherOut() {
+        island(false, Set.of());
+
+        assertTrue(move(member, false, outside, outside.clone().add(-1, 0, 0)));
+        assertFalse(move(member, false, outside, inside));
+        assertFalse(move(member, false, outside, outside.clone().add(0, 0, 1)));
+        Location east = center.clone().add(SIZE - SIZE / 2, 0, 0);
+        assertTrue(move(member, false, east, east.clone().add(1, 0, 0)));
+        assertFalse(move(member, false, east, east.clone().add(-1, 0, 0)));
+        Location north = center.clone().add(0, 0, -SIZE / 2 - 1);
+        assertTrue(move(member, false, north, north.clone().add(0, 0, -1)));
+        assertFalse(move(member, false, north, north.clone().add(0, 0, 1)));
+        Location south = center.clone().add(0, 0, SIZE - SIZE / 2);
+        assertTrue(move(member, false, south, south.clone().add(0, 0, 1)));
+        assertFalse(move(member, false, south, south.clone().add(0, 0, -1)));
+    }
+
+    @Test
+    void anUnavailableIslandRefusesMovementUntilItsCurrentDataIsLoaded() {
+        UUID islandUuid = UUID.randomUUID();
+        when(cache.getIslandUuidAt(any(Location.class))).thenReturn(islandUuid);
+
+        assertTrue(move(member, false, inside, outside));
+        assertTrue(move(member, false, inside, inside.clone().add(1, 0, 0)));
+
+        island(false, Set.of());
+
+        assertFalse(move(member, false, inside, inside.clone().add(1, 0, 0)));
+    }
+
+    @Test
+    void anUnavailableDestinationRefusesEntry() {
+        when(cache.getIslandUuidAt(inside)).thenReturn(UUID.randomUUID());
+
+        assertTrue(move(visitor, false, outside, inside));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void aRiderLeavingTheBoundaryIsPutBackWithTheVehicle(boolean operator) {
+        island(false, Set.of());
+        Vehicle mount = mock(Vehicle.class);
+        Player rider = player(visitor, operator);
+        when(rider.getVehicle()).thenReturn(mount);
+        when(mount.getPassengers()).thenReturn(List.of(rider));
+        PlayerMoveEvent event = new PlayerMoveEvent(rider, inside, outside);
+
+        listener.onPlayerMove(event);
+
+        assertTrue(event.isCancelled());
+        verify(mount).teleportAsync(inside, PlayerTeleportEvent.TeleportCause.PLUGIN);
+    }
+
+    @Test
+    void aNestedPassengerLeavingTheBoundaryIsPutBackWithTheRootVehicle() {
+        island(false, Set.of());
+        Vehicle minecart = mock(Vehicle.class);
+        Entity pig = mock(Entity.class);
+        Player rider = player(visitor, false);
+        when(minecart.getPassengers()).thenReturn(List.of(pig));
+        when(pig.getPassengers()).thenReturn(List.of(rider));
+
+        listener.onVehicleMove(new VehicleMoveEvent(minecart, inside, outside));
+
+        verify(minecart).teleportAsync(inside, PlayerTeleportEvent.TeleportCause.PLUGIN);
     }
 
     @Test

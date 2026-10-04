@@ -105,8 +105,7 @@ public final class IslandGrid {
 
     /**
      * Whether the block column lies inside the island boundary of the given size: from -size/2 to
-     * size - size/2 - 1 blocks of the island centre, the layout NewSky's island border has around
-     * its world's origin.
+     * size - size/2 - 1 blocks of the island centre.
      */
     public boolean isInsideIsland(int slot, int size, int blockX, int blockZ) {
         int[] cell = spiralCell(slot);
