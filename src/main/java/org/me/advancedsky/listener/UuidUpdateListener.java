@@ -1,5 +1,6 @@
 package org.me.advancedsky.listener;
 
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
@@ -20,14 +21,15 @@ public class UuidUpdateListener implements Listener {
 
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
-        UUID uuid = event.getPlayer().getUniqueId();
-        String name = event.getPlayer().getName();
+        Player player = event.getPlayer();
+        UUID playerUuid = player.getUniqueId();
+        String playerName = player.getName();
 
-        uuidHandler.updatePlayerUuid(uuid, name).thenRun(() -> {
-            plugin.debug("UuidUpdateListener", "Updated UUID for player: " + name + " (" + uuid + ")");
-        }).exceptionally(ex -> {
-            plugin.severe("Error updating UUID for player " + name + " (" + uuid + ")", ex);
-            return null;
-        });
+        uuidHandler.updatePlayerUuid(playerUuid, playerName)
+                .thenRun(() -> plugin.debug("UuidUpdateListener", "Updated UUID for player: " + playerName + " (" + playerUuid + ")"))
+                .exceptionally(error -> {
+                    plugin.severe("Error updating UUID for player " + playerName + " (" + playerUuid + ")", error);
+                    return null;
+                });
     }
 }

@@ -30,23 +30,22 @@ public class IslandCoopListener implements Listener {
         Player player = event.getPlayer();
         UUID playerUuid = player.getUniqueId();
         String playerName = player.getName();
+        Bukkit.getAsyncScheduler().runDelayed(plugin, task -> removeCoopIfOffline(playerUuid, playerName), 5L, TimeUnit.SECONDS);
+    }
 
-        Bukkit.getAsyncScheduler().runDelayed(plugin, task -> {
-            try {
-                if (onlinePlayerRegistry.isOnline(playerUuid)) {
-                    plugin.debug("IslandCoopListener", "Skipped coop cleanup for player " + playerName + " because they are still online.");
-                    return;
-                }
-
-                coopHandler.deleteAllCoopOfPlayer(playerUuid).thenRun(() -> {
-                    plugin.debug("IslandCoopListener", "Removed all coop entries for player " + playerName + " on quit.");
-                }).exceptionally(ex -> {
-                    plugin.severe("Error removing coop entries for player " + playerName + " on quit.", ex);
-                    return null;
-                });
-            } catch (RuntimeException ex) {
-                plugin.severe("Error checking online state for player " + playerName + " on quit.", ex);
+    private void removeCoopIfOffline(UUID playerUuid, String playerName) {
+        try {
+            if (onlinePlayerRegistry.isOnline(playerUuid)) {
+                plugin.debug("IslandCoopListener", "Skipped coop cleanup for player " + playerName + " because they are still online.");
+                return;
             }
-        }, 5L, TimeUnit.SECONDS);
+
+            coopHandler.deleteAllCoopOfPlayer(playerUuid).thenRun(() -> plugin.debug("IslandCoopListener", "Removed all coop entries for player " + playerName + " on quit.")).exceptionally(error -> {
+                plugin.severe("Error removing coop entries for player " + playerName + " on quit.", error);
+                return null;
+            });
+        } catch (RuntimeException error) {
+            plugin.severe("Error checking online state for player " + playerName + " on quit.", error);
+        }
     }
 }

@@ -26,8 +26,7 @@ public class OnlinePlayersListener implements Listener {
     private final OnlinePlayerRegistry onlinePlayerRegistry;
     private final String serverID;
 
-    // A player's registry writes run in the order their joins and quits happened here, so the
-    // quit of a quick relog cannot land after the new join and erase it.
+    // Keep join and quit writes in order so a quick relog cannot erase the new session.
     private final Map<UUID, CompletableFuture<Void>> writes = new ConcurrentHashMap<>();
 
     public OnlinePlayersListener(AdvancedSky plugin, OnlinePlayerRegistry onlinePlayerRegistry, String serverID) {
@@ -41,11 +40,16 @@ public class OnlinePlayersListener implements Listener {
         register(event.getPlayer(), FIRST_RETRY_TICKS);
     }
 
-    /**
-     * Until it is written, the rest of the network takes the player for offline, so a write that
-     * fails is tried again for as long as they are here, from their own thread so it still comes
-     * before their quit.
-     */
+    @EventHandler(priority = EventPriority.HIGHEST)
+    private void onPlayerQuit(PlayerQuitEvent event) {
+        Player player = event.getPlayer();
+        UUID playerUuid = player.getUniqueId();
+        String playerName = player.getName();
+
+        write(playerUuid, () -> unregister(playerUuid, playerName, FIRST_RETRY_TICKS));
+    }
+
+    // Retry on the player's thread so registration stays ordered before their quit.
     private void register(Player player, long retryTicks) {
         UUID playerUuid = player.getUniqueId();
         String playerName = player.getName();
@@ -54,40 +58,33 @@ public class OnlinePlayersListener implements Listener {
             onlinePlayerRegistry.addOnlinePlayer(playerUuid, playerName, serverID);
             plugin.debug("OnlinePlayersListener", "Player " + playerName + " joined on server " + serverID);
         }, plugin.getBukkitAsyncExecutor())).exceptionally(error -> {
-            player.getScheduler().runDelayed(plugin, task -> register(player, Math.min(retryTicks * 2, MAX_RETRY_TICKS)), null, retryTicks);
+            long nextRetryTicks = Math.min(retryTicks * 2, MAX_RETRY_TICKS);
+            player.getScheduler().runDelayed(plugin,
+                    task -> register(player, nextRetryTicks), null, retryTicks);
             return null;
         });
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST)
-    private void onPlayerQuit(PlayerQuitEvent event) {
-        UUID playerUuid = event.getPlayer().getUniqueId();
-        String playerName = event.getPlayer().getName();
-
-        write(playerUuid, () -> unregister(playerUuid, playerName, FIRST_RETRY_TICKS));
-    }
-
-    /**
-     * Until it is removed, the rest of the network takes the player for online here, so a removal
-     * that fails is tried again until it succeeds. It stays the player's current write meanwhile,
-     * so a join of theirs here comes after it.
-     */
+    // Finish removal, including retries, before allowing this player's next join write.
     private CompletableFuture<Void> unregister(UUID playerUuid, String playerName, long retryTicks) {
-        // Retried after as many ticks as a join's, at 50 ms each.
         Executor retry = CompletableFuture.delayedExecutor(retryTicks * 50L, TimeUnit.MILLISECONDS, plugin.getBukkitAsyncExecutor());
+        long nextRetryTicks = Math.min(retryTicks * 2, MAX_RETRY_TICKS);
         return CompletableFuture.runAsync(() -> {
             onlinePlayerRegistry.removeOnlinePlayer(playerUuid, serverID);
             plugin.debug("OnlinePlayersListener", "Player " + playerName + " quit from server " + serverID);
-        }, plugin.getBukkitAsyncExecutor()).exceptionallyComposeAsync(error -> unregister(playerUuid, playerName, Math.min(retryTicks * 2, MAX_RETRY_TICKS)), retry);
+        }, plugin.getBukkitAsyncExecutor())
+                .exceptionallyComposeAsync(error -> unregister(playerUuid, playerName, nextRetryTicks), retry);
     }
 
-    /**
-     * Runs the write off the event thread once the player's previous write has finished, failed
-     * or not; a failure is already logged by the registry.
-     */
-    private CompletableFuture<Void> write(UUID playerUuid, Supplier<CompletableFuture<Void>> write) {
-        CompletableFuture<Void> next = writes.compute(playerUuid, (uuid, previous) -> (previous == null ? CompletableFuture.<Void>completedFuture(null) : previous.exceptionally(error -> null)).thenCompose(v -> write.get()));
-        next.whenComplete((v, error) -> writes.remove(playerUuid, next));
+    // The registry logs failures; a failed write must not prevent subsequent writes.
+    private CompletableFuture<Void> write(UUID playerUuid, Supplier<CompletableFuture<Void>> operation) {
+        CompletableFuture<Void> next = writes.compute(playerUuid, (uuid, previous) -> {
+            CompletableFuture<Void> ready = previous == null
+                    ? CompletableFuture.completedFuture(null)
+                    : previous.exceptionally(error -> null);
+            return ready.thenCompose(unused -> operation.get());
+        });
+        next.whenComplete((unused, error) -> writes.remove(playerUuid, next));
         return next;
     }
 }

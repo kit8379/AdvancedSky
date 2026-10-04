@@ -1,10 +1,6 @@
 package org.me.advancedsky.listener;
 
-import org.bukkit.Bukkit;
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.Tag;
-import org.bukkit.World;
+import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.Directional;
 import org.bukkit.block.data.type.Bed;
@@ -14,11 +10,7 @@ import org.bukkit.event.Cancellable;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.block.BlockBreakEvent;
-import org.bukkit.event.block.BlockBurnEvent;
-import org.bukkit.event.block.BlockDispenseEvent;
-import org.bukkit.event.block.BlockFormEvent;
-import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.block.*;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityPlaceEvent;
 import org.bukkit.event.entity.EntityTransformEvent;
@@ -81,9 +73,7 @@ public final class IslandLimitListener implements Listener {
     }
 
     /**
-     * Counts a capped block once its placement stands: a handler after the check above may still
-     * cancel it. Places on one island run one after another on its region thread, so none can
-     * slip in between the check and the count.
+     * Count only accepted placements at MONITOR. Each island's region thread serializes the check and count.
      */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBlockPlaced(BlockPlaceEvent event) {
@@ -132,8 +122,11 @@ public final class IslandLimitListener implements Listener {
         }
 
         // A bed counts in its foot's chunk, the half the scan counts, also when broken by its head.
-        Block counted = block.getBlockData() instanceof Bed bed && bed.getPart() == Bed.Part.HEAD ? block.getRelative(bed.getFacing().getOppositeFace()) : block;
-        limitHandler.decrement(islandUuid, type, counted.getX() >> 4, counted.getZ() >> 4);
+        Block countedBlock = block;
+        if (block.getBlockData() instanceof Bed bed && bed.getPart() == Bed.Part.HEAD) {
+            countedBlock = block.getRelative(bed.getFacing().getOppositeFace());
+        }
+        limitHandler.decrement(islandUuid, type, countedBlock.getX() >> 4, countedBlock.getZ() >> 4);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -156,12 +149,12 @@ public final class IslandLimitListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onDispense(BlockDispenseEvent event) {
         Material type = event.getItem().getType();
-        Block front = dispensedInto(event, type);
-        if (front == null) {
+        Block target = getDispenseTarget(event, type);
+        if (target == null) {
             return;
         }
 
-        UUID islandUuid = getIslandUuid(front.getLocation());
+        UUID islandUuid = getIslandUuid(target.getLocation());
         if (islandUuid != null && !limitHandler.hasRoom(islandUuid, type)) {
             event.setCancelled(true);
             plugin.debug("IslandLimitListener", "Denied dispense due to limit: island=" + islandUuid + ", type=" + type);
@@ -169,37 +162,37 @@ public final class IslandLimitListener implements Listener {
     }
 
     /**
-     * Counts the block a dispense put down, a tick later: the dispense runs after its event, and
-     * puts nothing down when the space in front is taken.
+     * Dispensing happens after the event. Count next tick only if the target became the dispensed block.
      */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDispensed(BlockDispenseEvent event) {
         Material type = event.getItem().getType();
-        Block front = dispensedInto(event, type);
-        if (front == null || front.getType() == type) {
+        Block target = getDispenseTarget(event, type);
+        if (target == null || target.getType() == type) {
             return;
         }
 
-        UUID islandUuid = getIslandUuid(front.getLocation());
+        UUID islandUuid = getIslandUuid(target.getLocation());
         if (islandUuid == null) {
             return;
         }
 
-        Bukkit.getRegionScheduler().runDelayed(plugin, front.getLocation(), task -> {
-            if (front.getType() == type) {
-                limitHandler.increment(islandUuid, type, front.getX() >> 4, front.getZ() >> 4);
+        Bukkit.getRegionScheduler().runDelayed(plugin, target.getLocation(), task -> {
+            if (target.getType() == type) {
+                limitHandler.increment(islandUuid, type, target.getX() >> 4, target.getZ() >> 4);
             }
         }, 1L);
     }
 
     /**
-     * The block in front of a dispenser dispensing a capped shulker box, or null. Shulker boxes
-     * are the only blocks a dispenser puts down to stay: a pumpkin or wither skull it places only
-     * to build a golem or wither, gone at once, and any other block it throws out as an item.
+     * Only capped shulker boxes remain as blocks after dispensing; pumpkins and skulls form entities.
      */
-    private Block dispensedInto(BlockDispenseEvent event, Material type) {
+    private Block getDispenseTarget(BlockDispenseEvent event, Material type) {
         Block dispenser = event.getBlock();
-        if (dispenser.getType() != Material.DISPENSER || limitHandler.getBlockLimit(type) == LimitHandler.UNLIMITED || !Tag.SHULKER_BOXES.isTagged(type) || !(dispenser.getBlockData() instanceof Directional directional)) {
+        if (dispenser.getType() != Material.DISPENSER || limitHandler.getBlockLimit(type) == LimitHandler.UNLIMITED) {
+            return null;
+        }
+        if (!Tag.SHULKER_BOXES.isTagged(type) || !(dispenser.getBlockData() instanceof Directional directional)) {
             return null;
         }
 
@@ -211,19 +204,25 @@ public final class IslandLimitListener implements Listener {
         denyIfFull(event, event.getLocation(), event.getEntityType());
     }
 
-    /** Vehicles, armor stands and end crystals placed by a player. */
+    /**
+     * Vehicles, armor stands and end crystals placed by a player.
+     */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onEntityPlace(EntityPlaceEvent event) {
         denyIfFull(event, event.getBlock().getLocation(), event.getEntityType());
     }
 
-    /** Minecarts and boats a dispenser puts out fire neither of the events above. */
+    /**
+     * Minecarts and boats a dispenser puts out fire neither of the events above.
+     */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onVehicleCreate(VehicleCreateEvent event) {
         denyIfFull(event, event.getVehicle().getLocation(), event.getVehicle().getType());
     }
 
-    /** Item frames and paintings. */
+    /**
+     * Item frames and paintings.
+     */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onHangingPlace(HangingPlaceEvent event) {
         denyIfFull(event, event.getBlock().getLocation(), event.getEntity().getType());

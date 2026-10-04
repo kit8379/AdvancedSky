@@ -4,13 +4,7 @@ import io.papermc.paper.event.entity.EntityKnockbackEvent;
 import io.papermc.paper.event.entity.EntityPushedByEntityAttackEvent;
 import org.bukkit.Location;
 import org.bukkit.World;
-import org.bukkit.entity.AreaEffectCloud;
-import org.bukkit.entity.Entity;
-import org.bukkit.entity.LightningStrike;
-import org.bukkit.entity.LivingEntity;
-import org.bukkit.entity.Player;
-import org.bukkit.entity.Projectile;
-import org.bukkit.entity.ThrownPotion;
+import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -53,9 +47,7 @@ public class IslandPvPListener implements Listener {
     }
 
     /**
-     * The player behind the damage: the attacker, the shooter, the one who lit the TNT or hit the
-     * end crystal. Lightning carries no causing entity in its damage source, so a Channeling
-     * strike is traced through the strike itself.
+     * Damage sources identify attackers and explosion owners. Channeling uses the strike's owner.
      */
     private Player resolveAttacker(EntityDamageByEntityEvent event) {
         if (event.getDamageSource().getCausingEntity() instanceof Player player) {
@@ -110,11 +102,7 @@ public class IslandPvPListener implements Listener {
         }
 
         Player attacker = resolveAttacker(event);
-        if (attacker == null || attacker.getUniqueId().equals(victim.getUniqueId())) {
-            return;
-        }
-
-        if (isPvpAllowed(victim)) {
+        if (attacker == null || !isBlockedTarget(victim, attacker.getUniqueId())) {
             return;
         }
 
@@ -124,8 +112,7 @@ public class IslandPvPListener implements Listener {
     }
 
     /**
-     * Protect against player-attributed explosion knockback and mace smash pushes. The current
-     * API provides no attacker for a mace's Wind Burst, so that source-less knockback stays vanilla.
+     * Block attributed explosion and mace pushes. Wind Burst has no attacker in the current API.
      */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onKnockback(EntityKnockbackEvent event) {
@@ -141,6 +128,7 @@ public class IslandPvPListener implements Listener {
         if (!(event instanceof EntityPushedByEntityAttackEvent pushed)) {
             return;
         }
+
         Player attacker = resolvePlayer(pushed.getPushedBy());
         if (attacker == null || !isBlockedTarget(victim, attacker.getUniqueId())) {
             return;
@@ -174,9 +162,10 @@ public class IslandPvPListener implements Listener {
             return;
         }
 
+        UUID attackerUuid = attacker.getUniqueId();
         boolean blocked = false;
         for (LivingEntity entity : event.getAffectedEntities()) {
-            if (entity instanceof Player victim && isBlockedTarget(victim, attacker.getUniqueId())) {
+            if (entity instanceof Player victim && isBlockedTarget(victim, attackerUuid)) {
                 event.setIntensity(victim, 0.0);
                 blocked = true;
             }
@@ -194,11 +183,10 @@ public class IslandPvPListener implements Listener {
             return;
         }
 
-        int affectedBefore = event.getAffectedEntities().size();
-        event.getAffectedEntities().removeIf(entity ->
-                entity instanceof Player victim && isBlockedTarget(victim, attacker.getUniqueId()));
+        UUID attackerUuid = attacker.getUniqueId();
+        boolean blocked = event.getAffectedEntities().removeIf(entity -> entity instanceof Player victim && isBlockedTarget(victim, attackerUuid));
 
-        if (event.getAffectedEntities().size() < affectedBefore) {
+        if (blocked) {
             attacker.sendMessage(config.getIslandPvpDisabledMessage());
         }
     }

@@ -65,36 +65,38 @@ public class AsyncTabCompleteListener implements Listener {
             return;
         }
 
-        String typed = parsed.args[parsed.args.length - 1].toLowerCase(Locale.ROOT);
-        String[] untyped = parsed.args.clone();
-        untyped[untyped.length - 1] = "";
+        String prefix = parsed.args[parsed.args.length - 1].toLowerCase(Locale.ROOT);
+        String[] candidateArgs = parsed.args.clone();
+        candidateArgs[candidateArgs.length - 1] = "";
         // Arguments never hold a space, so spaces keep the parts of the key apart.
-        String key = senderKey(sender) + " " + parsed.label.toLowerCase(Locale.ROOT) + " " + String.join(" ", untyped);
+        String key = senderKey(sender) + " " + parsed.label.toLowerCase(Locale.ROOT) + " " + String.join(" ", candidateArgs);
 
+        List<String> suggestions = Collections.emptyList();
         try {
-            List<String> all;
-            try {
-                // A load slower than the wait keeps going and serves the next keystroke.
-                all = candidates(key, () -> router.completeAsync(sender, parsed.label, untyped).exceptionally(ex -> {
-                    plugin.severe("Async tab complete exception for buffer '" + buffer + "'", ex);
-                    return Collections.emptyList();
-                })).get(TAB_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
-            } catch (TimeoutException slow) {
-                all = Collections.emptyList();
+            List<String> all = getCandidates(key, () -> router.completeAsync(sender, parsed.label, candidateArgs)
+                    .exceptionally(error -> {
+                        plugin.severe("Async tab complete exception for buffer '" + buffer + "'", error);
+                        return Collections.emptyList();
+                    })).get(TAB_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+
+            if (all != null) {
+                suggestions = all.stream()
+                        .filter(suggestion -> suggestion != null && !suggestion.isEmpty())
+                        .filter(suggestion -> suggestion.toLowerCase(Locale.ROOT).startsWith(prefix))
+                        .distinct()
+                        .collect(Collectors.toList());
             }
-
-            List<String> suggestions = (all == null ? Collections.<String>emptyList() : all).stream().filter(s -> s != null && !s.isEmpty() && s.toLowerCase(Locale.ROOT).startsWith(typed)).distinct().collect(Collectors.toList());
-
-            event.setCompletions(suggestions);
-            event.setHandled(true);
-        } catch (Exception ex) {
-            plugin.severe("Failed to get async tab complete suggestions for buffer '" + buffer + "'", ex);
-            event.setCompletions(Collections.emptyList());
-            event.setHandled(true);
+        } catch (TimeoutException slow) {
+            // Keep loading in the cache so the next keystroke can use the result.
+        } catch (Exception error) {
+            plugin.severe("Failed to get async tab complete suggestions for buffer '" + buffer + "'", error);
         }
+
+        event.setCompletions(suggestions);
+        event.setHandled(true);
     }
 
-    private CompletableFuture<List<String>> candidates(String key, Supplier<CompletableFuture<List<String>>> loader) {
+    private CompletableFuture<List<String>> getCandidates(String key, Supplier<CompletableFuture<List<String>>> loader) {
         long now = System.nanoTime();
         candidates.values().removeIf(cached -> now - cached.loadedAt() >= CANDIDATES_TTL_NANOS);
         return candidates.computeIfAbsent(key, ignored -> new Candidates(loader.get(), now)).list();
@@ -111,18 +113,12 @@ public class AsyncTabCompleteListener implements Listener {
         }
 
         String[] split = raw.split(" ", -1);
-        if (split.length == 0) {
-            return null;
-        }
-
         String label = split[0];
         if (label.isEmpty()) {
             return null;
         }
 
-        List<String> argsList = new ArrayList<>(Arrays.asList(split).subList(1, split.length));
-
-        return new ParsedCommand(label, argsList.toArray(new String[0]));
+        return new ParsedCommand(label, Arrays.copyOfRange(split, 1, split.length));
     }
 
     private record ParsedCommand(String label, String[] args) {

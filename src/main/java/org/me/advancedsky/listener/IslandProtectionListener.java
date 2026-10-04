@@ -17,12 +17,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.*;
-import org.bukkit.event.entity.EntityChangeBlockEvent;
-import org.bukkit.event.entity.EntityDamageByEntityEvent;
-import org.bukkit.event.entity.EntityExplodeEvent;
-import org.bukkit.event.entity.EntityInteractEvent;
-import org.bukkit.event.entity.EntityPlaceEvent;
-import org.bukkit.event.entity.ProjectileHitEvent;
+import org.bukkit.event.entity.*;
 import org.bukkit.event.hanging.HangingBreakByEntityEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.*;
@@ -81,7 +76,9 @@ public class IslandProtectionListener implements Listener {
             return true;
         }
 
-        if (islandCache.isDeletingAt(location)) return false;
+        if (islandCache.isDeletingAt(location)) {
+            return false;
+        }
         if (player.isOp()) {
             return true;
         }
@@ -117,10 +114,9 @@ public class IslandProtectionListener implements Listener {
     }
 
     /**
-     * Whether the player may come onto the island: not banned from it, and it is unlocked or
-     * they belong to it.
+     * Bans apply before the lock's member and co-op exemptions.
      */
-    private boolean mayEnter(Player player, Island island) {
+    private boolean canPlayerEnter(Player player, Island island) {
         UUID playerUuid = player.getUniqueId();
         if (island.getBans().contains(playerUuid)) {
             return false;
@@ -152,9 +148,9 @@ public class IslandProtectionListener implements Listener {
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent event) {
         Player player = event.getPlayer();
-        Location loc = event.getBlock().getLocation();
+        Location location = event.getBlock().getLocation();
 
-        if (!canPlayerEdit(player, loc)) {
+        if (!canPlayerEdit(player, location)) {
             event.setCancelled(true);
             deny(player);
         }
@@ -163,9 +159,9 @@ public class IslandProtectionListener implements Listener {
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
         Player player = event.getPlayer();
-        Location loc = event.getBlockPlaced().getLocation();
+        Location location = event.getBlockPlaced().getLocation();
 
-        if (!canPlayerEdit(player, loc)) {
+        if (!canPlayerEdit(player, location)) {
             event.setCancelled(true);
             deny(player);
         }
@@ -179,9 +175,9 @@ public class IslandProtectionListener implements Listener {
         }
 
         Player player = event.getPlayer();
-        Location loc = clicked.getLocation();
+        Location location = clicked.getLocation();
 
-        if (!canPlayerEdit(player, loc)) {
+        if (!canPlayerEdit(player, location)) {
             event.setCancelled(true);
             // Pressure plates and tripwires re-fire every tick while stood on, so
             // physical interactions deny silently.
@@ -192,21 +188,27 @@ public class IslandProtectionListener implements Listener {
     }
 
     /**
-     * A spawn egg used on water names no clicked block, and an interaction without one arrives
-     * already cancelled, so the handler above never sees it: the creature appears on the fluid the
-     * player looks at, which is held to the edit rule like a clicked block.
+     * Water spawn eggs have no clicked block and arrive cancelled. Check their fluid target separately.
      */
     @EventHandler(priority = EventPriority.HIGH)
     public void onSpawnEggUse(PlayerInteractEvent event) {
+        if (event.getAction() != Action.RIGHT_CLICK_AIR || event.useItemInHand() == Event.Result.DENY) {
+            return;
+        }
+
         ItemStack item = event.getItem();
-        if (event.getAction() != Action.RIGHT_CLICK_AIR || event.useItemInHand() == Event.Result.DENY || item == null || !item.getType().name().endsWith("_SPAWN_EGG")) {
+        if (item == null || !item.getType().name().endsWith("_SPAWN_EGG")) {
             return;
         }
 
         Player player = event.getPlayer();
         AttributeInstance reach = player.getAttribute(Attribute.BLOCK_INTERACTION_RANGE);
         RayTraceResult hit = player.rayTraceBlocks(reach == null ? 4.5 : reach.getValue(), FluidCollisionMode.SOURCE_ONLY);
-        if (hit != null && hit.getHitBlock() != null && !canPlayerEdit(player, hit.getHitBlock().getLocation())) {
+        if (hit == null || hit.getHitBlock() == null) {
+            return;
+        }
+
+        if (!canPlayerEdit(player, hit.getHitBlock().getLocation())) {
             event.setUseItemInHand(Event.Result.DENY);
             deny(player);
         }
@@ -215,9 +217,9 @@ public class IslandProtectionListener implements Listener {
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBucketUse(PlayerBucketEmptyEvent event) {
         Player player = event.getPlayer();
-        Location loc = event.getBlock().getLocation();
+        Location location = event.getBlock().getLocation();
 
-        if (!canPlayerEdit(player, loc)) {
+        if (!canPlayerEdit(player, location)) {
             event.setCancelled(true);
             deny(player);
         }
@@ -226,9 +228,9 @@ public class IslandProtectionListener implements Listener {
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBucketFill(PlayerBucketFillEvent event) {
         Player player = event.getPlayer();
-        Location loc = event.getBlock().getLocation();
+        Location location = event.getBlock().getLocation();
 
-        if (!canPlayerEdit(player, loc)) {
+        if (!canPlayerEdit(player, location)) {
             event.setCancelled(true);
             deny(player);
         }
@@ -261,8 +263,7 @@ public class IslandProtectionListener implements Listener {
     }
 
     /**
-     * Growing and spreading have handler lists of their own, apart from forming, so a stem's
-     * fruit, a vine, a chorus branch or fire is held to the boundary here.
+     * Growth and spread events have separate handler lists from block formation.
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBlockGrow(BlockGrowEvent event) {
@@ -279,38 +280,53 @@ public class IslandProtectionListener implements Listener {
     }
 
     /**
-     * Fire a player starts, also through their Channeling strike, only where they may edit; any
-     * other fire only inside a boundary.
+     * Player-started fire uses edit permissions; other fire uses the island boundary.
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBlockIgnite(BlockIgniteEvent event) {
-        Player player = event.getPlayer() != null ? event.getPlayer() : resolvePlayer(event.getIgnitingEntity());
+        Player player = event.getPlayer();
+        if (player == null) {
+            player = resolvePlayer(event.getIgnitingEntity());
+        }
+
         Location location = event.getBlock().getLocation();
-        if (player != null ? !canPlayerEdit(player, location) : !isAllowedByBoundary(location)) {
+        boolean allowed = player != null ? canPlayerEdit(player, location) : isAllowedByBoundary(location);
+        if (!allowed) {
             event.setCancelled(true);
         }
     }
 
     /**
-     * A dispenser or dropper acts on the block in front of it: one facing out of the boundary does
-     * nothing, so it places no block or fluid where no member may edit.
+     * Keep the dispenser or dropper's target inside the island boundary.
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onDispense(BlockDispenseEvent event) {
         Block block = event.getBlock();
-        if (block.getBlockData() instanceof Directional directional && !isAllowedByBoundary(block.getRelative(directional.getFacing()).getLocation())) {
+        if (!(block.getBlockData() instanceof Directional directional)) {
+            return;
+        }
+
+        Location target = block.getRelative(directional.getFacing()).getLocation();
+        if (!isAllowedByBoundary(target)) {
             event.setCancelled(true);
         }
     }
 
     /**
-     * A Channeling bolt strikes only where its thrower may edit: it burns, converts and damages
-     * what it hits before any of that names the thrower.
+     * Check Channeling before the strike burns, converts or damages anything.
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onLightningStrike(LightningStrikeEvent event) {
+        if (event.getCause() != LightningStrikeEvent.Cause.TRIDENT) {
+            return;
+        }
+
         LightningStrike strike = event.getLightning();
-        if (event.getCause() == LightningStrikeEvent.Cause.TRIDENT && strike.getCausingEntity() instanceof Player player && !canPlayerEdit(player, strike.getLocation())) {
+        if (!(strike.getCausingEntity() instanceof Player player)) {
+            return;
+        }
+
+        if (!canPlayerEdit(player, strike.getLocation())) {
             event.setCancelled(true);
         }
     }
@@ -411,9 +427,9 @@ public class IslandProtectionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onEntityDamage(EntityDamageByEntityEvent event) {
-        Player damager = resolveAttacker(event);
+        Player attacker = resolveAttacker(event);
 
-        if (damager == null) {
+        if (attacker == null) {
             return;
         }
 
@@ -421,9 +437,9 @@ public class IslandProtectionListener implements Listener {
             return;
         }
 
-        if (!canPlayerEdit(damager, event.getEntity().getLocation())) {
+        if (!canPlayerEdit(attacker, event.getEntity().getLocation())) {
             event.setCancelled(true);
-            deny(damager);
+            deny(attacker);
         }
     }
 
@@ -432,7 +448,10 @@ public class IslandProtectionListener implements Listener {
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onEntityPushed(EntityKnockbackEvent event) {
-        if (!(event instanceof EntityPushedByEntityAttackEvent pushed) || event.getEntity() instanceof Player || event.getEntity() instanceof Enemy) {
+        if (!(event instanceof EntityPushedByEntityAttackEvent pushed)) {
+            return;
+        }
+        if (event.getEntity() instanceof Player || event.getEntity() instanceof Enemy) {
             return;
         }
 
@@ -512,9 +531,7 @@ public class IslandProtectionListener implements Listener {
     }
 
     /**
-     * A nether portal trip is not seen by {@link #onTeleport}: PlayerPortalEvent has a handler
-     * list of its own. Arriving in the island world through one follows the teleport rule, so
-     * walking the scaled-down nether to another island's coordinates leads nowhere it bars.
+     * PlayerPortalEvent has its own handler list; nether arrivals use the teleport access rule.
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPortal(PlayerPortalEvent event) {
@@ -524,15 +541,15 @@ public class IslandProtectionListener implements Listener {
     }
 
     /**
-     * The portal a nether trip builds at its far end is built like any other blocks: only where
-     * the traveller may edit, or inside a boundary when no player builds it.
+     * Player-created portals use edit permissions; other portals use the island boundary.
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPortalCreate(PortalCreateEvent event) {
         Player player = resolvePlayer(event.getEntity());
         for (BlockState state : event.getBlocks()) {
             Location location = state.getLocation();
-            if (player != null ? !canPlayerEdit(player, location) : !isAllowedByBoundary(location)) {
+            boolean allowed = player != null ? canPlayerEdit(player, location) : isAllowedByBoundary(location);
+            if (!allowed) {
                 event.setCancelled(true);
                 return;
             }
@@ -540,49 +557,51 @@ public class IslandProtectionListener implements Listener {
     }
 
     /**
-     * An ender pearl takes its thrower where it lands, which on Folia is no teleport event, so
-     * the landing follows the teleport rule on both platforms.
+     * Folia does not fire a teleport event for pearls, so check access when they land.
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onEnderPearlLand(ProjectileHitEvent event) {
-        if (event.getEntity() instanceof EnderPearl pearl && pearl.getShooter() instanceof Player player && refusesArrival(player, pearl.getLocation())) {
+        if (!(event.getEntity() instanceof EnderPearl pearl) || !(pearl.getShooter() instanceof Player player)) {
+            return;
+        }
+
+        if (isArrivalDenied(player, pearl.getLocation())) {
             event.setCancelled(true);
             pearl.remove();
         }
     }
 
     private void checkArrival(PlayerTeleportEvent event) {
-        if (refusesArrival(event.getPlayer(), event.getTo())) {
+        if (isArrivalDenied(event.getPlayer(), event.getTo())) {
             event.setCancelled(true);
         }
     }
 
     /**
-     * Whether the player may not arrive at the location, telling them why: outside every island
-     * boundary, or on an island that bars them.
+     * Reject arrivals outside island boundaries or denied by bans and locks, and explain why.
      */
-    private boolean refusesArrival(Player player, Location to) {
-        if (!isIslandWorld(to)) {
+    private boolean isArrivalDenied(Player player, Location destination) {
+        if (!isIslandWorld(destination)) {
             return false;
         }
 
-        Island island = islandCache.getAt(to);
-        if (!isInsideIslandBoundary(island, to)) {
+        Island island = islandCache.getAt(destination);
+        if (!isInsideIslandBoundary(island, destination)) {
             deny(player);
             return true;
         }
 
-        if (player.isOp() || mayEnter(player, island)) {
+        if (player.isOp() || canPlayerEnter(player, island)) {
             return false;
         }
 
-        player.sendMessage(island.getBans().contains(player.getUniqueId()) ? config.getPlayerBannedMessage() : config.getIslandLockedMessage());
+        boolean banned = island.getBans().contains(player.getUniqueId());
+        player.sendMessage(banned ? config.getPlayerBannedMessage() : config.getIslandLockedMessage());
         return true;
     }
 
     /**
-     * Walking and flying stay inside the current island boundary. Entry follows the island's
-     * access rule. Silent, because a refused step is tried again every tick.
+     * Check walking and flying silently because refused movement repeats every tick.
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPlayerMove(PlayerMoveEvent event) {
@@ -598,28 +617,29 @@ public class IslandProtectionListener implements Listener {
         Player player = event.getPlayer();
         Entity vehicle = player.getVehicle();
         if (vehicle != null) {
-            if (putBack(vehicle, event.getFrom(), to)) {
+            if (restoreVehiclePosition(vehicle, event.getFrom(), to)) {
                 event.setCancelled(true);
             }
             return;
         }
 
-        if (refusesMove(player, event.getFrom(), to)) {
+        if (isMoveDenied(player, event.getFrom(), to)) {
             event.setCancelled(true);
         }
     }
 
-    private boolean refusesMove(Player player, Location from, Location to) {
+    private boolean isMoveDenied(Player player, Location from, Location to) {
         if (islandCache.isDeletingAt(to)) {
             return true;
         }
 
-        Island source = isIslandWorld(from) ? islandCache.getAt(from) : null;
-        // The cache logs failed loads and retries them. Without current island data, movement
-        // cannot be checked against its boundary.
-        if (source == null && isIslandWorld(from) && islandCache.getIslandUuidAt(from) != null) {
+        boolean fromIslandWorld = isIslandWorld(from);
+
+        Island source = fromIslandWorld ? islandCache.getAt(from) : null;
+        if (source == null && fromIslandWorld && islandCache.getIslandUuidAt(from) != null) {
             return true;
         }
+
         if (movesBeyondBoundary(source, from, to)) {
             return true;
         }
@@ -629,8 +649,11 @@ public class IslandProtectionListener implements Listener {
             return islandCache.getIslandUuidAt(to) != null;
         }
 
-        return !player.isOp() && !mayEnter(player, target)
-                && isInsideIslandBoundary(target, to) && !isInsideIslandBoundary(target, from);
+        if (player.isOp() || canPlayerEnter(player, target)) {
+            return false;
+        }
+
+        return isInsideIslandBoundary(target, to) && !isInsideIslandBoundary(target, from);
     }
 
     private boolean movesBeyondBoundary(Island island, Location from, Location to) {
@@ -644,12 +667,7 @@ public class IslandProtectionListener implements Listener {
         int minZ = center.getBlockZ() - size / 2;
         int maxX = minX + size - 1;
         int maxZ = minZ + size - 1;
-        // A player already outside after a size change or an external teleport can return,
-        // but cannot move farther out. This also refuses crossings from inside the boundary.
-        return (to.getBlockX() < minX && to.getBlockX() < from.getBlockX())
-                || (to.getBlockX() > maxX && to.getBlockX() > from.getBlockX())
-                || (to.getBlockZ() < minZ && to.getBlockZ() < from.getBlockZ())
-                || (to.getBlockZ() > maxZ && to.getBlockZ() > from.getBlockZ());
+        return (to.getBlockX() < minX && to.getBlockX() < from.getBlockX()) || (to.getBlockX() > maxX && to.getBlockX() > from.getBlockX()) || (to.getBlockZ() < minZ && to.getBlockZ() < from.getBlockZ()) || (to.getBlockZ() > maxZ && to.getBlockZ() > from.getBlockZ());
     }
 
     /**
@@ -657,20 +675,20 @@ public class IslandProtectionListener implements Listener {
      */
     @EventHandler(priority = EventPriority.HIGH)
     public void onVehicleMove(VehicleMoveEvent event) {
-        putBack(event.getVehicle(), event.getFrom(), event.getTo());
+        restoreVehiclePosition(event.getVehicle(), event.getFrom(), event.getTo());
     }
 
     /**
      * Puts the vehicle and all riders back when any player's movement is refused.
      */
-    private boolean putBack(Entity vehicle, Location from, Location to) {
-        // A vehicle that itself rides one moves with it, and the one at the bottom is put back.
-        if ((from.getBlockX() == to.getBlockX() && from.getBlockZ() == to.getBlockZ()) || !isIslandWorld(to) || vehicle.getVehicle() != null) {
+    private boolean restoreVehiclePosition(Entity vehicle, Location from, Location to) {
+        boolean changedPosition = from.getBlockX() != to.getBlockX() || from.getBlockZ() != to.getBlockZ();
+        if (!changedPosition || !isIslandWorld(to) || vehicle.getVehicle() != null) {
             return false;
         }
 
         for (Player player : EntityUtils.riders(vehicle)) {
-            if (refusesMove(player, from, to)) {
+            if (isMoveDenied(player, from, to)) {
                 vehicle.setVelocity(new Vector());
                 vehicle.teleportAsync(from, PlayerTeleportEvent.TeleportCause.PLUGIN);
                 return true;
@@ -695,8 +713,6 @@ public class IslandProtectionListener implements Listener {
 
         if (!canPlayerEdit(player, event.getRightClicked().getLocation())) {
             event.setCancelled(true);
-            // The client sends INTERACT_AT alongside INTERACT for most entities, so the
-            // INTERACT handler owns the message; armor stands only send INTERACT_AT.
             if (event.getRightClicked() instanceof ArmorStand) {
                 deny(player);
             }

@@ -15,8 +15,7 @@ import org.me.advancedsky.util.LocationUtils;
 import java.util.UUID;
 
 /**
- * Where a player who died in the island world comes back, decided at death: Folia fires no
- * respawn event, Paper and Folia both fire the death event.
+ * Chooses the respawn destination at death because Folia does not fire a respawn event.
  */
 public class IslandRespawnListener implements Listener {
 
@@ -31,9 +30,7 @@ public class IslandRespawnListener implements Listener {
     }
 
     /**
-     * A member goes to their default home and a visitor to the island's default warp once
-     * respawned. A player barred from the island, a visitor without a warp to go to, and anyone
-     * dying in the gap or on a free slot, where the world spawn lies too, go to the lobby.
+     * Members return home; visitors use the default warp. Denied visitors and free slots use the lobby.
      */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDeath(PlayerDeathEvent event) {
@@ -53,40 +50,33 @@ public class IslandRespawnListener implements Listener {
                 return;
             }
 
-            lobby(player);
+            sendToLobby(playerUuid);
             return;
         }
 
         boolean member = island.getOwner().equals(playerUuid) || island.getMembers().contains(playerUuid);
-        if (!player.isOp() && isBarred(island, playerUuid)) {
-            lobby(player);
+        boolean banned = island.getBans().contains(playerUuid);
+        boolean locked = island.isLock() && !member && !island.getCoops().contains(playerUuid);
+        if (!player.isOp() && (banned || locked)) {
+            sendToLobby(playerUuid);
             return;
         }
 
-        String location = member ? island.getDefaultHomes().get(playerUuid) : island.getDefaultWarp();
-        if (location == null) {
+        String respawnLocation = member ? island.getDefaultHomes().get(playerUuid) : island.getDefaultWarp();
+        if (respawnLocation == null) {
             if (member) {
                 plugin.severe("Cannot resolve respawn for " + playerUuid + ": default home missing on island " + island.getIslandUuid());
             } else {
-                lobby(player);
+                sendToLobby(playerUuid);
             }
             return;
         }
 
-        teleportAfterRespawn(player, LocationUtils.stringToLocation(worldName, location));
+        teleportAfterRespawn(player, LocationUtils.stringToLocation(worldName, respawnLocation));
     }
 
     /**
-     * Banned from the island, or locked out of it as neither a member nor a co-op.
-     */
-    private static boolean isBarred(Island island, UUID playerUuid) {
-        boolean member = island.getOwner().equals(playerUuid) || island.getMembers().contains(playerUuid);
-        return island.getBans().contains(playerUuid) || (island.isLock() && !member && !island.getCoops().contains(playerUuid));
-    }
-
-    /**
-     * Their own scheduler keeps running through the death and the respawn on both platforms, so
-     * it looks every tick until they are alive again; a player who quits first retires it.
+     * Wait for the player to respawn; their entity scheduler retires the task if they quit.
      */
     private void teleportAfterRespawn(Player player, Location target) {
         player.getScheduler().runAtFixedRate(plugin, task -> {
@@ -99,11 +89,8 @@ public class IslandRespawnListener implements Listener {
         }, null, 1L, 1L);
     }
 
-    /**
-     * Sent from the death screen: the move to another server replaces the respawn here.
-     */
-    private void lobby(Player player) {
-        UUID playerUuid = player.getUniqueId();
+    // Switching servers from the death screen replaces the local respawn.
+    private void sendToLobby(UUID playerUuid) {
         plugin.getApi().lobby(playerUuid).exceptionally(error -> {
             plugin.severe("Failed to send dead player " + playerUuid + " to lobby", error);
             return null;

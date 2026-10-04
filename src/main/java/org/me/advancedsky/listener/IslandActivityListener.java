@@ -1,6 +1,7 @@
 package org.me.advancedsky.listener;
 
 import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -30,7 +31,7 @@ public class IslandActivityListener implements Listener {
     private final IslandCache islandCache;
     private final LevelUpdateScheduler levelUpdateScheduler;
 
-    private final Map<UUID, UUID> currentIsland = new ConcurrentHashMap<>();
+    private final Map<UUID, UUID> islandByPlayer = new ConcurrentHashMap<>();
 
     public IslandActivityListener(AdvancedSky plugin, ConfigHandler config, IslandCache islandCache, LevelUpdateScheduler levelUpdateScheduler) {
         this.plugin = plugin;
@@ -41,14 +42,15 @@ public class IslandActivityListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerJoin(PlayerJoinEvent event) {
-        update(event.getPlayer(), event.getPlayer().getLocation());
+        Player player = event.getPlayer();
+        update(player, player.getLocation());
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerQuit(PlayerQuitEvent event) {
-        UUID left = currentIsland.remove(event.getPlayer().getUniqueId());
-        if (left != null) {
-            levelUpdateScheduler.playerLeave(left);
+        UUID islandUuid = islandByPlayer.remove(event.getPlayer().getUniqueId());
+        if (islandUuid != null) {
+            levelUpdateScheduler.playerLeave(islandUuid);
         }
     }
 
@@ -59,9 +61,11 @@ public class IslandActivityListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerMove(PlayerMoveEvent event) {
-        if (event.hasChangedBlock()) {
-            update(event.getPlayer(), event.getTo());
+        if (!event.hasChangedBlock()) {
+            return;
         }
+
+        update(event.getPlayer(), event.getTo());
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -72,18 +76,18 @@ public class IslandActivityListener implements Listener {
     private void update(Player player, Location location) {
         UUID islandUuid = getIslandUuid(location);
         UUID playerUuid = player.getUniqueId();
-        UUID previous = islandUuid == null ? currentIsland.remove(playerUuid) : currentIsland.get(playerUuid);
-
-        if (islandUuid != null && islandUuid.equals(previous)) {
-            return;
+        UUID previousIsland;
+        if (islandUuid == null) {
+            previousIsland = islandByPlayer.remove(playerUuid);
+        } else {
+            previousIsland = islandByPlayer.put(playerUuid, islandUuid);
+            if (islandUuid.equals(previousIsland)) {
+                return;
+            }
         }
 
-        if (islandUuid != null) {
-            currentIsland.put(playerUuid, islandUuid);
-        }
-
-        if (previous != null) {
-            levelUpdateScheduler.playerLeave(previous);
+        if (previousIsland != null) {
+            levelUpdateScheduler.playerLeave(previousIsland);
         }
 
         if (islandUuid != null) {
@@ -93,7 +97,12 @@ public class IslandActivityListener implements Listener {
     }
 
     private UUID getIslandUuid(Location location) {
-        if (location == null || location.getWorld() == null || !location.getWorld().getName().equals(config.getIslandWorldName())) {
+        if (location == null) {
+            return null;
+        }
+
+        World world = location.getWorld();
+        if (world == null || !world.getName().equals(config.getIslandWorldName())) {
             return null;
         }
 
