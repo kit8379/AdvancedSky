@@ -60,7 +60,6 @@ public class PlayerCreateIslandCommand implements SubCommand {
         api.player(playerUuid).createIsland().thenRun(() -> {
             player.sendMessage(config.getPlayerCreateSuccessMessage());
         }).thenCompose(v -> {
-            // The island exists now; a failed trip there is reported as that, not as the create.
             return api.player(playerUuid).home("default", config.getPlayerHomeSuccessMessage("default")).exceptionally(ex -> {
                 if (!(ex.getCause() instanceof TeleportCancelledException)) {
                     player.sendMessage(config.getUnknownExceptionMessage());
