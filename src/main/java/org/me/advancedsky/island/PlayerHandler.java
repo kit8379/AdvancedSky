@@ -36,23 +36,19 @@ public class PlayerHandler {
     }
 
     public CompletableFuture<Void> addMember(Actor actor, UUID islandUuid, UUID playerUuid, String role) {
-        return islandOperator.addMember(actor, islandUuid, playerUuid, role);
-    }
-
-    public CompletableFuture<Void> acceptInviteMember(UUID islandUuid, UUID playerUuid) {
-        return CompletableFuture.completedFuture(null).thenComposeAsync(v -> islandDistributor.acceptMember(islandUuid, playerUuid, () -> addMember(new Actor.Player(playerUuid), islandUuid, playerUuid, "member")), plugin.getBukkitAsyncExecutor());
+        return islandDistributor.addMember(actor, islandUuid, playerUuid, role, () -> islandOperator.addMember(actor, islandUuid, playerUuid, role));
     }
 
     public CompletableFuture<Void> removeMember(Actor actor, UUID islandUuid, UUID playerUuid) {
-        return islandOperator.removeMember(actor, islandUuid, playerUuid);
+        return islandDistributor.removeMember(actor, islandUuid, playerUuid, () -> islandOperator.removeMember(actor, islandUuid, playerUuid));
     }
 
     public CompletableFuture<Void> setOwner(Actor actor, UUID islandUuid, UUID newOwnerUuid) {
-        return islandOperator.setOwner(actor, islandUuid, newOwnerUuid);
+        return islandDistributor.setOwner(actor, islandUuid, newOwnerUuid, () -> islandOperator.setOwner(actor, islandUuid, newOwnerUuid));
     }
 
     public CompletableFuture<Void> expelPlayer(Actor actor, UUID islandUuid, UUID playerUuid) {
-        return islandOperator.expelPlayer(actor, islandUuid, playerUuid);
+        return islandDistributor.expelPlayer(actor, islandUuid, playerUuid, () -> islandOperator.expelPlayer(actor, islandUuid, playerUuid));
     }
 
     public CompletableFuture<Void> addPendingInvite(UUID inviteeUuid, UUID islandUuid, UUID inviterUuid, int ttlSeconds) {

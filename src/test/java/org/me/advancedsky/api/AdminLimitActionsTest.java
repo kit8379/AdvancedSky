@@ -25,13 +25,12 @@ class AdminLimitActionsTest {
         Location location = new Location(world, 0, 70, 0);
         PlayerHandler members = mock(PlayerHandler.class);
         CoreHandler core = mock(CoreHandler.class);
-        when(core.getOwnIslandHere(player)).thenReturn(CompletableFuture.completedFuture(island));
+        when(core.getIslandUuid(player)).thenReturn(CompletableFuture.completedFuture(island));
         HomeHandler homes = mock(HomeHandler.class);
         when(members.addMember(any(), any(), any(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
         when(homes.setHome(any(), any(), anyString(), any(Location.class))).thenReturn(CompletableFuture.completedFuture(null));
         when(members.getPendingInvite(player)).thenReturn(CompletableFuture.completedFuture(Optional.of(new Invitation(island, UUID.randomUUID()))));
         when(members.removePendingInvite(player)).thenReturn(CompletableFuture.completedFuture(null));
-        when(members.acceptInviteMember(island, player)).thenReturn(CompletableFuture.completedFuture(null));
 
         AdminActions admin = new AdminActions("console", null, members, homes, null, null, null, null, null);
         admin.addMember(island, player).join();
@@ -43,7 +42,7 @@ class AdminLimitActionsTest {
         normal.acceptInvite().join();
         verifyNoInteractions(core);
         normal.setHome("farm", location).join();
-        verify(members).acceptInviteMember(island, player);
+        verify(members).addMember(new Actor.Player(player), island, player, "member");
         verify(homes).setHome(new Actor.Player(player), player, "farm", location);
     }
 }

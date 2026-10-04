@@ -66,19 +66,20 @@ public class HomeHandler {
         }, plugin.getBukkitAsyncExecutor()).thenCompose(future -> future);
     }
 
-    public CompletableFuture<Void> delHome(UUID playerUuid, String homeName) {
+    public CompletableFuture<Void> delHome(Actor actor, UUID playerUuid, String homeName) {
         return CompletableFuture.supplyAsync(() -> {
             UUID islandUuid = database.getIslandUuid(playerUuid).orElseThrow(IslandDoesNotExistException::new);
 
-            return delHome(islandUuid, playerUuid, homeName);
+            return delHome(actor, islandUuid, playerUuid, homeName);
         }, plugin.getBukkitAsyncExecutor()).thenCompose(future -> future);
     }
 
     /**
-     * Uses the island checked at the player's location, so a membership change cannot retarget it.
+     * Uses the resolved island, so a membership change cannot retarget the deletion.
      */
-    public CompletableFuture<Void> delHome(UUID islandUuid, UUID playerUuid, String homeName) {
-        return islandOperator.deleteHome(islandUuid, playerUuid, homeName.toLowerCase(Locale.ROOT));
+    public CompletableFuture<Void> delHome(Actor actor, UUID islandUuid, UUID playerUuid, String homeName) {
+        String normalizedName = homeName.toLowerCase(Locale.ROOT);
+        return islandDistributor.deleteHome(actor, islandUuid, playerUuid, normalizedName, () -> islandOperator.deleteHome(islandUuid, playerUuid, normalizedName));
     }
 
     public CompletableFuture<Void> home(UUID playerUuid, String homeName, UUID targetPlayerUuid) {

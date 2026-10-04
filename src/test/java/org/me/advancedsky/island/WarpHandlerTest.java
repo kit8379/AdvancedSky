@@ -84,7 +84,7 @@ class WarpHandlerTest {
         BukkitAsyncExecutor executor = mock(BukkitAsyncExecutor.class);
         doAnswer(call -> { call.<Runnable>getArgument(0).run(); return null; }).when(executor).execute(any());
         when(plugin.getBukkitAsyncExecutor()).thenReturn(executor);
-        distributor = mock(IslandDistributor.class);
+        distributor = spy(new IslandDistributor(plugin, database, null, null, null, null, "test"));
         players = mock(OnlinePlayerRegistry.class);
         cache = new IslandCache(plugin, database, grid);
         cache.load(island).join();
@@ -108,15 +108,14 @@ class WarpHandlerTest {
         assertEquals(Set.of("shop"), handler.getWarpNames(island).join());
         handler.delWarp(new Actor.Player(owner), island, "SHOP").join();
         assertTrue(handler.getWarpNames(island).join().isEmpty());
-        verifyNoInteractions(distributor);
+        verify(distributor, never()).teleportIsland(any(), any(), anyString());
     }
 
     @Test
     void teleportUsesIslandUuidWithoutLookingUpPlayerMembership() {
         set(owner, "default", 1);
         when(players.isOnline(visitor)).thenReturn(true);
-        when(distributor.teleportIsland(any(), any(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
+        doReturn(CompletableFuture.completedFuture(null)).when(distributor).teleportIsland(any(), any(), anyString());
         handler.warp(new Actor.Player(visitor), island, "default", visitor).join();
         handler.warp(new Actor.Player(visitor), island, "DEFAULT", visitor).join();
         verify(database, never()).getIslandUuid(any());
@@ -200,8 +199,7 @@ class WarpHandlerTest {
         sql("UPDATE test_islands SET `lock` = TRUE WHERE island_uuid = ?", island);
         assertFailure(IslandLockedException.class, handler.warp(new Actor.Player(visitor), island, "shop", visitor));
         sql("INSERT INTO test_island_coops VALUES (?, ?)", island, visitor);
-        when(distributor.teleportIsland(any(), any(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
+        doReturn(CompletableFuture.completedFuture(null)).when(distributor).teleportIsland(any(), any(), anyString());
         handler.warp(new Actor.Player(visitor), island, "shop", visitor).join();
         sql("INSERT INTO test_island_bans VALUES (?, ?)", island, visitor);
         assertFailure(PlayerBannedException.class, handler.warp(new Actor.Player(visitor), island, "shop", visitor));
@@ -214,7 +212,7 @@ class WarpHandlerTest {
         when(players.isOnline(visitor)).thenReturn(true);
         sql("UPDATE test_islands SET `lock` = TRUE WHERE island_uuid = ?", island);
         sql("INSERT INTO test_island_bans VALUES (?, ?)", island, visitor);
-        when(distributor.teleportIsland(any(), any(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
+        doReturn(CompletableFuture.completedFuture(null)).when(distributor).teleportIsland(any(), any(), anyString());
 
         handler.warp(admin, island, "shop", visitor).join();
         verify(distributor).teleportIsland(eq(island), eq(visitor), anyString());
@@ -264,7 +262,7 @@ class WarpHandlerTest {
 
         handler.delWarp(new Actor.Player(member), island, "default").join();
         assertNull(cache.get(island).getDefaultWarp());
-        homes.delHome(owner, "mine").join();
+        homes.delHome(new Actor.Player(owner), owner, "mine").join();
         cache.unload(island);
         cache.load(island).join();
         assertEquals("5.0,70.0,3.0,0.0,0.0", cache.get(island).getDefaultHomes().get(member));

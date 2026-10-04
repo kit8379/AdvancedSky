@@ -43,15 +43,15 @@ public class CoreHandler {
      * Releases players immediately; physical cleanup keeps the old slot and serial task reserved.
      */
     public CompletableFuture<Void> deleteIsland(Actor actor, UUID islandUuid) {
-        return islandOperator.deleteIsland(actor, islandUuid);
+        return islandDistributor.deleteIsland(actor, islandUuid, () -> islandOperator.deleteIsland(actor, islandUuid));
     }
 
     public CompletableFuture<Boolean> toggleIslandLock(Actor actor, UUID islandUuid) {
-        return islandOperator.toggleIslandLock(actor, islandUuid);
+        return islandDistributor.toggleIslandLock(actor, islandUuid, () -> islandOperator.toggleIslandLock(actor, islandUuid));
     }
 
     public CompletableFuture<Boolean> toggleIslandPvp(Actor actor, UUID islandUuid) {
-        return islandOperator.toggleIslandPvp(actor, islandUuid);
+        return islandDistributor.toggleIslandPvp(actor, islandUuid, () -> islandOperator.toggleIslandPvp(actor, islandUuid));
     }
 
     public CompletableFuture<Boolean> isIslandLock(UUID islandUuid) {
@@ -67,7 +67,7 @@ public class CoreHandler {
     }
 
     /**
-     * Own-island management uses the local cache and reads the player on their entity thread.
+     * Upgrade purchases use the local cache and read the player on their entity thread.
      */
     public CompletableFuture<UUID> getOwnIslandHere(UUID playerUuid) {
         return CompletableFuture.supplyAsync(() -> Bukkit.getPlayer(playerUuid), plugin.getGlobalRegionExecutor()).thenCompose(player -> {

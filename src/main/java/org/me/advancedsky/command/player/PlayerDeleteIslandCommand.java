@@ -3,7 +3,6 @@ package org.me.advancedsky.command.player;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.me.advancedsky.AdvancedSky;
-import org.me.advancedsky.exceptions.PlayerNotOnOwnIslandException;
 import org.me.advancedsky.api.AdvancedSkyAPI;
 import org.me.advancedsky.command.SubCommand;
 import org.me.advancedsky.config.ConfigHandler;
@@ -110,9 +109,7 @@ public class PlayerDeleteIslandCommand implements SubCommand {
             });
         }).exceptionally(ex -> {
             Throwable cause = ex.getCause();
-            if (cause instanceof PlayerNotOnOwnIslandException) {
-                player.sendMessage(config.getPlayerMustOnOwnIslandMessage());
-            } else if (cause instanceof IslandDoesNotExistException) {
+            if (cause instanceof IslandDoesNotExistException) {
                 player.sendMessage(config.getPlayerNoIslandMessage());
                 reset(playerUuid);
             } else if (cause instanceof NotIslandOwnerException) {

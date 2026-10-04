@@ -283,8 +283,9 @@ flowchart TB
 | **Schedulers** | Run block work and scans on region threads, player work on entity threads, and I/O asynchronously |
 
 Island management follows **commands → API → feature handlers → database/world**. Changes to
-the same island run in order. Creation, travel, invitation acceptance and automatic co-op quit
-cleanup use cross-server requests; ordinary management runs on the island's host.
+the same island run in order. Player management can start on any server and is routed to the
+island's host for database writes, cache refresh and world effects. Creation, travel, invitation
+acceptance and automatic co-op quit cleanup also use cross-server requests.
 
 ## Cross-server travel
 
@@ -383,7 +384,7 @@ help. Players without an island must run `/is create` explicitly.
 | --- | --- |
 | `/is create` | Create your island and go home |
 | `/is home [name]` | Return to a home from any server; alias `/is go` |
-| `/is invite <player>` | Invite a teammate while on your island |
+| `/is invite <player>` | Invite a teammate from any server |
 | `/is accept` | Accept a pending invitation |
 | `/is sethome [name]` | Set a named home on your island |
 | `/is setwarp [name]` | Set a shared island warp |
@@ -393,9 +394,10 @@ help. Players without an island must run `/is create` explicitly.
 | `/is lobby` | Return to a lobby server |
 
 > [!NOTE]
-> To manage an island, its owner or a team member must stand on their own active island.
-> This applies to aliases and operators using player commands too. Co-ops and visitors cannot
-> manage it. Creation, invitation acceptance/rejection, travel and read-only commands work elsewhere.
+> Owners and team members can manage their own island from any server, including a lobby.
+> `/is upgrade` requires standing on their own active island, including aliases and operators
+> using player commands. `sethome`, `setwarp` and `biome` validate the current location on that
+> island. Co-ops and visitors cannot manage another player's island.
 
 <details>
 <summary><strong>All player commands and permissions</strong></summary>
@@ -436,9 +438,9 @@ Permission prefix: `advancedsky.island.player.`. Append the suffix in the second
 | `/is lobby` | `lobby` | Return to the lobby |
 | `/is help [page]` | `help` | Show command help |
 
-Management commands are `delete`, `invite`, `removemember`, `setowner`, `leave`, `lock`, `pvp`,
-`expel`, `ban`, `unban`, `coop`, `uncoop`, `sethome`, `delhome`, `setwarp`, `delwarp`, `biome`
-and `upgrade`. Location-based edits must also be inside the island's 512 × 512 area in
+`delete`, `invite`, `removemember`, `setowner`, `leave`, `lock`, `pvp`, `expel`, `ban`, `unban`,
+`coop`, `uncoop`, `delhome` and `delwarp` work from any server. `upgrade` requires the player's
+own island. Location-based edits (`sethome`, `setwarp`, `biome`) must be inside that island in
 the world named after its host's `server.name`.
 
 </details>
@@ -473,10 +475,10 @@ Permission prefix: `advancedsky.island.admin.`. Append the suffix in the second 
 | `/isadmin purge` | `purge` | Retry incomplete deletions on this island server |
 | `/isadmin help [page]` | `help` | Show admin help |
 
-Changes to an existing island must run on **that island's host**, including console commands.
-Running them elsewhere reports the required host. Admins only need to stand on the target
-island for location-based home/warp edits; admin biome changes affect their current chunk.
-Creation, travel and read-only queries work across the network.
+Administrative management can start on any server and is routed to the island's host.
+Upgrade writes must run on that host. Admins must stand on the target island for location-based
+home/warp edits; admin biome changes affect their current chunk. Creation, travel and read-only
+queries work across the network.
 
 There are no `load` or `unload` commands because islands never leave their hosts.
 
@@ -496,7 +498,7 @@ advancedsky.island.admin.<subcommand>
 
 For a normal player group, grant the base permission and the player subcommands you want it
 to use. Operators bypass normal island access and protection checks, but the player-command
-location rule and deleting-island restrictions still apply.
+upgrade location rule and deleting-island restrictions still apply.
 
 ## Upgrades, limits and levels
 
@@ -519,7 +521,8 @@ counts then stay cached until the island is deleted. `/is level`, `/is top` and 
 expose the results and configured block values.
 
 Each player receives a border around the island they stand on, and movement outside the
-island boundary is refused. Co-op access ends a few seconds after a player disconnects and
+island boundary is refused for every player, including operators and vehicle passengers.
+Co-op access ends a few seconds after a player disconnects and
 is not online elsewhere. A five-minute sweep also removes co-ops no longer listed online,
 covering missed quit events after shutdowns or crashes once the registry is corrected.
 
@@ -593,11 +596,11 @@ api.admin(sender).deleteIsland(islandUuid);
 
 | Entry point | Scope |
 | --- | --- |
-| `api.player(uuid)` | Acts as that player on their own island; management checks their current location on their entity scheduler |
-| `api.admin(sender)` | Acts on arbitrary targets and records the sender's name in logs; management runs on the target host |
+| `api.player(uuid)` | Acts as that player on their own island from any server; upgrade purchases check their current location on their entity scheduler |
+| `api.admin(sender)` | Acts on arbitrary targets and preserves the sender's identity across servers; management is routed to the target host |
 | `api.getIslandUuidAt(location)` | Synchronous local lookup among islands hosted on the calling server |
 
-Creation and travel can span servers. Home, warp and biome locations must be on the target
+Creation, management and travel can span servers. Home, warp and biome locations must be on the target
 island's host and inside its area; admin biome changes may target any chunk. Before touching
 world, entity or inventory state in a completion, schedule work on the appropriate region or
 entity thread.
@@ -626,8 +629,8 @@ the network.
 | Island schematic cannot be loaded | Check `island.template.schematic`, put the `.schem` file at that path under `plugins/AdvancedSky/`, and check format, Minecraft version and selection bounds |
 | Cross-server travel fails | Check proxy server names, the BungeeCord plugin message channel, Redis connectivity and the destination server |
 | Requests expire or time out | Check that listed servers are online and their clocks are synchronized with NTP |
-| Management says you must be on your island | Use `/is home` first; ownership or a permission alone does not bypass the location rule |
-| Admin command names another host | Run the command on the reported island server, including when using the console |
+| Upgrade says you must be on your island | Use `/is home` first; ownership or a permission alone does not bypass the upgrade location rule |
+| Admin upgrade names another host | Run the upgrade command on the reported island server, including when using the console |
 | Deleted island's slot is still reserved | Read the host's cleanup logs; startup or `/isadmin purge` retries unfinished cleanup |
 | A capped block cannot be placed after restart | Wait for the island's first automatic level scan to populate its block counts |
 | An island's rank is `0` or looks stale | Allow up to a minute for the leaderboard refresh |

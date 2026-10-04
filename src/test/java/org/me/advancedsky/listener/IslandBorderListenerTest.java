@@ -15,6 +15,8 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.vehicle.VehicleMoveEvent;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.grid.IslandGrid;
@@ -96,9 +98,23 @@ class IslandBorderListenerTest {
         verify(player).setWorldBorder(null);
     }
 
-    @Test
-    void aRiderSteeringOutOfTheBoundaryIsPutBackWithTheMount() {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void aPlayerCannotWalkOutOfTheIslandBoundary(boolean operator) {
         when(config.getUpgradeLimit("island-size", 1)).thenReturn(75);
+        when(player.isOp()).thenReturn(operator);
+        PlayerMoveEvent event = new PlayerMoveEvent(player, center.clone().add(-37, 0, 0), center.clone().add(-38, 0, 0));
+
+        listener.onPlayerMove(event);
+
+        assertTrue(event.isCancelled());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void aRiderSteeringOutOfTheBoundaryIsPutBackWithTheMount(boolean operator) {
+        when(config.getUpgradeLimit("island-size", 1)).thenReturn(75);
+        when(player.isOp()).thenReturn(operator);
         Vehicle mount = mock(Vehicle.class);
         when(player.getVehicle()).thenReturn(mount);
         when(mount.getPassengers()).thenReturn(List.of(player));
@@ -112,9 +128,11 @@ class IslandBorderListenerTest {
         verify(mount).teleportAsync(inside, PlayerTeleportEvent.TeleportCause.PLUGIN);
     }
 
-    @Test
-    void aRiderOnAMobInAMinecartRollingOutOfTheBoundaryIsPutBackWithTheMinecart() {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void aRiderOnAMobInAMinecartRollingOutOfTheBoundaryIsPutBackWithTheMinecart(boolean operator) {
         when(config.getUpgradeLimit("island-size", 1)).thenReturn(75);
+        when(player.isOp()).thenReturn(operator);
         Vehicle minecart = mock(Vehicle.class);
         Entity pig = mock(Entity.class);
         when(minecart.getPassengers()).thenReturn(List.of(pig));

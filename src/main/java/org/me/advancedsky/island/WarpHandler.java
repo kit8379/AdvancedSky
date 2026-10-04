@@ -65,7 +65,8 @@ public class WarpHandler {
     }
 
     public CompletableFuture<Void> delWarp(Actor actor, UUID islandUuid, String warpName) {
-        return islandOperator.deleteWarp(actor, islandUuid, warpName.toLowerCase(Locale.ROOT));
+        String normalizedName = warpName.toLowerCase(Locale.ROOT);
+        return islandDistributor.deleteWarp(actor, islandUuid, normalizedName, () -> islandOperator.deleteWarp(actor, islandUuid, normalizedName));
     }
 
     /**

@@ -25,11 +25,11 @@ public class CoopHandler {
     }
 
     public CompletableFuture<Void> coopPlayer(Actor actor, UUID islandUuid, UUID playerUuid) {
-        return islandOperator.addCoop(actor, islandUuid, playerUuid);
+        return islandDistributor.addCoop(actor, islandUuid, playerUuid, () -> islandOperator.addCoop(actor, islandUuid, playerUuid));
     }
 
     public CompletableFuture<Void> unCoopPlayer(Actor actor, UUID islandUuid, UUID playerUuid) {
-        return islandOperator.removeCoop(actor, islandUuid, playerUuid);
+        return islandDistributor.removeCoop(actor, islandUuid, playerUuid, () -> islandOperator.removeCoop(actor, islandUuid, playerUuid));
     }
 
     public CompletableFuture<Void> deleteAllCoopOfPlayer(UUID playerUuid) {
@@ -38,7 +38,7 @@ public class CoopHandler {
                 return CompletableFuture.completedFuture(null);
             }
 
-            return CompletableFuture.allOf(islands.stream().map(islandUuid -> islandDistributor.removeCoopAfterQuit(islandUuid, playerUuid, () -> unCoopPlayer(new Actor.Bypass("coop quit cleanup"), islandUuid, playerUuid)).exceptionally(e -> {
+            return CompletableFuture.allOf(islands.stream().map(islandUuid -> unCoopPlayer(new Actor.Bypass("coop quit cleanup"), islandUuid, playerUuid).exceptionally(e -> {
                 plugin.severe("Failed to clean up coop for " + playerUuid + " on island " + islandUuid, e);
                 return null;
             })).toArray(CompletableFuture[]::new));

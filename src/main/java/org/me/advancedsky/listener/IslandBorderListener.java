@@ -107,7 +107,7 @@ public class IslandBorderListener implements Listener {
         } else {
             // Leaving the boundary of the island they stand on is refused, as a world border would.
             long boundary = boundaryAt(player, from);
-            if (boundary != NO_BOUNDARY && !player.isOp() && isInside(boundary, from) && !isInside(boundary, to)) {
+            if (boundary != NO_BOUNDARY && isInside(boundary, from) && !isInside(boundary, to)) {
                 event.setCancelled(true);
                 return;
             }
@@ -135,13 +135,11 @@ public class IslandBorderListener implements Listener {
         }
 
         for (Player player : EntityUtils.riders(vehicle)) {
-            if (!player.isOp()) {
-                long boundary = boundaryAt(player, from);
-                if (boundary != NO_BOUNDARY && isInside(boundary, from) && !isInside(boundary, to)) {
-                    vehicle.setVelocity(new Vector());
-                    vehicle.teleportAsync(from, PlayerTeleportEvent.TeleportCause.PLUGIN);
-                    return true;
-                }
+            long boundary = boundaryAt(player, from);
+            if (boundary != NO_BOUNDARY && isInside(boundary, from) && !isInside(boundary, to)) {
+                vehicle.setVelocity(new Vector());
+                vehicle.teleportAsync(from, PlayerTeleportEvent.TeleportCause.PLUGIN);
+                return true;
             }
         }
         return false;

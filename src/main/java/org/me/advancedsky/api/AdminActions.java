@@ -105,7 +105,7 @@ public final class AdminActions {
     }
 
     public CompletableFuture<Void> deleteHome(UUID homeOwnerUuid, String homeName) {
-        return homeHandler.delHome(homeOwnerUuid, homeName);
+        return homeHandler.delHome(actor, homeOwnerUuid, homeName);
     }
 
     public CompletableFuture<Void> home(UUID homeOwnerUuid, String homeName, UUID teleportPlayerUuid) {

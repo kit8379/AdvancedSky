@@ -2,6 +2,7 @@ package org.me.advancedsky.island;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.json.JSONObject;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.network.IslandOperator;
 import org.me.advancedsky.cache.IslandCache;
@@ -11,6 +12,7 @@ import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.economy.EconomyHandler;
 import org.me.advancedsky.exceptions.IslandNotHostedHereException;
 import org.me.advancedsky.model.Actor;
+import org.me.advancedsky.messaging.CrossServerMessenger;
 import org.me.advancedsky.network.IslandDistributor;
 import org.me.advancedsky.thread.BukkitAsyncExecutor;
 import org.me.advancedsky.world.WorldHandler;
@@ -33,14 +35,15 @@ class LocalManagementTest {
     private final ConfigHandler config = mock(ConfigHandler.class);
     private final DatabaseHandler database = mock(DatabaseHandler.class);
     private final IslandCache cache = mock(IslandCache.class);
-    private final IslandDistributor distributor = mock(IslandDistributor.class);
+    private final CrossServerMessenger messenger = mock(CrossServerMessenger.class);
+    private final IslandDistributor distributor = new IslandDistributor(plugin, database, null, null, messenger, null, "local");
     private final WorldHandler world = mock(WorldHandler.class);
     private final OnlinePlayerRegistry online = mock(OnlinePlayerRegistry.class);
     private final EconomyHandler economy = mock(EconomyHandler.class);
     private final IslandOperator islandOperator = new IslandOperator(plugin, database, world, cache, null, economy, online, "local");
     private final CoreHandler core = new CoreHandler(plugin, config, database, distributor, cache, islandOperator);
     private final PlayerHandler members = new PlayerHandler(plugin, database, distributor, null, online, islandOperator);
-    private final BanHandler bans = new BanHandler(plugin, database, islandOperator);
+    private final BanHandler bans = new BanHandler(plugin, database, distributor, islandOperator);
     private final CoopHandler coops = new CoopHandler(plugin, database, distributor, islandOperator);
     private final HomeHandler homes = new HomeHandler(plugin, config, database, distributor, online, null, islandOperator);
     private final WarpHandler warps = new WarpHandler(plugin, config, database, distributor, online, null, islandOperator);
@@ -57,9 +60,33 @@ class LocalManagementTest {
     }
 
     @Test
-    void playerAndAdminManagementRejectOtherHostsBeforeWritingOrCharging() {
+    void upgradeWritesRejectOtherHostsBeforeWritingOrCharging() {
         when(database.getIslandServer(island)).thenReturn(Optional.of("remote"));
         for (Actor actor : List.of(new Actor.Player(player), new Actor.Bypass("console"))) {
+            List<Supplier<CompletableFuture<?>>> operations = List.of(
+                    () -> upgrades.setUpgradeLevel(actor, island, "team-limit", 2),
+                    () -> upgrades.buyUpgrade(actor, island, player, "team-limit"));
+            for (Supplier<CompletableFuture<?>> operation : operations) {
+                Throwable cause = assertThrows(CompletionException.class, () -> operation.get().join()).getCause();
+                assertInstanceOf(IslandNotHostedHereException.class, cause);
+                assertEquals("remote", ((IslandNotHostedHereException) cause).getServer());
+            }
+        }
+        verifyNoInteractions(messenger, world, economy, cache, online);
+        verify(database, never()).addIslandPlayer(any(), any(), any(), anyString());
+        verify(database, never()).updateIslandUpgradeLevel(any(), any(), anyString(), anyInt(), anyInt());
+    }
+
+    @Test
+    void playerAndAdminManagementReachesOtherHostsWithoutWritingLocally() {
+        when(database.getIslandServer(island)).thenReturn(Optional.of("remote"));
+        for (Actor actor : List.of(new Actor.Player(player), new Actor.Bypass("console"))) {
+            when(messenger.request(eq("remote"), anyString(), any())).thenAnswer(call -> {
+                JSONObject payload = call.getArgument(2);
+                assertEquals(actor, Actor.fromJson(payload));
+                assertEquals(island.toString(), payload.getString("islandUuid"));
+                return CompletableFuture.completedFuture(new JSONObject().put("enabled", true));
+            });
             List<Supplier<CompletableFuture<?>>> operations = List.of(
                     () -> core.deleteIsland(actor, island),
                     () -> core.toggleIslandLock(actor, island),
@@ -72,19 +99,22 @@ class LocalManagementTest {
                     () -> bans.unbanPlayer(actor, island, player),
                     () -> coops.coopPlayer(actor, island, player),
                     () -> coops.unCoopPlayer(actor, island, player),
-                    () -> homes.delHome(island, player, "farm"),
-                    () -> warps.delWarp(actor, island, "shop"),
-                    () -> upgrades.setUpgradeLevel(actor, island, "team-limit", 2),
-                    () -> upgrades.buyUpgrade(actor, island, player, "team-limit"));
-            for (Supplier<CompletableFuture<?>> operation : operations) {
-                Throwable cause = assertThrows(CompletionException.class, () -> operation.get().join()).getCause();
-                assertInstanceOf(IslandNotHostedHereException.class, cause);
-                assertEquals("remote", ((IslandNotHostedHereException) cause).getServer());
-            }
+                    () -> homes.delHome(actor, island, player, "farm"),
+                    () -> warps.delWarp(actor, island, "shop"));
+            for (Supplier<CompletableFuture<?>> operation : operations) operation.get().join();
         }
-        verifyNoInteractions(distributor, world, economy, cache, online);
-        verify(database, never()).addIslandPlayer(any(), any(), any(), anyString());
-        verify(database, never()).updateIslandUpgradeLevel(any(), any(), anyString(), anyInt(), anyInt());
+        verify(messenger, times(26)).request(eq("remote"), anyString(), any());
+        verifyNoInteractions(world, economy, cache, online);
+        verify(database, never()).deleteWarpPoint(any(), any(), anyString());
+        verify(database, never()).deleteIslandPlayer(any(), any(), any());
+    }
+
+    @Test
+    void upgradePurchasesStillRejectOtherHostsBeforeCharging() {
+        when(database.getIslandServer(island)).thenReturn(Optional.of("remote"));
+        Throwable cause = assertThrows(CompletionException.class, () -> upgrades.buyUpgrade(new Actor.Player(player), island, player, "team-limit").join()).getCause();
+        assertInstanceOf(IslandNotHostedHereException.class, cause);
+        verifyNoInteractions(messenger, economy, cache);
     }
 
     @Test
@@ -102,11 +132,11 @@ class LocalManagementTest {
             verify(database).toggleIslandPvp(actor, island);
         }
         verify(cache, times(8)).reload(island);
-        verifyNoInteractions(distributor, world, economy);
+        verifyNoInteractions(messenger, world, economy);
     }
 
     @Test
-    void sameIslandTasksKeepCallOrderBeforeTheAsyncWorkersRun() {
+    void sameIslandHostTasksKeepCallOrderBeforeTheAsyncWorkersRun() {
         when(database.getIslandServer(island)).thenReturn(Optional.of("local"));
         when(cache.reload(island)).thenReturn(CompletableFuture.completedFuture(null));
         BukkitAsyncExecutor async = mock(BukkitAsyncExecutor.class);
@@ -115,8 +145,8 @@ class LocalManagementTest {
         when(plugin.getBukkitAsyncExecutor()).thenReturn(async);
         Actor actor = new Actor.Bypass("console");
 
-        CompletableFuture<Void> added = members.addMember(actor, island, player, "member");
-        CompletableFuture<Boolean> pvp = core.toggleIslandPvp(actor, island);
+        CompletableFuture<Void> added = islandOperator.addMember(actor, island, player, "member");
+        CompletableFuture<Boolean> pvp = islandOperator.toggleIslandPvp(actor, island);
 
         assertEquals(1, scheduled.size());
         scheduled.removeFirst().run();
@@ -149,6 +179,6 @@ class LocalManagementTest {
         removed.join();
         pvp.join();
         verify(database).toggleIslandPvp(actor, island);
-        verifyNoInteractions(distributor);
+        verifyNoInteractions(messenger);
     }
 }

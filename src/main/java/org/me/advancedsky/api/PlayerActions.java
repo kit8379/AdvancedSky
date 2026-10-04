@@ -22,8 +22,8 @@ import java.util.function.Supplier;
  * <p>
  * Island roles (OWNER for delete/transfer, MEMBER for the rest) are still enforced where they
  * must be: inside the write transaction, under the island row lock.
- * Management requires the player to stand on their own island on this server. Creation,
- * invitation acceptance/rejection and travel remain available from elsewhere.
+ * Management resolves membership independently of the player's location. Upgrade purchases
+ * require the player to stand on their own island; location-based edits validate their target.
  */
 public final class PlayerActions {
 
@@ -67,11 +67,10 @@ public final class PlayerActions {
     }
 
     /**
-     * Resolves the player's own island from their current location on their entity thread.
-     * An offline player, visitor, co-op or player elsewhere cannot manage the island.
+     * Resolves the player's own island from membership, independently of their location.
      */
     private CompletableFuture<UUID> ownIsland() {
-        return coreHandler.getOwnIslandHere(playerUuid);
+        return coreHandler.getIslandUuid(playerUuid);
     }
 
     // ---- island lifecycle -------------------------------------------------------------------
@@ -115,7 +114,7 @@ public final class PlayerActions {
             }
 
             Invitation pending = invite.get();
-            return playerHandler.removePendingInvite(playerUuid).thenCompose(v -> playerHandler.acceptInviteMember(pending.getIslandUuid(), playerUuid)).thenApply(v -> Optional.of(pending));
+            return playerHandler.removePendingInvite(playerUuid).thenCompose(v -> playerHandler.addMember(actor, pending.getIslandUuid(), playerUuid, "member")).thenApply(v -> Optional.of(pending));
         }));
     }
 
@@ -196,7 +195,7 @@ public final class PlayerActions {
     }
 
     public CompletableFuture<Void> deleteHome(String homeName) {
-        return inOrder(() -> ownIsland().thenCompose(islandUuid -> homeHandler.delHome(islandUuid, playerUuid, homeName)));
+        return inOrder(() -> ownIsland().thenCompose(islandUuid -> homeHandler.delHome(actor, islandUuid, playerUuid, homeName)));
     }
 
     public CompletableFuture<Void> home(String homeName) {
@@ -249,9 +248,9 @@ public final class PlayerActions {
 
     /**
      * MEMBER, enforced in the level write. Paid from this player's own balance; completes with
-     * the level bought.
+     * the level bought. The player must be on their own island when the purchase starts.
      */
     public CompletableFuture<Integer> buyUpgrade(String upgradeId) {
-        return inOrder(() -> ownIsland().thenCompose(islandUuid -> upgradeHandler.buyUpgrade(actor, islandUuid, playerUuid, upgradeId)));
+        return inOrder(() -> coreHandler.getOwnIslandHere(playerUuid).thenCompose(islandUuid -> upgradeHandler.buyUpgrade(actor, islandUuid, playerUuid, upgradeId)));
     }
 }

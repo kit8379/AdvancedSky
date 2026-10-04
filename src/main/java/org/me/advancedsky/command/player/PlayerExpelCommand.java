@@ -3,7 +3,6 @@ package org.me.advancedsky.command.player;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.me.advancedsky.AdvancedSky;
-import org.me.advancedsky.exceptions.PlayerNotOnOwnIslandException;
 import org.me.advancedsky.api.AdvancedSkyAPI;
 import org.me.advancedsky.command.AsyncTabComplete;
 import org.me.advancedsky.command.SubCommand;
@@ -84,9 +83,7 @@ public class PlayerExpelCommand implements SubCommand, AsyncTabComplete {
             return api.player(playerUuid).expelPlayer(targetPlayerUuid).thenRun(() -> player.sendMessage(config.getPlayerExpelSuccessMessage(targetPlayerName)));
         }).exceptionally(ex -> {
             Throwable cause = ex.getCause();
-            if (cause instanceof PlayerNotOnOwnIslandException) {
-                player.sendMessage(config.getPlayerMustOnOwnIslandMessage());
-            } else if (cause instanceof IslandDoesNotExistException) {
+            if (cause instanceof IslandDoesNotExistException) {
                 player.sendMessage(config.getPlayerNoIslandMessage());
             } else if (cause instanceof PlayerNotOnlineException) {
                 player.sendMessage(config.getPlayerNotOnlineMessage(targetPlayerName));

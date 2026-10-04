@@ -5,7 +5,7 @@ import org.bukkit.World;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.island.CoreHandler;
 import org.me.advancedsky.island.WarpHandler;
-import org.me.advancedsky.exceptions.PlayerNotOnOwnIslandException;
+import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.model.Actor;
 
 import java.util.UUID;
@@ -22,14 +22,14 @@ class WarpActionsTest {
     private final Location location = new Location(world, 1, 2, 3);
 
     @Test
-    void directApiCallsCannotWriteWarpsWhileThePlayerIsElsewhere() {
+    void directApiCallsCannotWriteWarpsWithoutIslandMembership() {
         UUID player = UUID.randomUUID();
         CoreHandler core = mock(CoreHandler.class);
         WarpHandler warps = mock(WarpHandler.class);
-        when(core.getOwnIslandHere(player)).thenReturn(CompletableFuture.failedFuture(new PlayerNotOnOwnIslandException()));
+        when(core.getIslandUuid(player)).thenReturn(CompletableFuture.failedFuture(new IslandDoesNotExistException()));
         PlayerActions actions = new PlayerActions(player, new ConcurrentHashMap<>(), core, null, null, warps, null, null, null, null);
-        assertInstanceOf(PlayerNotOnOwnIslandException.class, assertThrows(CompletionException.class, () -> actions.setWarp("shop", location).join()).getCause());
-        assertInstanceOf(PlayerNotOnOwnIslandException.class, assertThrows(CompletionException.class, () -> actions.deleteWarp("shop").join()).getCause());
+        assertInstanceOf(IslandDoesNotExistException.class, assertThrows(CompletionException.class, () -> actions.setWarp("shop", location).join()).getCause());
+        assertInstanceOf(IslandDoesNotExistException.class, assertThrows(CompletionException.class, () -> actions.deleteWarp("shop").join()).getCause());
         verifyNoInteractions(warps);
     }
 
@@ -39,7 +39,7 @@ class WarpActionsTest {
         UUID island = UUID.randomUUID();
         CoreHandler core = mock(CoreHandler.class);
         WarpHandler warps = mock(WarpHandler.class);
-        when(core.getOwnIslandHere(player)).thenReturn(CompletableFuture.completedFuture(island));
+        when(core.getIslandUuid(player)).thenReturn(CompletableFuture.completedFuture(island));
         when(warps.setWarp(any(), any(), anyString(), any(Location.class))).thenReturn(CompletableFuture.completedFuture(null));
         when(warps.delWarp(any(), any(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
         PlayerActions actions = new PlayerActions(player, new ConcurrentHashMap<>(), core, null, null, warps, null, null, null, null);
@@ -49,6 +49,7 @@ class WarpActionsTest {
 
         verify(warps).setWarp(new Actor.Player(player), island, "shop", location);
         verify(warps).delWarp(new Actor.Player(player), island, "shop");
+        verify(core, never()).getOwnIslandHere(any());
     }
 
     @Test

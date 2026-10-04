@@ -44,7 +44,7 @@ class PlayerActionsOrderTest {
         when(database.getIslandServer(oldIsland)).thenReturn(Optional.of("host"));
         IslandOperator lifecycle = new IslandOperator(plugin, database, world, cache, null, null, null, "host");
         CoreHandler core = mock(CoreHandler.class);
-        when(core.getOwnIslandHere(player)).thenReturn(CompletableFuture.completedFuture(oldIsland));
+        when(core.getIslandUuid(player)).thenReturn(CompletableFuture.completedFuture(oldIsland));
         when(core.deleteIsland(any(Actor.class), eq(oldIsland))).thenAnswer(call -> lifecycle.deleteIsland(call.getArgument(0), oldIsland));
         when(core.createIsland(player)).thenAnswer(call -> lifecycle.createIsland(newIsland, player));
         ConcurrentHashMap<UUID, CompletableFuture<Void>> chains = new ConcurrentHashMap<>();
@@ -67,21 +67,21 @@ class PlayerActionsOrderTest {
     void aHomeDeletedRightAfterItWasSetWaitsForTheSet() {
         UUID player = UUID.randomUUID();
         CoreHandler core = mock(CoreHandler.class);
-        when(core.getOwnIslandHere(player)).thenReturn(CompletableFuture.completedFuture(UUID.randomUUID()));
+        when(core.getIslandUuid(player)).thenReturn(CompletableFuture.completedFuture(UUID.randomUUID()));
         HomeHandler homes = mock(HomeHandler.class);
         CompletableFuture<Void> set = new CompletableFuture<>();
         Location location = mock(Location.class);
         when(homes.setHome(any(Actor.class), eq(player), eq("farm"), eq(location))).thenReturn(set);
-        when(homes.delHome(any(UUID.class), eq(player), eq("farm"))).thenReturn(CompletableFuture.completedFuture(null));
+        when(homes.delHome(any(Actor.class), any(UUID.class), eq(player), eq("farm"))).thenReturn(CompletableFuture.completedFuture(null));
         ConcurrentHashMap<UUID, CompletableFuture<Void>> chains = new ConcurrentHashMap<>();
 
         // Two commands, each with a handle of its own, as the commands get them.
         new PlayerActions(player, chains, core, null, homes, null, null, null, null, null).setHome("farm", location);
         CompletableFuture<Void> deleted = new PlayerActions(player, chains, core, null, homes, null, null, null, null, null).deleteHome("farm");
-        verify(homes, never()).delHome(any(UUID.class), eq(player), eq("farm"));
+        verify(homes, never()).delHome(any(Actor.class), any(UUID.class), eq(player), eq("farm"));
 
         set.complete(null);
-        verify(homes).delHome(any(UUID.class), eq(player), eq("farm"));
+        verify(homes).delHome(any(Actor.class), any(UUID.class), eq(player), eq("farm"));
         deleted.join();
     }
 }
