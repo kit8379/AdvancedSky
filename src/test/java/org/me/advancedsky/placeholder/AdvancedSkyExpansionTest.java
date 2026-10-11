@@ -188,7 +188,7 @@ class AdvancedSkyExpansionTest {
     }
 
     @Test
-    void expiredValuesAreNotUsedWhileTheCurrentDataIsLoading() {
+    void refreshServesPreviousValuesThenClearsDeletedIslandAndLeaderboard() {
         when(api.getTopIslandLevels(1)).thenReturn(CompletableFuture.completedFuture(
                 List.of(new IslandTop(islandId, ownerId, 42, Set.of(playerId)))));
         assertEquals("42", expansion.onRequest(player, "island_level"));
@@ -198,8 +198,8 @@ class AdvancedSkyExpansionTest {
         CompletableFuture<List<IslandTop>> topRefresh = new CompletableFuture<>();
         when(api.getIslandUuid(playerId)).thenReturn(refresh);
         when(api.getTopIslandLevels(1)).thenReturn(topRefresh);
-        assertEquals("", expansion.onRequest(player, "island_level"));
-        assertEquals("", expansion.onRequest(null, "top_1_level"));
+        assertEquals("42", expansion.onRequest(player, "island_level"));
+        assertEquals("42", expansion.onRequest(null, "top_1_level"));
         refresh.completeExceptionally(new IslandDoesNotExistException());
         topRefresh.complete(List.of());
         assertEquals("0", expansion.onRequest(player, "island_level"));

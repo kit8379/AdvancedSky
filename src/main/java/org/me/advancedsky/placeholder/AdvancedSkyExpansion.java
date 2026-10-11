@@ -210,10 +210,11 @@ public final class AdvancedSkyExpansion extends PlaceholderExpansion {
         requestedTopLimit = Math.max(requestedTopLimit, position);
         long now = clock.getAsLong();
         if (topCache == null || (topCache.data().isDone() && (loadedTopLimit < requestedTopLimit || now - topCache.requestedAt() >= RANK_REFRESH_NANOS))) {
+            Map<String, String> previous = topCache == null || topCache.data().isCompletedExceptionally() ? Map.of() : topCache.data().getNow(Map.of());
             loadedTopLimit = requestedTopLimit;
-            topCache = new Cached<>(loadTop(loadedTopLimit), now);
+            topCache = new Cached<>(loadTop(loadedTopLimit), previous, now);
         }
-        return topCache.data().getNow(Map.of()).getOrDefault(key, "");
+        return topCache.data().getNow(topCache.previous()).getOrDefault(key, "");
     }
 
     private CompletableFuture<Map<String, String>> loadTop(int limit) {
@@ -258,17 +259,19 @@ public final class AdvancedSkyExpansion extends PlaceholderExpansion {
                 if (current != null && (!current.data().isDone() || now - current.requestedAt() < refreshNanos)) {
                     return current;
                 }
+                V previous = current == null || current.data().isCompletedExceptionally() ? null : current.data().getNow(null);
                 CompletableFuture<V> data = loader.get().whenComplete((result, error) -> {
                     if (error != null && !(cause(error) instanceof IslandDoesNotExistException)) {
                         plugin.severe("Failed to load placeholder data for " + key, cause(error));
                     }
                 });
-                return new Cached<>(data, now);
+                return new Cached<>(data, previous, now);
             });
-            return cached.data();
+            // Keep serving the previous successful value during refresh, without blocking callers.
+            return !cached.data().isDone() && cached.previous() != null ? CompletableFuture.completedFuture(cached.previous()) : cached.data();
         }
     }
 
-    private record Cached<V>(CompletableFuture<V> data, long requestedAt) {
+    private record Cached<V>(CompletableFuture<V> data, V previous, long requestedAt) {
     }
 }
