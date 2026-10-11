@@ -76,7 +76,7 @@ class WarpActionsTest {
         when(warps.setWarp(any(), any(), anyString(), any(Location.class))).thenReturn(CompletableFuture.completedFuture(null));
         when(warps.delWarp(any(), any(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
         when(warps.warp(any(), any(), anyString(), any())).thenReturn(CompletableFuture.completedFuture(null));
-        AdminActions actions = new AdminActions("test", core, null, null, warps, null, null, null, null);
+        AdminActions actions = new AdminActions("test", core, null, null, warps, null, null, null, null, null);
 
         actions.setWarp(island, "shop", location).join();
         actions.deleteWarp(island, "shop").join();

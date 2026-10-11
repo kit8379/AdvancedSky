@@ -40,19 +40,23 @@ public class HomeHandler {
     }
 
     /**
-     * Sets a home at a location on this server, which must lie inside the boundary of the
-     * player's own island: in the island world of the server hosting it.
+     * Sets a home in the player's island host world. Players must use their own boundary;
+     * an operator may preserve a home pointing to another island on that host.
      */
     public CompletableFuture<Void> setHome(Actor actor, UUID playerUuid, String homeName, Location location) {
         return CompletableFuture.supplyAsync(() -> {
             UUID islandUuid = database.getIslandUuid(playerUuid).orElseThrow(IslandDoesNotExistException::new);
 
             String host = database.getIslandServer(islandUuid).orElseThrow(IslandDoesNotExistException::new);
-            int slot = database.getIslandSlot(islandUuid).orElseThrow(IslandDoesNotExistException::new);
-            // Beyond the boundary a teleport is always refused, so no point may be set there.
-            int size = config.getUpgradeLimit("island-size", database.getIslandUpgradeLevel(islandUuid, "island-size"));
-            if (!host.equals(config.getServerName()) || location.getWorld() == null || !location.getWorld().getName().equals(config.getIslandWorldName()) || !islandGrid.isInArea(slot, location.getX(), location.getZ()) || !islandGrid.isInsideIsland(slot, size, location.getBlockX(), location.getBlockZ())) {
+            if (!host.equals(config.getServerName()) || location.getWorld() == null || !location.getWorld().getName().equals(config.getIslandWorldName())) {
                 throw new LocationNotInIslandException();
+            }
+            if (!(actor instanceof Actor.Bypass)) {
+                int slot = database.getIslandSlot(islandUuid).orElseThrow(IslandDoesNotExistException::new);
+                int size = config.getUpgradeLimit("island-size", database.getIslandUpgradeLevel(islandUuid, "island-size"));
+                if (!islandGrid.isInArea(slot, location.getX(), location.getZ()) || !islandGrid.isInsideIsland(slot, size, location.getBlockX(), location.getBlockZ())) {
+                    throw new LocationNotInIslandException();
+                }
             }
 
             String normalizedHomeName = homeName.toLowerCase(Locale.ROOT);

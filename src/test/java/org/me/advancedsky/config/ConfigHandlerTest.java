@@ -3,6 +3,7 @@ package org.me.advancedsky.config;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.me.advancedsky.AdvancedSky;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -20,6 +21,17 @@ class ConfigHandlerTest {
 
     @TempDir
     Path dataFolder;
+
+    @Test
+    void homeNamesAreInsertedAsLiteralTextInEveryMessage() {
+        ConfigHandler config = new ConfigHandler(plugin());
+        String home = "臨時據點 <red>1\\";
+        var plain = PlainTextComponentSerializer.plainText();
+        assertTrue(plain.serialize(config.getPlayerSetHomeSuccessMessage(home)).contains(home));
+        assertTrue(plain.serialize(config.getPlayerDelHomeSuccessMessage(home)).contains(home));
+        assertTrue(plain.serialize(config.getPlayerNoHomeMessage(home)).contains(home));
+        assertTrue(plain.serialize(config.getPlayerHomeSuccessMessage(home)).contains(home));
+    }
 
     @Test
     void anEntryTakenOutOfAnOperatorsListStaysOut() throws IOException {

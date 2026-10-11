@@ -82,7 +82,7 @@ public class AdvancedSkyAPI {
     /** Act as an operator: arbitrary targets, no player rules, the sender's name goes to logs. */
     @SuppressWarnings("unused")
     public AdminActions admin(CommandSender sender) {
-        return new AdminActions(sender.getName(), coreHandler, playerHandler, homeHandler, warpHandler, banHandler, coopHandler, biomeHandler, upgradeHandler);
+        return new AdminActions(sender.getName(), coreHandler, playerHandler, homeHandler, warpHandler, banHandler, coopHandler, biomeHandler, upgradeHandler, levelHandler);
     }
 
     // ================================================================================================================
@@ -92,6 +92,12 @@ public class AdvancedSkyAPI {
     @SuppressWarnings("unused")
     public CompletableFuture<UUID> getIslandUuid(UUID playerUuid) {
         return coreHandler.getIslandUuid(playerUuid);
+    }
+
+    /** The grid centre of an island hosted here; fails for another host or a missing world. */
+    @SuppressWarnings("unused")
+    public CompletableFuture<Location> getIslandCenter(UUID islandUuid) {
+        return coreHandler.getIslandCenter(islandUuid);
     }
 
     /**

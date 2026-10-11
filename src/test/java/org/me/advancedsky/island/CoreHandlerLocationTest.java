@@ -13,11 +13,16 @@ import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.exceptions.PlayerNotOnOwnIslandException;
+import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.IslandNotHostedHereException;
+import org.me.advancedsky.exceptions.WorldNotFoundException;
 import org.me.advancedsky.model.Island;
+import org.me.advancedsky.thread.BukkitAsyncExecutor;
 import org.me.advancedsky.thread.GlobalRegionExecutor;
 import org.mockito.MockedStatic;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletionException;
@@ -48,6 +53,9 @@ class CoreHandlerLocationTest {
         GlobalRegionExecutor global = mock(GlobalRegionExecutor.class);
         doAnswer(call -> { call.<Runnable>getArgument(0).run(); return null; }).when(global).execute(any());
         when(plugin.getGlobalRegionExecutor()).thenReturn(global);
+        BukkitAsyncExecutor async = mock(BukkitAsyncExecutor.class);
+        doAnswer(call -> { call.<Runnable>getArgument(0).run(); return null; }).when(async).execute(any());
+        when(plugin.getBukkitAsyncExecutor()).thenReturn(async);
         when(scheduler.run(eq(plugin), any(), any())).thenAnswer(call -> {
             call.<Consumer<ScheduledTask>>getArgument(1).accept(mock(ScheduledTask.class));
             return mock(ScheduledTask.class);
@@ -93,6 +101,55 @@ class CoreHandlerLocationTest {
             assertInstanceOf(PlayerNotOnOwnIslandException.class, assertThrows(CompletionException.class, () -> core.getOwnIslandHere(playerId).join()).getCause());
         }
         verifyNoInteractions(database);
+    }
+
+    @Test
+    void islandCentreUsesItsAllocatedSlotInTheLocalWorld() {
+        when(config.getServerName()).thenReturn("sky1");
+        when(config.getIslandHeight()).thenReturn(100);
+        when(database.getIslandServer(islandId)).thenReturn(Optional.of("sky1"));
+        when(database.getIslandSlot(islandId)).thenReturn(Optional.of(1));
+        try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
+            bukkit.when(() -> Bukkit.getWorld("islands")).thenReturn(world);
+            Location center = core.getIslandCenter(islandId).join();
+            assertSame(world, center.getWorld());
+            assertEquals(2304, center.getBlockX());
+            assertEquals(100, center.getBlockY());
+            assertEquals(256, center.getBlockZ());
+        }
+    }
+
+    @Test
+    void islandCentreRejectsAnotherHost() {
+        when(config.getServerName()).thenReturn("sky1");
+        when(database.getIslandServer(islandId)).thenReturn(Optional.of("sky2"));
+        IslandNotHostedHereException error = assertInstanceOf(IslandNotHostedHereException.class,
+                assertThrows(CompletionException.class, () -> core.getIslandCenter(islandId).join()).getCause());
+        assertEquals("sky2", error.getServer());
+        verify(database, never()).getIslandSlot(any());
+    }
+
+    @Test
+    void islandCentreRejectsMissingIslandOrSlot() {
+        when(database.getIslandServer(islandId)).thenReturn(Optional.empty());
+        assertInstanceOf(IslandDoesNotExistException.class,
+                assertThrows(CompletionException.class, () -> core.getIslandCenter(islandId).join()).getCause());
+        when(config.getServerName()).thenReturn("sky1");
+        when(database.getIslandServer(islandId)).thenReturn(Optional.of("sky1"));
+        when(database.getIslandSlot(islandId)).thenReturn(Optional.empty());
+        assertInstanceOf(IslandDoesNotExistException.class,
+                assertThrows(CompletionException.class, () -> core.getIslandCenter(islandId).join()).getCause());
+    }
+
+    @Test
+    void islandCentreRejectsAnUnloadedWorld() {
+        when(config.getServerName()).thenReturn("sky1");
+        when(database.getIslandServer(islandId)).thenReturn(Optional.of("sky1"));
+        when(database.getIslandSlot(islandId)).thenReturn(Optional.of(1));
+        try (MockedStatic<Bukkit> ignored = mockStatic(Bukkit.class)) {
+            assertInstanceOf(WorldNotFoundException.class,
+                    assertThrows(CompletionException.class, () -> core.getIslandCenter(islandId).join()).getCause());
+        }
     }
 
     private Island island(UUID owner, Set<UUID> members, Set<UUID> coops) {

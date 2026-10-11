@@ -7,6 +7,7 @@ import org.me.advancedsky.island.BiomeHandler;
 import org.me.advancedsky.island.CoopHandler;
 import org.me.advancedsky.island.CoreHandler;
 import org.me.advancedsky.island.HomeHandler;
+import org.me.advancedsky.island.LevelHandler;
 import org.me.advancedsky.island.PlayerHandler;
 import org.me.advancedsky.island.UpgradeHandler;
 import org.me.advancedsky.island.WarpHandler;
@@ -31,8 +32,9 @@ public final class AdminActions {
     private final CoopHandler coopHandler;
     private final BiomeHandler biomeHandler;
     private final UpgradeHandler upgradeHandler;
+    private final LevelHandler levelHandler;
 
-    AdminActions(String source, CoreHandler coreHandler, PlayerHandler playerHandler, HomeHandler homeHandler, WarpHandler warpHandler, BanHandler banHandler, CoopHandler coopHandler, BiomeHandler biomeHandler, UpgradeHandler upgradeHandler) {
+    AdminActions(String source, CoreHandler coreHandler, PlayerHandler playerHandler, HomeHandler homeHandler, WarpHandler warpHandler, BanHandler banHandler, CoopHandler coopHandler, BiomeHandler biomeHandler, UpgradeHandler upgradeHandler, LevelHandler levelHandler) {
         this.actor = new Actor.Bypass(source);
         this.coreHandler = coreHandler;
         this.playerHandler = playerHandler;
@@ -42,6 +44,7 @@ public final class AdminActions {
         this.coopHandler = coopHandler;
         this.biomeHandler = biomeHandler;
         this.upgradeHandler = upgradeHandler;
+        this.levelHandler = levelHandler;
     }
 
     // ---- island lifecycle -------------------------------------------------------------------
@@ -139,6 +142,11 @@ public final class AdminActions {
     }
 
     // ---- world ------------------------------------------------------------------------------
+
+    /** Scans a locally hosted island's blocks and completes after its level is stored. */
+    public CompletableFuture<Integer> recalculateIslandLevel(UUID islandUuid) {
+        return coreHandler.getIslandCenter(islandUuid).thenCompose(center -> levelHandler.calIslandLevel(islandUuid));
+    }
 
     /**
      * Re-biome the chunk holding the location, in any loaded world of this server.

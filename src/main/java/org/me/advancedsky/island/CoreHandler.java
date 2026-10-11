@@ -2,12 +2,16 @@ package org.me.advancedsky.island;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.World;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.IslandNotHostedHereException;
 import org.me.advancedsky.exceptions.PlayerNotOnOwnIslandException;
+import org.me.advancedsky.exceptions.WorldNotFoundException;
+import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.model.Island;
 import org.me.advancedsky.network.IslandDistributor;
@@ -64,6 +68,18 @@ public class CoreHandler {
 
     public CompletableFuture<UUID> getIslandUuid(UUID playerUuid) {
         return CompletableFuture.supplyAsync(() -> database.getIslandUuid(playerUuid).orElseThrow(IslandDoesNotExistException::new), plugin.getBukkitAsyncExecutor());
+    }
+
+    public CompletableFuture<Location> getIslandCenter(UUID islandUuid) {
+        return CompletableFuture.supplyAsync(() -> {
+            String host = database.getIslandServer(islandUuid).orElseThrow(IslandDoesNotExistException::new);
+            if (!host.equals(config.getServerName())) throw new IslandNotHostedHereException(host);
+            return database.getIslandSlot(islandUuid).orElseThrow(IslandDoesNotExistException::new);
+        }, plugin.getBukkitAsyncExecutor()).thenApplyAsync(slot -> {
+            World world = Bukkit.getWorld(config.getIslandWorldName());
+            if (world == null) throw new WorldNotFoundException();
+            return new IslandGrid(config.getIslandHeight()).center(world, slot);
+        }, plugin.getGlobalRegionExecutor());
     }
 
     /**

@@ -170,11 +170,56 @@ class WarpHandlerTest {
         // 1,70,3 lies in slot 0's area but far outside a 50-block boundary around 256,256.
         Location beyond = new Location(islandWorld, 1, 70, 3);
         assertFailure(LocationNotInIslandException.class, handler.setWarp(admin, island, "shop", beyond));
-        assertFailure(LocationNotInIslandException.class, homes.setHome(admin, owner, "far", beyond));
+        assertFailure(LocationNotInIslandException.class, homes.setHome(new Actor.Player(owner), owner, "far", beyond));
         assertTrue(database.getIslandWarps(island).isEmpty());
 
         handler.setWarp(admin, island, "shop", new Location(islandWorld, 256, 70, 256)).join();
         assertEquals(Set.of("shop"), handler.getWarpNames(island).join());
+    }
+
+    @Test
+    void adminPreservesCrossIslandHomesWhilePlayersStillUseTheirOwnBoundary() throws Exception {
+        when(config.getUpgradeLimit("island-size", 1)).thenReturn(50);
+        Location destination = grid.center(islandWorld, 1);
+        destination.setY(121);
+        destination.setYaw(45);
+        destination.setPitch(-10);
+        assertFailure(LocationNotInIslandException.class, homes.setHome(new Actor.Player(owner), owner, "far", destination));
+        homes.setHome(admin, owner, "default", destination).join();
+        String saved = destination.getX() + ",121.0," + destination.getZ() + ",45.0,-10.0";
+        assertEquals(saved, database.getIslandHomes(island, owner).get("default"));
+        assertEquals(saved, cache.get(island).getDefaultHomes().get(owner));
+        when(players.isOnline(owner)).thenReturn(true);
+        doReturn(CompletableFuture.completedFuture(null)).when(distributor).teleportIsland(any(), any(), anyString());
+        homes.home(owner, "default", owner).join();
+        verify(distributor).teleportIsland(island, owner, saved);
+        assertFailure(LocationNotInIslandException.class, homes.setHome(admin, owner, "wrong world", new Location(otherWorld, 1, 70, 3)));
+        sql("UPDATE test_islands SET server = 'other' WHERE island_uuid = ?", island);
+        assertFailure(LocationNotInIslandException.class, homes.setHome(admin, owner, "wrong host", destination));
+    }
+
+    @Test
+    void homeAndWarpNamesUseTheSameAsciiRulesForPlayersAndAdmin() {
+        for (Actor actor : List.of(new Actor.Player(owner), admin)) {
+            for (String name : List.of("mine_1", "farm-2", "1", "x".repeat(32))) {
+                homes.setHome(actor, owner, name, new Location(islandWorld, 256.5, 70, 256.5)).join();
+                assertEquals("256.5,70.0,256.5,0.0,0.0", database.getIslandHomes(island, owner).get(name));
+                handler.setWarp(actor, island, name, new Location(islandWorld, 256.5, 70, 256.5)).join();
+                assertEquals("256.5,70.0,256.5,0.0,0.0", database.getIslandWarps(island).get(name));
+            }
+            for (String name : List.of("go 1", "臨時據點", ".", "1\\", ":3", "?", "", " ", "\n", "bad\tname", "x".repeat(33), "😀")) {
+                assertFailure(HomeNameNotLegalException.class, homes.setHome(actor, owner, name, new Location(islandWorld, 256, 70, 256)));
+                assertFailure(WarpNameNotLegalException.class, handler.setWarp(actor, island, name, new Location(islandWorld, 256, 70, 256)));
+            }
+        }
+        homes.setHome(admin, owner, "MINE_1", new Location(islandWorld, 257.5, 70, 256.5)).join();
+        assertEquals("257.5,70.0,256.5,0.0,0.0", database.getIslandHomes(island, owner).get("mine_1"));
+        assertEquals(Set.of("mine_1", "farm-2", "1", "x".repeat(32)), database.getIslandHomes(island, owner).keySet());
+        for (Actor actor : List.of(new Actor.Player(owner), admin)) {
+            handler.setWarp(actor, island, "MINE_1", new Location(islandWorld, 257.5, 70, 256.5)).join();
+            assertEquals("257.5,70.0,256.5,0.0,0.0", database.getIslandWarps(island).get("mine_1"));
+        }
+        assertEquals(Set.of("mine_1", "farm-2", "1", "x".repeat(32)), database.getIslandWarps(island).keySet());
     }
 
     @Test

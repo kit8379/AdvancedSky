@@ -10,6 +10,7 @@ import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.HomeDoesNotExistException;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -66,7 +67,7 @@ public class PlayerDelHomeCommand implements SubCommand, AsyncTabComplete {
             return false;
         }
 
-        String homeName = args[1];
+        String homeName = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
 
         // Case-insensitive: names are stored lowercased and common MySQL collations compare
         // case-insensitively, so "Default" would otherwise slip past this guard and delete it.
@@ -95,12 +96,13 @@ public class PlayerDelHomeCommand implements SubCommand, AsyncTabComplete {
 
     @Override
     public CompletableFuture<List<String>> tabCompleteAsync(CommandSender sender, String label, String[] args) {
-        if (args.length != 2 || !(sender instanceof Player player)) {
+        if (args.length < 2 || !(sender instanceof Player player)) {
             return CompletableFuture.completedFuture(Collections.emptyList());
         }
 
-        String prefix = args[1].toLowerCase(Locale.ROOT);
+        String prefix = String.join(" ", Arrays.copyOfRange(args, 1, args.length)).toLowerCase(Locale.ROOT);
+        String preceding = args.length > 2 ? String.join(" ", Arrays.copyOfRange(args, 1, args.length - 1)) + " " : "";
 
-        return api.getHomeNames(player.getUniqueId()).thenApply(homeNames -> homeNames.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()));
+        return api.getHomeNames(player.getUniqueId()).thenApply(homeNames -> homeNames.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).map(name -> name.substring(preceding.length())).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()));
     }
 }

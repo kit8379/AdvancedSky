@@ -1654,7 +1654,7 @@ public class ConfigHandler {
     }
 
     public Component getPlayerSetHomeSuccessMessage(String home) {
-        return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.player-set-home-success")).replace("{home}", home));
+        return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.player-set-home-success"))).replaceText(builder -> builder.matchLiteral("{home}").replacement(Component.text(home)));
     }
 
     public Component getPlayerSetWarpSuccessMessage(String warp) {
@@ -1662,7 +1662,7 @@ public class ConfigHandler {
     }
 
     public Component getPlayerDelHomeSuccessMessage(String home) {
-        return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.player-delete-home-success")).replace("{home}", home));
+        return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.player-delete-home-success"))).replaceText(builder -> builder.matchLiteral("{home}").replacement(Component.text(home)));
     }
 
     public Component getPlayerCannotDeleteDefaultHomeMessage() {
@@ -1690,7 +1690,7 @@ public class ConfigHandler {
     }
 
     public Component getPlayerNoHomeMessage(String home) {
-        return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.player-no-home")).replace("{home}", home));
+        return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.player-no-home"))).replaceText(builder -> builder.matchLiteral("{home}").replacement(Component.text(home)));
     }
 
     public Component getPlayerNoWarpMessage(String warp) {
@@ -1698,7 +1698,7 @@ public class ConfigHandler {
     }
 
     public Component getPlayerHomeSuccessMessage(String home) {
-        return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.player-home-success")).replace("{home}", home));
+        return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.player-home-success"))).replaceText(builder -> builder.matchLiteral("{home}").replacement(Component.text(home)));
     }
 
     public Component getPlayerSetOwnerSuccessMessage(String player) {

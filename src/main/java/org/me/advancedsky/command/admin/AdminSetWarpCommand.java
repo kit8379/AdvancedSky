@@ -14,6 +14,7 @@ import org.me.advancedsky.exceptions.LocationNotInIslandException;
 import org.me.advancedsky.exceptions.WarpLimitReachedException;
 import org.me.advancedsky.exceptions.WarpNameNotLegalException;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -72,7 +73,7 @@ public class AdminSetWarpCommand implements SubCommand, AsyncTabComplete {
         }
 
         String warpPlayerName = args[1];
-        String warpName = args[2];
+        String warpName = String.join(" ", Arrays.copyOfRange(args, 2, args.length));
 
         Location loc = player.getLocation();
 

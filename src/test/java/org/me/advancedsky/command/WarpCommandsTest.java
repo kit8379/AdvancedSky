@@ -17,6 +17,7 @@ import org.me.advancedsky.command.player.PlayerDelWarpCommand;
 import org.me.advancedsky.command.player.PlayerSetWarpCommand;
 import org.me.advancedsky.command.player.PlayerWarpCommand;
 import org.me.advancedsky.config.ConfigHandler;
+import org.me.advancedsky.exceptions.WarpNameNotLegalException;
 
 import java.util.List;
 import java.util.Optional;
@@ -72,6 +73,23 @@ class WarpCommandsTest {
         new AdminDelWarpCommand(plugin, api, config).execute(player, new String[]{"delwarp", "Member", "shop"});
         verify(adminActions).setWarp(islandId, "shop", location);
         verify(adminActions).deleteWarp(islandId, "shop");
+    }
+
+    @Test
+    void spacedNamesAreRejectedWithoutSilentlySettingTheirFirstWord() {
+        Component rejected = Component.text("Invalid warp name");
+        when(config.getWarpNameNotLegalMessage()).thenReturn(rejected);
+        when(playerActions.setWarp("go 1", location)).thenReturn(CompletableFuture.failedFuture(new WarpNameNotLegalException()));
+        when(adminActions.setWarp(islandId, "go 1", location)).thenReturn(CompletableFuture.failedFuture(new WarpNameNotLegalException()));
+
+        new PlayerSetWarpCommand(plugin, api, config).execute(player, new String[]{"setwarp", "go", "1"});
+        new AdminSetWarpCommand(plugin, api, config).execute(player, new String[]{"setwarp", "Member", "go", "1"});
+
+        verify(playerActions).setWarp("go 1", location);
+        verify(adminActions).setWarp(islandId, "go 1", location);
+        verify(playerActions, never()).setWarp(eq("go"), any());
+        verify(adminActions, never()).setWarp(any(), eq("go"), any());
+        verify(player, times(2)).sendMessage(rejected);
     }
 
     @Test

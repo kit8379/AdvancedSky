@@ -13,6 +13,7 @@ import org.me.advancedsky.exceptions.HomeNameNotLegalException;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.exceptions.LocationNotInIslandException;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -66,7 +67,7 @@ public class PlayerSetHomeCommand implements SubCommand, AsyncTabComplete {
             return true;
         }
 
-        String homeName = (args.length >= 2) ? args[1] : "default";
+        String homeName = (args.length >= 2) ? String.join(" ", Arrays.copyOfRange(args, 1, args.length)) : "default";
         UUID playerUuid = player.getUniqueId();
 
         Location loc = player.getLocation();
@@ -95,12 +96,13 @@ public class PlayerSetHomeCommand implements SubCommand, AsyncTabComplete {
 
     @Override
     public CompletableFuture<List<String>> tabCompleteAsync(CommandSender sender, String label, String[] args) {
-        if (args.length != 2 || !(sender instanceof Player player)) {
+        if (args.length < 2 || !(sender instanceof Player player)) {
             return CompletableFuture.completedFuture(Collections.emptyList());
         }
 
-        String prefix = args[1].toLowerCase(Locale.ROOT);
+        String prefix = String.join(" ", Arrays.copyOfRange(args, 1, args.length)).toLowerCase(Locale.ROOT);
+        String preceding = args.length > 2 ? String.join(" ", Arrays.copyOfRange(args, 1, args.length - 1)) + " " : "";
 
-        return api.getHomeNames(player.getUniqueId()).thenApply(homes -> homes.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()));
+        return api.getHomeNames(player.getUniqueId()).thenApply(homes -> homes.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).map(name -> name.substring(preceding.length())).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()));
     }
 }

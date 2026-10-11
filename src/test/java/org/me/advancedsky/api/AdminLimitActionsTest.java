@@ -5,16 +5,20 @@ import org.bukkit.World;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.island.HomeHandler;
 import org.me.advancedsky.island.CoreHandler;
+import org.me.advancedsky.island.LevelHandler;
 import org.me.advancedsky.island.PlayerHandler;
+import org.me.advancedsky.exceptions.IslandNotHostedHereException;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.model.Invitation;
 
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 class AdminLimitActionsTest {
     @Test
@@ -32,7 +36,7 @@ class AdminLimitActionsTest {
         when(members.getPendingInvite(player)).thenReturn(CompletableFuture.completedFuture(Optional.of(new Invitation(island, UUID.randomUUID()))));
         when(members.removePendingInvite(player)).thenReturn(CompletableFuture.completedFuture(null));
 
-        AdminActions admin = new AdminActions("console", null, members, homes, null, null, null, null, null);
+        AdminActions admin = new AdminActions("console", null, members, homes, null, null, null, null, null, null);
         admin.addMember(island, player).join();
         admin.setHome(player, "farm", location).join();
         verify(members).addMember(new Actor.Bypass("console"), island, player, "member");
@@ -44,5 +48,27 @@ class AdminLimitActionsTest {
         normal.setHome("farm", location).join();
         verify(members).addMember(new Actor.Player(player), island, player, "member");
         verify(homes).setHome(new Actor.Player(player), player, "farm", location);
+    }
+
+    @Test
+    void levelRecalculationWaitsForTheLocalScanAndRejectsAnotherHost() {
+        UUID island = UUID.randomUUID();
+        CoreHandler core = mock(CoreHandler.class);
+        LevelHandler levels = mock(LevelHandler.class);
+        CompletableFuture<Integer> scan = new CompletableFuture<>();
+        when(core.getIslandCenter(island)).thenReturn(CompletableFuture.completedFuture(new Location(null, 0, 100, 0)));
+        when(levels.calIslandLevel(island)).thenReturn(scan);
+        AdminActions admin = new AdminActions("console", core, null, null, null, null, null, null, null, levels);
+
+        CompletableFuture<Integer> result = admin.recalculateIslandLevel(island);
+        assertFalse(result.isDone());
+        scan.complete(123);
+        assertEquals(123, result.join());
+        verify(levels).calIslandLevel(island);
+
+        when(core.getIslandCenter(island)).thenReturn(CompletableFuture.failedFuture(new IslandNotHostedHereException("sky2")));
+        assertInstanceOf(IslandNotHostedHereException.class,
+                assertThrows(CompletionException.class, () -> admin.recalculateIslandLevel(island).join()).getCause());
+        verifyNoMoreInteractions(levels);
     }
 }
