@@ -89,24 +89,28 @@ public final class AdvancedSkyExpansion extends PlaceholderExpansion {
     @Override
     public String onRequest(OfflinePlayer player, @NotNull String params) {
         String key = params.toLowerCase(Locale.ROOT);
-        Matcher top = TOP.matcher(key);
-        if (top.matches()) {
-            int position;
-            try {
-                position = Integer.parseInt(top.group(1));
-            } catch (NumberFormatException error) {
-                return null;
-            }
-            if (position > MAX_TOP_POSITION) {
-                return null;
-            }
-            return topValue(position, key);
-        }
-        Matcher upgrade = UPGRADE.matcher(key);
-        if (upgrade.matches()) {
-            return upgradeValue(player, upgrade.group(1), upgrade.group(2));
-        }
+        // Island fields are the common case: a map lookup decides them before any regex runs.
         if (!NO_ISLAND.containsKey(key)) {
+            if (key.startsWith("top_")) {
+                Matcher top = TOP.matcher(key);
+                if (!top.matches()) {
+                    return null;
+                }
+                int position;
+                try {
+                    position = Integer.parseInt(top.group(1));
+                } catch (NumberFormatException error) {
+                    return null;
+                }
+                if (position > MAX_TOP_POSITION) {
+                    return null;
+                }
+                return topValue(position, key);
+            }
+            if (key.startsWith("upgrade_")) {
+                Matcher upgrade = UPGRADE.matcher(key);
+                return upgrade.matches() ? upgradeValue(player, upgrade.group(1), upgrade.group(2)) : null;
+            }
             return null;
         }
         if (player == null) {
