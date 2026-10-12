@@ -101,12 +101,12 @@ class IslandAccessListenerTest {
     }
 
     @Test
-    void anOperatorMayStayInTheGap() {
+    void anOperatorCannotStayInTheGap() {
         when(player.isOp()).thenReturn(true);
 
         join();
 
-        verify(api, never()).lobby(any());
+        verify(api).lobby(playerUuid);
     }
 
     @Test

@@ -16,6 +16,7 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.LightningStrike;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Vehicle;
+import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockGrowEvent;
 import org.bukkit.event.block.BlockIgniteEvent;
 import org.bukkit.event.block.BlockSpreadEvent;
@@ -349,6 +350,15 @@ class IslandProtectionListenerTest {
     }
 
     @Test
+    void operatorsCannotBuildOutsideTheBoundaryOrOffTheIslands() {
+        island(false, Set.of());
+
+        assertFalse(breakBlock(visitor, true, inside));
+        assertTrue(breakBlock(visitor, true, outside));
+        assertTrue(breakBlock(visitor, true, grid.center(world, SLOT + 1)));
+    }
+
+    @Test
     void anEnderPearlLandingFollowsTheTeleportRule() {
         island(false, Set.of(banned));
 
@@ -376,6 +386,12 @@ class IslandProtectionListenerTest {
         when(block.getLocation()).thenReturn(at);
         PortalCreateEvent event = new PortalCreateEvent(List.of(block), world, player(playerUuid, false), PortalCreateEvent.CreateReason.NETHER_PAIR);
         listener.onPortalCreate(event);
+        return event.isCancelled();
+    }
+
+    private boolean breakBlock(UUID playerUuid, boolean op, Location at) {
+        BlockBreakEvent event = new BlockBreakEvent(block(at), player(playerUuid, op));
+        listener.onBlockBreak(event);
         return event.isCancelled();
     }
 

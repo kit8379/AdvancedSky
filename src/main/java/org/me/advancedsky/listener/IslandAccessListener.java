@@ -68,9 +68,12 @@ public final class IslandAccessListener implements Listener {
             return true;
         }
 
-        // Physical deletion bars everyone, including operators.
+        // Physical deletion and the gap bar everyone, including operators.
         if (islandCache.isDeletingAt(location)) {
             return denyAccess(player, location, AccessResult.DELETING);
+        }
+        if (islandCache.getIslandUuidAt(location) == null) {
+            return denyAccess(player, location, AccessResult.NO_ISLAND);
         }
         if (player.isOp()) {
             return true;
@@ -78,9 +81,7 @@ public final class IslandAccessListener implements Listener {
 
         Island island = islandCache.getAt(location);
         if (island == null) {
-            AccessResult reason = islandCache.getIslandUuidAt(location) == null
-                    ? AccessResult.NO_ISLAND : AccessResult.UNAVAILABLE;
-            return denyAccess(player, location, reason);
+            return denyAccess(player, location, AccessResult.UNAVAILABLE);
         }
 
         UUID playerUuid = player.getUniqueId();

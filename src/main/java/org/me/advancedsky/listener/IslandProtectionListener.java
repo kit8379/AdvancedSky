@@ -79,17 +79,18 @@ public class IslandProtectionListener implements Listener {
         if (islandCache.isDeletingAt(location)) {
             return false;
         }
-        if (player.isOp()) {
-            return true;
-        }
 
         Island island = islandCache.getAt(location);
         if (island == null) {
             return false;
         }
 
+        // The gap and the area outside the island boundary are closed to operators too.
         if (!isInsideIslandBoundary(island, location)) {
             return false;
+        }
+        if (player.isOp()) {
+            return true;
         }
 
         UUID playerUuid = player.getUniqueId();
