@@ -36,10 +36,13 @@ public final class IslandAccessListener implements Listener {
         this.teleportHandler = Objects.requireNonNull(teleportHandler, "teleportHandler");
     }
 
+    /**
+     * A player joining dead arrives when they respawn, which {@link IslandRespawnListener} routes.
+     */
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
-        if (!teleportHandler.hasPendingTeleport(player.getUniqueId())) {
+        if (!player.isDead() && !teleportHandler.hasPendingTeleport(player.getUniqueId())) {
             checkArrival(player);
         }
     }

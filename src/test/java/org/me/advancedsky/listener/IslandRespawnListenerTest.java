@@ -9,6 +9,7 @@ import org.bukkit.World;
 import org.bukkit.damage.DamageSource;
 import org.bukkit.entity.Player;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.api.AdvancedSkyAPI;
@@ -93,6 +94,37 @@ class IslandRespawnListenerTest {
 
         verify(api).lobby(playerUuid);
         verifyNoInteractions(scheduler);
+    }
+
+    @Test
+    void aDeathOnAnIslandBeingDeletedGoesToTheLobby() {
+        island(playerUuid, Set.of(), Set.of(), Map.of(playerUuid, "2304.5,101.0,256.5,0.0,0.0"), null);
+        when(cache.isDeletingAt(deathLocation)).thenReturn(true);
+
+        die();
+
+        verify(api).lobby(playerUuid);
+        verifyNoInteractions(scheduler);
+    }
+
+    @Test
+    void aPlayerJoiningDeadIsRoutedLikeAtDeath() {
+        island(playerUuid, Set.of(), Set.of(), Map.of(playerUuid, "2304.5,101.0,256.5,0.0,0.0"), null);
+        when(player.isDead()).thenReturn(true);
+
+        try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
+            bukkit.when(() -> Bukkit.getWorld("skyblock")).thenReturn(world);
+            listener.onJoin(new PlayerJoinEvent(player, Component.empty()));
+        }
+
+        verify(scheduler).runAtFixedRate(eq(plugin), any(), any(), eq(1L), eq(1L));
+    }
+
+    @Test
+    void aPlayerJoiningAliveIsNotRouted() {
+        listener.onJoin(new PlayerJoinEvent(player, Component.empty()));
+
+        verifyNoInteractions(api, scheduler);
     }
 
     private void island(UUID owner, Set<UUID> members, Set<UUID> bans, Map<UUID, String> homes, String warp) {

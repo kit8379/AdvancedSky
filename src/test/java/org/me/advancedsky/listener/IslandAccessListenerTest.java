@@ -67,6 +67,15 @@ class IslandAccessListenerTest {
     }
 
     @Test
+    void aPlayerJoiningDeadIsLeftToTheRespawnRules() {
+        when(player.isDead()).thenReturn(true);
+
+        join();
+
+        verify(api, never()).lobby(any());
+    }
+
+    @Test
     void aLateLoginDestinationRunsBeforeCheckingItsTemporarySpawn() {
         TeleportHandler teleports = mock(TeleportHandler.class);
         when(teleports.hasPendingTeleport(playerUuid)).thenReturn(true);

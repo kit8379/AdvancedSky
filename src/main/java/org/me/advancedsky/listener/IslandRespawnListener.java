@@ -6,6 +6,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
@@ -29,17 +30,37 @@ public class IslandRespawnListener implements Listener {
         this.islandCache = islandCache;
     }
 
-    /**
-     * Members return home; visitors use the default warp. Denied visitors and free slots use the lobby.
-     */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDeath(PlayerDeathEvent event) {
+        routeRespawn(event.getPlayer());
+    }
+
+    /**
+     * A player who quit on the death screen joins dead where they died.
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
+        if (player.isDead()) {
+            routeRespawn(player);
+        }
+    }
+
+    /**
+     * Members return home; visitors use the default warp. Denied visitors, free slots and islands
+     * being deleted use the lobby.
+     */
+    private void routeRespawn(Player player) {
         UUID playerUuid = player.getUniqueId();
 
         Location deathLocation = player.getLocation();
         String worldName = deathLocation.getWorld().getName();
         if (!worldName.equals(config.getIslandWorldName())) {
+            return;
+        }
+
+        if (islandCache.isDeletingAt(deathLocation)) {
+            sendToLobby(playerUuid);
             return;
         }
 
