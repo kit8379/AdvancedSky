@@ -97,6 +97,8 @@ public class TeleportRequestListener implements Listener {
                     teleportHandler.checkFailedArrival(player, pending);
                     return;
                 }
+                // Teleporting keeps the fall distance, which kills a player teleported out of a fall on landing.
+                player.setFallDistance(0);
                 teleportHandler.confirmTeleport(player, pending);
             });
             plugin.debug("TeleportRequestListener", "Teleporting " + player.getName() + " to a pending location stored while logging in.");

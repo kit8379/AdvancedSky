@@ -243,6 +243,8 @@ public class TeleportHandler {
                         } else if (!Boolean.TRUE.equals(moved)) {
                             teleported.completeExceptionally(new TeleportCancelledException());
                         } else {
+                            // Teleporting keeps the fall distance, which kills a player teleported out of a fall on landing.
+                            player.setFallDistance(0);
                             plugin.debug("TeleportHandler", "Teleported player " + playerUuid + " to location: " + teleportLocation + " in world: " + teleportWorld);
                             confirmTeleport(player, pending, false);
                             teleported.complete(true);

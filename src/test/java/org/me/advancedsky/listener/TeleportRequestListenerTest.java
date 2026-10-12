@@ -40,7 +40,9 @@ class TeleportRequestListenerTest {
         order.verify(fixture.player).leaveVehicle();
         order.verify(fixture.player).teleportAsync(fixture.target);
         verify(fixture.player, never()).sendMessage(any(Component.class));
+        verify(fixture.player, never()).setFallDistance(anyFloat());
         moved.complete(true);
+        verify(fixture.player).setFallDistance(0);
         verify(fixture.player, never()).sendMessage(any(Component.class));
         fixture.runConfirmationTick();
         verify(fixture.player).sendMessage(fixture.message);

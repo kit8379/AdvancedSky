@@ -81,6 +81,8 @@ class TeleportExecutionTest {
         InOrder order = inOrder(player);
         order.verify(player).leaveVehicle();
         order.verify(player).teleportAsync(any(Location.class));
+        // The fall distance survives a teleport and would kill a falling player on landing.
+        order.verify(player).setFallDistance(0);
     }
 
     @Test
