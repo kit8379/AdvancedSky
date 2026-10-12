@@ -76,7 +76,9 @@ public class IslandRespawnListener implements Listener {
     }
 
     /**
-     * Wait for the player to respawn; their entity scheduler retires the task if they quit.
+     * Wait for the player to respawn. Paper removes a dead player from the world after 20 ticks,
+     * which retires the task but not their scheduler, so it is scheduled again; once they quit
+     * the scheduler accepts no more tasks.
      */
     private void teleportAfterRespawn(Player player, Location target) {
         player.getScheduler().runAtFixedRate(plugin, task -> {
@@ -86,7 +88,7 @@ public class IslandRespawnListener implements Listener {
 
             task.cancel();
             player.teleportAsync(target);
-        }, null, 1L, 1L);
+        }, () -> teleportAfterRespawn(player, target), 1L, 1L);
     }
 
     // Switching servers from the death screen replaces the local respawn.

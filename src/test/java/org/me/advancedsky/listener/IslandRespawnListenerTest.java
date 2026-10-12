@@ -53,17 +53,22 @@ class IslandRespawnListenerTest {
     void aMemberIsTakenHomeOnceAliveAgain() {
         island(UUID.randomUUID(), Set.of(playerUuid), Set.of(), Map.of(playerUuid, "2304.5,101.0,256.5,0.0,0.0"), null);
         ArgumentCaptor<Consumer<ScheduledTask>> check = captor();
+        ArgumentCaptor<Runnable> retired = ArgumentCaptor.forClass(Runnable.class);
 
         try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
             bukkit.when(() -> Bukkit.getWorld("skyblock")).thenReturn(world);
             die();
         }
-        verify(scheduler).runAtFixedRate(eq(plugin), check.capture(), isNull(), eq(1L), eq(1L));
+        verify(scheduler).runAtFixedRate(eq(plugin), check.capture(), retired.capture(), eq(1L), eq(1L));
 
         ScheduledTask task = mock(ScheduledTask.class);
         when(player.isDead()).thenReturn(true);
         check.getValue().accept(task);
         verify(player, never()).teleportAsync(any(Location.class));
+
+        // Removing the dead player from the world retires the task; it is scheduled again.
+        retired.getValue().run();
+        verify(scheduler, times(2)).runAtFixedRate(eq(plugin), check.capture(), retired.capture(), eq(1L), eq(1L));
 
         when(player.isDead()).thenReturn(false);
         check.getValue().accept(task);
