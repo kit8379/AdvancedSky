@@ -10,6 +10,7 @@ import org.me.advancedsky.messaging.CrossServerMessenger;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.thread.BukkitAsyncExecutor;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -23,7 +24,8 @@ class IslandDistributorMembershipTest {
     private final DatabaseHandler database = mock(DatabaseHandler.class);
     private final CrossServerMessenger messenger = mock(CrossServerMessenger.class);
     private final AdvancedSky plugin = mock(AdvancedSky.class);
-    private final IslandDistributor distributor = new IslandDistributor(plugin, database, null, null, messenger, mock(ServerRegistry.class), "local");
+    private final ServerRegistry servers = mock(ServerRegistry.class);
+    private final IslandDistributor distributor = new IslandDistributor(plugin, database, null, null, messenger, servers, "local");
 
     @BeforeEach
     void setUp() {
@@ -51,6 +53,7 @@ class IslandDistributorMembershipTest {
     @Test
     void invitationAcceptanceAndQuitCleanupUseTheNormalMutationMessages() {
         when(database.getIslandServer(island)).thenReturn(Optional.of("remote"));
+        when(servers.getIslandServers()).thenReturn(List.of("remote"));
         when(messenger.request(eq("remote"), anyString(), any())).thenAnswer(call -> {
             JSONObject payload = call.getArgument(2);
             assertEquals(island.toString(), payload.getString("islandUuid"));

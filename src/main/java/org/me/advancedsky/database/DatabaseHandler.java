@@ -266,6 +266,21 @@ public class DatabaseHandler {
         });
     }
 
+    public Set<String> getPlayerNamesWithWarps(String namePrefix) {
+        String sql = "SELECT DISTINCT p.name FROM " + prefix + "player_uuid p " + "JOIN " + prefix + "island_players ip ON ip.player_uuid = p.uuid " + "JOIN " + prefix + "island_warps w ON w.island_uuid = ip.island_uuid " + "WHERE p.name_lower LIKE ?";
+        String pattern = namePrefix.toLowerCase(Locale.ROOT).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+
+        return executeQuery(sql, stmt -> stmt.setString(1, pattern), rs -> {
+            Set<String> result = new HashSet<>();
+
+            while (rs.next()) {
+                result.add(rs.getString("name"));
+            }
+
+            return result;
+        });
+    }
+
     public Map<String, String> getIslandWarps(UUID islandUuid) {
         String sql = "SELECT warp_name, warp_location FROM " + prefix + "island_warps WHERE island_uuid = ?";
 

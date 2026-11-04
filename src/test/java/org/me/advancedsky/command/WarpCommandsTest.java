@@ -66,6 +66,20 @@ class WarpCommandsTest {
     }
 
     @Test
+    void warpOnAnOfflineHostTellsThePlayerAndTheAdminInsteadOfReportingAnUnknownError() {
+        Component offline = Component.text("Host offline");
+        when(config.getNoActiveServerMessage()).thenReturn(offline);
+        when(playerActions.warp(islandId, "shop", successMessage)).thenReturn(CompletableFuture.failedFuture(new org.me.advancedsky.exceptions.NoActiveServerException()));
+        when(adminActions.warp(islandId, "shop", playerId, successMessage)).thenReturn(CompletableFuture.failedFuture(new org.me.advancedsky.exceptions.NoActiveServerException()));
+
+        new PlayerWarpCommand(plugin, api, config).execute(player, new String[]{"warp", "Member", "shop"});
+        new AdminWarpCommand(plugin, api, config).execute(player, new String[]{"warp", "Member", "shop"});
+
+        verify(player, times(2)).sendMessage(offline);
+        verifyNoInteractions(plugin);
+    }
+
+    @Test
     void adminSetAndDeleteResolveNamedMembersIsland() {
         when(adminActions.setWarp(islandId, "shop", location)).thenReturn(CompletableFuture.completedFuture(null));
         when(adminActions.deleteWarp(islandId, "shop")).thenReturn(CompletableFuture.completedFuture(null));
@@ -102,6 +116,18 @@ class WarpCommandsTest {
         verify(adminActions).warp(islandId, "shop", playerId, successMessage);
         verify(adminActions).warp(islandId, "shop", targetId, successMessage);
         verify(api, never()).sendPlayerMessage(any(), any());
+    }
+
+    @Test
+    void playerWarpCompletesOwnersOnlyFromTheSecondLetter() {
+        PlayerWarpCommand command = new PlayerWarpCommand(plugin, api, config);
+        when(api.getPlayerNamesWithWarps("me")).thenReturn(CompletableFuture.completedFuture(Set.of("Member")));
+
+        assertEquals(List.of(), command.tabCompleteAsync(player, "is", new String[]{"warp", ""}).join());
+        assertEquals(List.of(), command.tabCompleteAsync(player, "is", new String[]{"warp", "m"}).join());
+        verify(api, never()).getPlayerNamesWithWarps(anyString());
+
+        assertEquals(List.of("Member"), command.tabCompleteAsync(player, "is", new String[]{"warp", "me"}).join());
     }
 
     @Test

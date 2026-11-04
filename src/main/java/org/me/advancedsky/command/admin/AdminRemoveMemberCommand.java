@@ -10,6 +10,7 @@ import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.CannotRemoveOwnerException;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.exceptions.IslandPlayerDoesNotExistException;
+import org.me.advancedsky.exceptions.NoActiveServerException;
 
 import java.util.Collections;
 import java.util.List;
@@ -92,6 +93,8 @@ public class AdminRemoveMemberCommand implements SubCommand, AsyncTabComplete {
                 sender.sendMessage(config.getCannotRemoveOwnerMessage());
             } else if (cause instanceof IslandPlayerDoesNotExistException) {
                 sender.sendMessage(config.getIslandMemberNotExistsMessage(targetMemberName));
+            } else if (cause instanceof NoActiveServerException) {
+                sender.sendMessage(config.getNoActiveServerMessage());
             } else {
                 sender.sendMessage(config.getUnknownExceptionMessage());
                 plugin.severe("Error removing member " + targetMemberName + " from island of " + islandOwnerName, ex);

@@ -7,6 +7,7 @@ import org.me.advancedsky.cluster.OnlinePlayerRegistry;
 import org.me.advancedsky.cluster.ServerRegistry;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.NoActiveServerException;
 import org.me.advancedsky.exceptions.PlayerNotOnlineException;
 import org.me.advancedsky.messaging.CrossServerMessenger;
 import org.me.advancedsky.model.Actor;
@@ -19,7 +20,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeoutException;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -47,6 +49,7 @@ public class IslandDistributor {
     public static final String ACTION_WARP_DELETE = "island.warp.delete";
     public static final String ACTION_LOCK_TOGGLE = "island.lock.toggle";
     public static final String ACTION_PVP_TOGGLE = "island.pvp.toggle";
+    public static final String ACTION_UPGRADE_BUY = "island.upgrade.buy";
 
     private static final Function<JSONObject, Void> VOID = response -> null;
 
@@ -104,7 +107,7 @@ public class IslandDistributor {
      */
     public CompletableFuture<Void> teleportIsland(UUID islandUuid, UUID playerUuid, String teleportLocation, Component successMessage) {
         return supply(() -> {
-            String host = resolveHost(islandUuid);
+            String host = resolveOnlineHost(islandUuid);
             return teleportViaServer(host, playerUuid, host, teleportLocation, successMessage);
         });
     }
@@ -116,10 +119,10 @@ public class IslandDistributor {
     public CompletableFuture<Void> teleportLobby(UUID playerUuid, String lobbyWorld, String lobbyLocation, Component successMessage) {
         return supply(() -> {
             List<String> lobbyServers = serverRegistry.getLobbyServers();
-            if (lobbyServers.isEmpty()) {
-                throw new IllegalStateException("No lobby server is online");
+            String lobbyServer = Objects.requireNonNull(plugin.getConfig().getString("lobby.server"), "Missing lobby.server");
+            if (!lobbyServers.contains(lobbyServer)) {
+                throw new IllegalStateException("Configured lobby server is not online: " + lobbyServer);
             }
-            String lobbyServer = lobbyServers.get(ThreadLocalRandom.current().nextInt(lobbyServers.size()));
             return teleportViaServer(lobbyServer, playerUuid, lobbyWorld, lobbyLocation, successMessage);
         });
     }
@@ -134,7 +137,7 @@ public class IslandDistributor {
             payload.put("teleportWorld", teleportWorld);
             payload.put("teleportLocation", teleportLocation);
             payload.put("successMessage", successMessage == null ? JSONObject.NULL : ComponentUtils.serialize(successMessage));
-            prepared = messenger.request(hostServer, ACTION_ISLAND_TELEPORT_PREPARE, payload).thenApply(resp -> resp.getBoolean("teleported"));
+            prepared = requestHost(hostServer, ACTION_ISLAND_TELEPORT_PREPARE, payload).thenApply(resp -> resp.getBoolean("teleported"));
         }
 
         return prepared.thenCompose(teleported -> {
@@ -227,24 +230,46 @@ public class IslandDistributor {
         return onIsland(actor, islandUuid, ACTION_WARP_DELETE, payload, localDelete, VOID);
     }
 
+    public CompletableFuture<Void> buyUpgrade(Actor actor, UUID islandUuid, UUID payerUuid, String upgradeId, int expectedLevel, int newLevel, double price, Supplier<CompletableFuture<Void>> localBuy) {
+        JSONObject payload = new JSONObject().put("payerUuid", payerUuid.toString()).put("upgradeId", upgradeId).put("expectedLevel", expectedLevel).put("newLevel", newLevel).put("price", price);
+        return onIsland(actor, islandUuid, ACTION_UPGRADE_BUY, payload, localBuy, VOID);
+    }
+
     // =====================================================================================
     // Routing
     // =====================================================================================
 
     private <T> CompletableFuture<T> onIsland(Actor actor, UUID islandUuid, String action, JSONObject payload, Supplier<CompletableFuture<T>> operation, Function<JSONObject, T> readResponse) {
+        return CompletableFuture.supplyAsync(() -> resolveOnlineHost(islandUuid), plugin.getBukkitAsyncExecutor()).thenCompose(host -> onHost(host, actor, islandUuid, action, payload, operation, readResponse));
+    }
+
+    private <T> CompletableFuture<T> onHost(String host, Actor actor, UUID islandUuid, String action, JSONObject payload, Supplier<CompletableFuture<T>> operation, Function<JSONObject, T> readResponse) {
         payload.put("islandUuid", islandUuid.toString());
         payload.put(Actor.FIELD, Actor.toJson(actor));
-        return CompletableFuture.supplyAsync(() -> resolveHost(islandUuid), plugin.getBukkitAsyncExecutor()).thenCompose(host -> {
-            if (host.equals(serverID)) {
-                return supply(operation);
-            }
+        if (host.equals(serverID)) {
+            return supply(operation);
+        }
 
-            return messenger.request(host, action, payload).thenApply(readResponse);
-        });
+        return requestHost(host, action, payload).thenApply(readResponse);
+    }
+
+    /**
+     * A crashed host keeps its lease for a while and simply never answers.
+     */
+    private CompletableFuture<JSONObject> requestHost(String host, String action, JSONObject payload) {
+        return messenger.request(host, action, payload).exceptionallyCompose(error -> CompletableFuture.failedFuture(error instanceof TimeoutException ? new NoActiveServerException() : error));
     }
 
     private String resolveHost(UUID islandUuid) {
         return database.getIslandServer(islandUuid).orElseThrow(IslandDoesNotExistException::new);
+    }
+
+    private String resolveOnlineHost(UUID islandUuid) {
+        String host = resolveHost(islandUuid);
+        if (!host.equals(serverID) && !serverRegistry.getIslandServers().contains(host)) {
+            throw new NoActiveServerException();
+        }
+        return host;
     }
 
     private static <T> CompletableFuture<T> supply(Supplier<CompletableFuture<T>> operation) {

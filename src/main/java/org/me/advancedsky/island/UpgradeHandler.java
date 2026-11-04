@@ -10,6 +10,7 @@ import org.me.advancedsky.exceptions.UpgradeLevelDoesNotExistException;
 import org.me.advancedsky.exceptions.UpgradeMaxedException;
 import org.me.advancedsky.model.Actor;
 import org.me.advancedsky.model.Upgrade;
+import org.me.advancedsky.network.IslandDistributor;
 import org.me.advancedsky.network.IslandOperator;
 
 import java.util.UUID;
@@ -25,13 +26,15 @@ public class UpgradeHandler {
     private final AdvancedSky plugin;
     private final ConfigHandler config;
     private final DatabaseHandler database;
+    private final IslandDistributor islandDistributor;
     private final IslandOperator islandOperator;
     private final EconomyHandler economy;
 
-    public UpgradeHandler(AdvancedSky plugin, ConfigHandler config, DatabaseHandler database, IslandOperator islandOperator, EconomyHandler economy) {
+    public UpgradeHandler(AdvancedSky plugin, ConfigHandler config, DatabaseHandler database, IslandDistributor islandDistributor, IslandOperator islandOperator, EconomyHandler economy) {
         this.plugin = plugin;
         this.config = config;
         this.database = database;
+        this.islandDistributor = islandDistributor;
         this.islandOperator = islandOperator;
         this.economy = economy;
     }
@@ -57,7 +60,8 @@ public class UpgradeHandler {
             }
 
             return new Purchase(current, next, config.getUpgradePrice(upgradeId, next));
-        }, plugin.getBukkitAsyncExecutor()).thenComposeAsync(purchase -> islandOperator.buyUpgrade(actor, islandUuid, payerUuid, upgradeId, purchase.current(), purchase.next(), purchase.price()).thenApply(v -> purchase.next()), plugin.getBukkitAsyncExecutor());
+        }, plugin.getBukkitAsyncExecutor()).thenComposeAsync(purchase -> islandDistributor.buyUpgrade(actor, islandUuid, payerUuid, upgradeId, purchase.current(), purchase.next(), purchase.price(),
+                () -> islandOperator.buyUpgrade(actor, islandUuid, payerUuid, upgradeId, purchase.current(), purchase.next(), purchase.price())).thenApply(v -> purchase.next()), plugin.getBukkitAsyncExecutor());
     }
 
     /**

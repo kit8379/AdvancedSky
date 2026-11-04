@@ -9,6 +9,7 @@ import org.me.advancedsky.command.SubCommand;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.CannotBanIslandPlayerException;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.NoActiveServerException;
 import org.me.advancedsky.exceptions.PlayerAlreadyBannedException;
 
 import java.util.Collections;
@@ -94,6 +95,8 @@ public class AdminBanCommand implements SubCommand, AsyncTabComplete {
                 sender.sendMessage(config.getPlayerAlreadyBannedMessage(banPlayerName));
             } else if (cause instanceof CannotBanIslandPlayerException) {
                 sender.sendMessage(config.getPlayerCannotBanIslandPlayerMessage());
+            } else if (cause instanceof NoActiveServerException) {
+                sender.sendMessage(config.getNoActiveServerMessage());
             } else {
                 sender.sendMessage(config.getUnknownExceptionMessage());
                 plugin.severe("Error banning player " + banPlayerName + " from island of " + islandOwnerName, ex);

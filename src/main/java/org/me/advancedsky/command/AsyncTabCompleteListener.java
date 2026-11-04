@@ -67,7 +67,7 @@ public class AsyncTabCompleteListener implements Listener {
 
         String prefix = parsed.args[parsed.args.length - 1].toLowerCase(Locale.ROOT);
         String[] candidateArgs = parsed.args.clone();
-        candidateArgs[candidateArgs.length - 1] = "";
+        candidateArgs[candidateArgs.length - 1] = prefix.substring(0, Math.min(router.candidatePrefixLength(parsed.args), prefix.length()));
         // Arguments never hold a space, so spaces keep the parts of the key apart.
         String key = senderKey(sender) + " " + parsed.label.toLowerCase(Locale.ROOT) + " " + String.join(" ", candidateArgs);
 

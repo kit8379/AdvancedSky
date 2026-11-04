@@ -9,6 +9,7 @@ import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.IslandAlreadyExistException;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.exceptions.IslandPlayerAlreadyExistsException;
+import org.me.advancedsky.exceptions.NoActiveServerException;
 import org.me.advancedsky.exceptions.PlayerBannedException;
 import org.me.advancedsky.exceptions.TeamLimitReachedException;
 import org.me.advancedsky.exceptions.TeleportCancelledException;
@@ -111,6 +112,8 @@ public class PlayerAcceptInviteCommand implements SubCommand {
                 player.sendMessage(config.getPlayerTeamLimitReachedMessage(cause.getMessage()));
             } else if (cause instanceof PlayerBannedException) {
                 player.sendMessage(config.getPlayerBannedMessage());
+            } else if (cause instanceof NoActiveServerException) {
+                player.sendMessage(config.getNoActiveServerMessage());
             } else {
                 player.sendMessage(config.getUnknownExceptionMessage());
                 plugin.severe("Error accepting invite or teleporting for player " + player.getName(), ex);

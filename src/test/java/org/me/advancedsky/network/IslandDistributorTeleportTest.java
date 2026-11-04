@@ -36,6 +36,9 @@ class IslandDistributorTeleportTest {
     private final IslandDistributor distributor = new IslandDistributor(plugin, null, null, registry, messenger, servers, "sky1");
 
     IslandDistributorTeleportTest() {
+        var config = new org.bukkit.configuration.file.YamlConfiguration();
+        config.set("lobby.server", "lobby");
+        when(plugin.getConfig()).thenReturn(config);
         when(servers.getLobbyServers()).thenReturn(List.of("lobby"));
         BukkitAsyncExecutor async = mock(BukkitAsyncExecutor.class);
         doAnswer(call -> { call.<Runnable>getArgument(0).run(); return null; }).when(async).execute(any());
@@ -47,11 +50,20 @@ class IslandDistributorTeleportTest {
     }
 
     @Test
+    void resourceServersAreNotFallbackLobbyDestinations() {
+        when(servers.getLobbyServers()).thenReturn(List.of("skymob", "skyres"));
+        assertThrows(java.util.concurrent.CompletionException.class,
+                () -> distributor.teleportLobby(playerUuid, "world", "0,100,0,0,0").join());
+        verifyNoInteractions(messenger);
+    }
+
+    @Test
     void aSameHostTeleportCallsTheTeleportHandlerWithoutProxyRouting() {
         TeleportHandler teleports = mock(TeleportHandler.class);
         IslandDistributor local = new IslandDistributor(plugin, null, teleports, registry, messenger, servers, "sky1");
         when(teleports.prepareTeleport(playerUuid, "world", "0,100,0,0,0")).thenReturn(CompletableFuture.completedFuture(true));
 
+        plugin.getConfig().set("lobby.server", "sky1");
         when(servers.getLobbyServers()).thenReturn(List.of("sky1"));
         local.teleportLobby(playerUuid, "world", "0,100,0,0,0").join();
 
@@ -68,6 +80,7 @@ class IslandDistributorTeleportTest {
         when(teleports.prepareTeleport(playerUuid, "world", "0,100,0,0,0", message))
                 .thenReturn(CompletableFuture.completedFuture(true));
 
+        plugin.getConfig().set("lobby.server", "sky1");
         when(servers.getLobbyServers()).thenReturn(List.of("sky1"));
         local.teleportLobby(playerUuid, "world", "0,100,0,0,0", message).join();
 

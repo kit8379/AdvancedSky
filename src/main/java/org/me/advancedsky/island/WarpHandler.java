@@ -104,4 +104,8 @@ public class WarpHandler {
     public CompletableFuture<Set<String>> getWarpNames(UUID islandUuid) {
         return CompletableFuture.supplyAsync(() -> database.getIslandWarps(islandUuid).keySet(), plugin.getBukkitAsyncExecutor());
     }
+
+    public CompletableFuture<Set<String>> getPlayerNamesWithWarps(String namePrefix) {
+        return CompletableFuture.supplyAsync(() -> database.getPlayerNamesWithWarps(namePrefix), plugin.getBukkitAsyncExecutor());
+    }
 }

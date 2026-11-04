@@ -8,6 +8,7 @@ import org.me.advancedsky.command.AsyncTabComplete;
 import org.me.advancedsky.command.SubCommand;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.NoActiveServerException;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -88,6 +89,8 @@ public class AdminDeleteIslandCommand implements SubCommand, AsyncTabComplete {
                 sender.sendMessage(config.getIslandNotHostedHereMessage(wrongHost.getServer()));
             } else if (cause instanceof IslandDoesNotExistException) {
                 sender.sendMessage(config.getAdminNoIslandMessage(targetPlayerName));
+            } else if (cause instanceof NoActiveServerException) {
+                sender.sendMessage(config.getNoActiveServerMessage());
             } else {
                 sender.sendMessage(config.getUnknownExceptionMessage());
                 plugin.severe("Error deleting island for " + targetPlayerName, ex);

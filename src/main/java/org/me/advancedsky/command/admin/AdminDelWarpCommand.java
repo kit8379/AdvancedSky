@@ -8,6 +8,7 @@ import org.me.advancedsky.command.AsyncTabComplete;
 import org.me.advancedsky.command.SubCommand;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.NoActiveServerException;
 import org.me.advancedsky.exceptions.WarpDoesNotExistException;
 
 import java.util.Collections;
@@ -80,6 +81,8 @@ public class AdminDelWarpCommand implements SubCommand, AsyncTabComplete {
                 sender.sendMessage(config.getIslandNotHostedHereMessage(wrongHost.getServer()));
             } else if (cause instanceof IslandDoesNotExistException) {
                 sender.sendMessage(config.getAdminNoIslandMessage(warpPlayerName));
+            } else if (cause instanceof NoActiveServerException) {
+                sender.sendMessage(config.getNoActiveServerMessage());
             } else if (cause instanceof WarpDoesNotExistException) {
                 sender.sendMessage(config.getNoWarpMessage(warpPlayerName, warpName));
             } else {

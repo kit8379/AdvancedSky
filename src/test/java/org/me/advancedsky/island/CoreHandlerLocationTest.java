@@ -12,7 +12,6 @@ import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.database.DatabaseHandler;
-import org.me.advancedsky.exceptions.PlayerNotOnOwnIslandException;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.exceptions.IslandNotHostedHereException;
 import org.me.advancedsky.exceptions.WorldNotFoundException;
@@ -66,10 +65,7 @@ class CoreHandlerLocationTest {
     void ownersAndMembersCanManageTheIslandTheyStandOnWithoutDatabaseReads() {
         for (Island island : new Island[]{island(playerId, Set.of(), Set.of()), island(UUID.randomUUID(), Set.of(playerId), Set.of())}) {
             when(cache.getAt(location)).thenReturn(island);
-            try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
-                bukkit.when(() -> Bukkit.getPlayer(playerId)).thenReturn(player);
-                assertEquals(islandId, core.getOwnIslandHere(playerId).join());
-            }
+            assertEquals(islandId, core.getOwnIslandAt(playerId, location));
         }
         verifyNoInteractions(database);
     }
@@ -90,17 +86,6 @@ class CoreHandlerLocationTest {
         when(world.getName()).thenReturn("islands");
         when(cache.getAt(location)).thenReturn(null);
         assertNull(core.getOwnIslandAt(playerId, location));
-    }
-
-    @Test
-    void anOfflineOrRetiredPlayerCannotManageAnIsland() {
-        try (MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
-            assertInstanceOf(PlayerNotOnOwnIslandException.class, assertThrows(CompletionException.class, () -> core.getOwnIslandHere(playerId).join()).getCause());
-            bukkit.when(() -> Bukkit.getPlayer(playerId)).thenReturn(player);
-            when(scheduler.run(eq(plugin), any(), any())).thenReturn(null);
-            assertInstanceOf(PlayerNotOnOwnIslandException.class, assertThrows(CompletionException.class, () -> core.getOwnIslandHere(playerId).join()).getCause());
-        }
-        verifyNoInteractions(database);
     }
 
     @Test

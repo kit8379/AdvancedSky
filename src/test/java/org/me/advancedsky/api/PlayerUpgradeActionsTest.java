@@ -1,7 +1,7 @@
 package org.me.advancedsky.api;
 
 import org.junit.jupiter.api.Test;
-import org.me.advancedsky.exceptions.PlayerNotOnOwnIslandException;
+import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.island.CoreHandler;
 import org.me.advancedsky.island.UpgradeHandler;
 import org.me.advancedsky.model.Actor;
@@ -22,20 +22,18 @@ class PlayerUpgradeActionsTest {
     private final PlayerActions actions = new PlayerActions(player, new ConcurrentHashMap<>(), core, null, null, null, null, null, null, upgrades);
 
     @Test
-    void directApiPurchasesRejectPlayersElsewhereBeforeCharging() {
-        when(core.getOwnIslandHere(player)).thenReturn(CompletableFuture.failedFuture(new PlayerNotOnOwnIslandException()));
+    void directApiPurchasesRejectPlayersWithoutAnIslandBeforeCharging() {
+        when(core.getIslandUuid(player)).thenReturn(CompletableFuture.failedFuture(new IslandDoesNotExistException()));
         Throwable cause = assertThrows(CompletionException.class, () -> actions.buyUpgrade("team-limit").join()).getCause();
-        assertInstanceOf(PlayerNotOnOwnIslandException.class, cause);
+        assertInstanceOf(IslandDoesNotExistException.class, cause);
         verifyNoInteractions(upgrades);
-        verify(core, never()).getIslandUuid(any());
     }
 
     @Test
-    void directApiPurchasesUseTheIslandAtThePlayersCurrentLocation() {
-        when(core.getOwnIslandHere(player)).thenReturn(CompletableFuture.completedFuture(island));
+    void directApiPurchasesUseThePlayersOwnIslandWhereverTheyAre() {
+        when(core.getIslandUuid(player)).thenReturn(CompletableFuture.completedFuture(island));
         when(upgrades.buyUpgrade(new Actor.Player(player), island, player, "team-limit")).thenReturn(CompletableFuture.completedFuture(2));
         assertEquals(2, actions.buyUpgrade("team-limit").join());
         verify(upgrades).buyUpgrade(new Actor.Player(player), island, player, "team-limit");
-        verify(core, never()).getIslandUuid(any());
     }
 }

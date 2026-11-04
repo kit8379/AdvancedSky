@@ -40,8 +40,7 @@ public class HomeHandler {
     }
 
     /**
-     * Sets a home in the player's island host world. Players must use their own boundary;
-     * an operator may preserve a home pointing to another island on that host.
+     * Sets a home in the player's island host world. All actors must use the home owner's island boundary.
      */
     public CompletableFuture<Void> setHome(Actor actor, UUID playerUuid, String homeName, Location location) {
         return CompletableFuture.supplyAsync(() -> {
@@ -51,12 +50,10 @@ public class HomeHandler {
             if (!host.equals(config.getServerName()) || location.getWorld() == null || !location.getWorld().getName().equals(config.getIslandWorldName())) {
                 throw new LocationNotInIslandException();
             }
-            if (!(actor instanceof Actor.Bypass)) {
-                int slot = database.getIslandSlot(islandUuid).orElseThrow(IslandDoesNotExistException::new);
-                int size = config.getUpgradeLimit("island-size", database.getIslandUpgradeLevel(islandUuid, "island-size"));
-                if (!islandGrid.isInArea(slot, location.getX(), location.getZ()) || !islandGrid.isInsideIsland(slot, size, location.getBlockX(), location.getBlockZ())) {
-                    throw new LocationNotInIslandException();
-                }
+            int slot = database.getIslandSlot(islandUuid).orElseThrow(IslandDoesNotExistException::new);
+            int size = config.getUpgradeLimit("island-size", database.getIslandUpgradeLevel(islandUuid, "island-size"));
+            if (!islandGrid.isInArea(slot, location.getX(), location.getZ()) || !islandGrid.isInsideIsland(slot, size, location.getBlockX(), location.getBlockZ())) {
+                throw new LocationNotInIslandException();
             }
 
             String normalizedHomeName = homeName.toLowerCase(Locale.ROOT);

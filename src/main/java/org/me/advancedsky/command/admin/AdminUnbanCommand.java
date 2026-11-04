@@ -8,6 +8,7 @@ import org.me.advancedsky.command.AsyncTabComplete;
 import org.me.advancedsky.command.SubCommand;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.NoActiveServerException;
 import org.me.advancedsky.exceptions.PlayerNotBannedException;
 
 import java.util.Collections;
@@ -94,6 +95,8 @@ public class AdminUnbanCommand implements SubCommand, AsyncTabComplete {
                 sender.sendMessage(config.getAdminNoIslandMessage(islandOwnerName));
             } else if (cause instanceof PlayerNotBannedException) {
                 sender.sendMessage(config.getPlayerNotBannedMessage(banPlayerName));
+            } else if (cause instanceof NoActiveServerException) {
+                sender.sendMessage(config.getNoActiveServerMessage());
             } else {
                 sender.sendMessage(config.getUnknownExceptionMessage());
                 plugin.severe("Error unbanning player " + banPlayerName + " from island of " + islandOwnerName, ex);

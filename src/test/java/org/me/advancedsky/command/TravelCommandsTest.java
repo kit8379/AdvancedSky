@@ -13,6 +13,7 @@ import org.me.advancedsky.command.player.PlayerCreateIslandCommand;
 import org.me.advancedsky.command.player.PlayerHomeCommand;
 import org.me.advancedsky.command.player.PlayerLobbyCommand;
 import org.me.advancedsky.config.ConfigHandler;
+import org.me.advancedsky.exceptions.NoActiveServerException;
 import org.me.advancedsky.exceptions.TeleportCancelledException;
 
 import java.util.Optional;
@@ -114,6 +115,30 @@ class TravelCommandsTest {
 
         verify(api).lobby(playerId, lobbyMessage);
         verify(api, never()).sendPlayerMessage(any(), any());
+    }
+
+    @Test
+    void homeOnAnOfflineHostTellsThePlayerInsteadOfReportingAnUnknownError() {
+        Component offline = Component.text("Host offline");
+        when(config.getNoActiveServerMessage()).thenReturn(offline);
+        when(actions.home("garden", homeMessage)).thenReturn(CompletableFuture.failedFuture(new CompletionException(new NoActiveServerException())));
+
+        new PlayerHomeCommand(plugin, api, config).execute(player, new String[]{"home", "garden"});
+
+        verify(player).sendMessage(offline);
+        verifyNoInteractions(plugin);
+    }
+
+    @Test
+    void adminHomeOnAnOfflineHostTellsTheSender() {
+        Component offline = Component.text("Host offline");
+        when(config.getNoActiveServerMessage()).thenReturn(offline);
+        when(admin.home(ownerId, "garden", playerId, adminHomeMessage)).thenReturn(CompletableFuture.failedFuture(new NoActiveServerException()));
+
+        new AdminHomeCommand(plugin, api, config).execute(player, new String[]{"home", "Owner", "garden"});
+
+        verify(player).sendMessage(offline);
+        verifyNoInteractions(plugin);
     }
 
     @Test

@@ -96,7 +96,9 @@ class HomeTeleportDeliveryTest {
                 visiblePlayer.set(sourcePlayer);
             }
         });
-        IslandDistributor distributor = new IslandDistributor(sourcePlugin, database, null, registry, messenger, mock(ServerRegistry.class), "lobby");
+        ServerRegistry servers = mock(ServerRegistry.class);
+        when(servers.getIslandServers()).thenReturn(List.of("sky1"));
+        IslandDistributor distributor = new IslandDistributor(sourcePlugin, database, null, registry, messenger, servers, "lobby");
         HomeHandler homes = new HomeHandler(sourcePlugin, config, database, distributor, registry, null, null);
         AdvancedSkyAPI api = new AdvancedSkyAPI(sourcePlugin, null, null, homes, null, null, null, null, null, sourceMessages, null, null, null);
         TeleportRequestListener listener = new TeleportRequestListener(destinationPlugin, destination);

@@ -8,6 +8,7 @@ import org.me.advancedsky.command.AsyncTabComplete;
 import org.me.advancedsky.command.SubCommand;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.NoActiveServerException;
 import org.me.advancedsky.exceptions.PlayerNotCoopedException;
 
 import java.util.Collections;
@@ -88,6 +89,8 @@ public class PlayerUncoopCommand implements SubCommand, AsyncTabComplete {
                 player.sendMessage(config.getPlayerNoIslandMessage());
             } else if (cause instanceof PlayerNotCoopedException) {
                 player.sendMessage(config.getPlayerNotCoopedMessage(targetPlayerName));
+            } else if (cause instanceof NoActiveServerException) {
+                player.sendMessage(config.getNoActiveServerMessage());
             } else {
                 player.sendMessage(config.getUnknownExceptionMessage());
                 plugin.severe("Error uncooping player " + targetPlayerName + " for " + player.getName(), ex);

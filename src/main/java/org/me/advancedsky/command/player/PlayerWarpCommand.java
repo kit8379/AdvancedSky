@@ -20,6 +20,8 @@ import java.util.stream.Collectors;
  * /is warp <player> [warpName]
  */
 public class PlayerWarpCommand implements SubCommand, AsyncTabComplete {
+    private static final int PLAYER_PREFIX_LENGTH = 2;
+
     private final AdvancedSky plugin;
     private final AdvancedSkyAPI api;
     private final ConfigHandler config;
@@ -89,6 +91,8 @@ public class PlayerWarpCommand implements SubCommand, AsyncTabComplete {
                 player.sendMessage(config.getPlayerBannedMessage());
             } else if (cause instanceof IslandLockedException) {
                 player.sendMessage(config.getIslandLockedMessage());
+            } else if (cause instanceof NoActiveServerException) {
+                player.sendMessage(config.getNoActiveServerMessage());
             } else if (cause instanceof TeleportCancelledException) {
                 // Whatever cancelled the teleport told the player why.
             } else {
@@ -104,9 +108,11 @@ public class PlayerWarpCommand implements SubCommand, AsyncTabComplete {
     @Override
     public CompletableFuture<List<String>> tabCompleteAsync(CommandSender sender, String label, String[] args) {
         if (args.length == 2) {
-            String prefix = args[1].toLowerCase(Locale.ROOT);
+            if (args[1].length() < PLAYER_PREFIX_LENGTH) {
+                return CompletableFuture.completedFuture(Collections.emptyList());
+            }
 
-            return api.getOnlinePlayersNames().thenApply(names -> names.stream().filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()));
+            return api.getPlayerNamesWithWarps(args[1]).thenApply(names -> names.stream().sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()));
         }
 
         if (args.length == 3) {
@@ -124,5 +130,10 @@ public class PlayerWarpCommand implements SubCommand, AsyncTabComplete {
         }
 
         return CompletableFuture.completedFuture(Collections.emptyList());
+    }
+
+    @Override
+    public int candidatePrefixLength(String[] args) {
+        return args.length == 2 ? PLAYER_PREFIX_LENGTH : 0;
     }
 }

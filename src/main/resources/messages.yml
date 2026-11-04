@@ -8,6 +8,7 @@ messages:
   region-purge-started: "<yellow>Retrying incomplete island deletions..."
   region-purge-finished: "<green>Completed {purged} island deletion(s); {deferred} could not finish."
   region-purge-island-server: "<red>Run this command on an island server."
+  no-active-server: "<red>The server hosting this island is offline. Please try again later."
   unknown-exception: "<red>An unknown error occurred while processing your request. Please try again later or contact the administrator."
 
   # ================================================================================================================
@@ -33,7 +34,6 @@ messages:
   island-grid-full: "<red>The network cannot host any more islands. Please contact an administrator."
 
   player-no-island: "<red>You don't have an island yet!"
-  player-must-on-own-island: "<red>Return to your own island with /is home before using this command."
   island-not-hosted-here: "<red>Run this island management command on <aqua>{server}<red>."
   player-already-has-island: "<red>You already own an island!"
   admin-no-island: "<red>Player <aqua>{player} <red>does not have an island!"

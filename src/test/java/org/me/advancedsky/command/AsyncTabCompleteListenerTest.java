@@ -43,6 +43,17 @@ class AsyncTabCompleteListenerTest {
         verify(router, times(2)).completeAsync(any(), anyString(), any());
     }
 
+    @Test
+    void candidatesLoadedByPrefixAreSharedByLongerTyping() {
+        when(router.candidatePrefixLength(any())).thenReturn(2);
+        when(router.completeAsync(eq(player), eq("is"), aryEq(new String[]{"warp", "al"}))).thenReturn(CompletableFuture.completedFuture(List.of("Alice", "Alan")));
+
+        assertEquals(List.of("Alice", "Alan"), complete("/is warp al"));
+        assertEquals(List.of("Alice"), complete("/is warp ali"));
+
+        verify(router, times(1)).completeAsync(any(), anyString(), any());
+    }
+
     private List<String> complete(String buffer) {
         AsyncTabCompleteEvent event = new AsyncTabCompleteEvent(player, buffer, true, null);
         listener.onAsyncTabComplete(event);

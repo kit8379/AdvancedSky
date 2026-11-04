@@ -9,7 +9,6 @@ import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.exceptions.IslandNotHostedHereException;
-import org.me.advancedsky.exceptions.PlayerNotOnOwnIslandException;
 import org.me.advancedsky.exceptions.WorldNotFoundException;
 import org.me.advancedsky.grid.IslandGrid;
 import org.me.advancedsky.model.Actor;
@@ -80,32 +79,6 @@ public class CoreHandler {
             if (world == null) throw new WorldNotFoundException();
             return new IslandGrid(config.getIslandHeight()).center(world, slot);
         }, plugin.getGlobalRegionExecutor());
-    }
-
-    /**
-     * Upgrade purchases use the local cache and read the player on their entity thread.
-     */
-    public CompletableFuture<UUID> getOwnIslandHere(UUID playerUuid) {
-        return CompletableFuture.supplyAsync(() -> Bukkit.getPlayer(playerUuid), plugin.getGlobalRegionExecutor()).thenCompose(player -> {
-            CompletableFuture<UUID> result = new CompletableFuture<>();
-            if (player == null) return CompletableFuture.failedFuture(new PlayerNotOnOwnIslandException());
-            try {
-                if (player.getScheduler().run(plugin, task -> {
-                    try {
-                        UUID islandUuid = getOwnIslandAt(playerUuid, player.getLocation());
-                        if (islandUuid == null) throw new PlayerNotOnOwnIslandException();
-                        result.complete(islandUuid);
-                    } catch (Throwable error) {
-                        result.completeExceptionally(error);
-                    }
-                }, () -> result.completeExceptionally(new PlayerNotOnOwnIslandException())) == null) {
-                    result.completeExceptionally(new PlayerNotOnOwnIslandException());
-                }
-            } catch (Throwable error) {
-                result.completeExceptionally(error);
-            }
-            return result;
-        });
     }
 
     /**

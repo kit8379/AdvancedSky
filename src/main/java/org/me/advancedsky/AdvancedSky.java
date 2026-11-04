@@ -151,7 +151,7 @@ public class AdvancedSky extends JavaPlugin {
             BanHandler banHandler = new BanHandler(this, databaseHandler, islandDistributor, islandOperator);
             CoopHandler coopHandler = new CoopHandler(this, databaseHandler, islandDistributor, islandOperator);
             BiomeHandler biomeHandler = new BiomeHandler(this, config, databaseHandler, islandGrid);
-            UpgradeHandler upgradeHandler = new UpgradeHandler(this, config, databaseHandler, islandOperator, economyHandler);
+            UpgradeHandler upgradeHandler = new UpgradeHandler(this, config, databaseHandler, islandDistributor, islandOperator, economyHandler);
             LobbyHandler lobbyHandler = new LobbyHandler(this, config, islandDistributor);
             UuidHandler uuidHandler = new UuidHandler(this, databaseHandler);
             registerCrossServerHandlers(crossServerMessenger, islandOperator, teleportHandler);
@@ -255,6 +255,7 @@ public class AdvancedSky extends JavaPlugin {
         messenger.register(IslandDistributor.ACTION_WARP_DELETE, payload -> emptyResponse(operator.deleteWarp(Actor.fromJson(payload), uuid(payload, "islandUuid"), payload.getString("pointName"))));
         messenger.register(IslandDistributor.ACTION_LOCK_TOGGLE, payload -> operator.toggleIslandLock(Actor.fromJson(payload), uuid(payload, "islandUuid")).thenApply(enabled -> new JSONObject().put("enabled", enabled)));
         messenger.register(IslandDistributor.ACTION_PVP_TOGGLE, payload -> operator.toggleIslandPvp(Actor.fromJson(payload), uuid(payload, "islandUuid")).thenApply(enabled -> new JSONObject().put("enabled", enabled)));
+        messenger.register(IslandDistributor.ACTION_UPGRADE_BUY, payload -> emptyResponse(operator.buyUpgrade(Actor.fromJson(payload), uuid(payload, "islandUuid"), uuid(payload, "payerUuid"), payload.getString("upgradeId"), payload.getInt("expectedLevel"), payload.getInt("newLevel"), payload.getDouble("price"))));
         messenger.register(IslandDistributor.ACTION_PLAYER_CONNECT, payload -> emptyResponse(ServerUtil.connectToServer(this, uuid(payload, "playerUuid"), payload.getString("targetServer"))));
     }
 

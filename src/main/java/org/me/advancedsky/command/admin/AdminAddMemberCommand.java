@@ -10,6 +10,7 @@ import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.IslandAlreadyExistException;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.exceptions.IslandPlayerAlreadyExistsException;
+import org.me.advancedsky.exceptions.NoActiveServerException;
 import org.me.advancedsky.exceptions.TeamLimitReachedException;
 
 import java.util.Collections;
@@ -101,6 +102,8 @@ public class AdminAddMemberCommand implements SubCommand, AsyncTabComplete {
                 sender.sendMessage(config.getIslandMemberExistsMessage(targetMemberName));
             } else if (cause instanceof TeamLimitReachedException) {
                 sender.sendMessage(config.getPlayerTeamLimitReachedMessage(cause.getMessage()));
+            } else if (cause instanceof NoActiveServerException) {
+                sender.sendMessage(config.getNoActiveServerMessage());
             } else {
                 sender.sendMessage(config.getUnknownExceptionMessage());
                 plugin.severe("Error adding member " + targetMemberName + " to island of " + islandOwnerName, ex);

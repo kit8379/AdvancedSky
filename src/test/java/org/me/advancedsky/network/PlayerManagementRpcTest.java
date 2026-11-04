@@ -6,9 +6,11 @@ import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.cluster.OnlinePlayerRegistry;
+import org.me.advancedsky.cluster.ServerRegistry;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.exceptions.CannotExpelIslandPlayerException;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.NoActiveServerException;
 import org.me.advancedsky.exceptions.NotIslandOwnerException;
 import org.me.advancedsky.island.CoreHandler;
 import org.me.advancedsky.island.CoopHandler;
@@ -23,6 +25,7 @@ import org.me.advancedsky.thread.BukkitAsyncExecutor;
 import org.me.advancedsky.world.WorldHandler;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -46,7 +49,8 @@ class PlayerManagementRpcTest {
     private final OnlinePlayerRegistry online = mock(OnlinePlayerRegistry.class);
     private final CrossServerMessenger messenger = mock(CrossServerMessenger.class);
     private final Map<String, CrossServerMessageHandler> handlers = new HashMap<>();
-    private final IslandDistributor distributor = new IslandDistributor(plugin, sourceDatabase, null, null, messenger, null, "lobby");
+    private final ServerRegistry servers = mock(ServerRegistry.class);
+    private final IslandDistributor distributor = new IslandDistributor(plugin, sourceDatabase, null, null, messenger, servers, "lobby");
     private final WarpHandler warps = new WarpHandler(plugin, null, sourceDatabase, distributor, null, null, null);
     private final PlayerHandler members = new PlayerHandler(plugin, sourceDatabase, distributor, null, null, null);
     private final CoreHandler core = new CoreHandler(plugin, null, sourceDatabase, distributor, null, null);
@@ -58,6 +62,7 @@ class PlayerManagementRpcTest {
         BukkitAsyncExecutor async = mock(BukkitAsyncExecutor.class);
         doAnswer(call -> { call.<Runnable>getArgument(0).run(); return null; }).when(async).execute(any());
         when(plugin.getBukkitAsyncExecutor()).thenReturn(async);
+        when(servers.getIslandServers()).thenReturn(List.of("host"));
         when(sourceDatabase.getIslandServer(island)).thenReturn(Optional.of("host"));
         when(hostDatabase.getIslandServer(island)).thenReturn(Optional.of("host"));
         when(hostDatabase.getIslandSlot(island)).thenReturn(Optional.of(4));
@@ -86,6 +91,26 @@ class PlayerManagementRpcTest {
         verify(cache).reload(island);
         verifyNoInteractions(world);
         verify(sourceDatabase, never()).deleteWarpPoint(any(), any(), anyString());
+    }
+
+    @Test
+    void deletingAPointOnAnOfflineHostFailsAtOnceWithoutMessagingIt() {
+        when(servers.getIslandServers()).thenReturn(List.of());
+
+        assertInstanceOf(NoActiveServerException.class, assertThrows(CompletionException.class, () -> warps.delWarp(actor, island, "shop").join()).getCause());
+        assertInstanceOf(NoActiveServerException.class, assertThrows(CompletionException.class, () -> homes.delHome(actor, island, player, "farm").join()).getCause());
+
+        verify(messenger, never()).request(anyString(), anyString(), any());
+    }
+
+    @Test
+    void togglingOnAnOfflineHostFailsAtOnceWithoutMessagingIt() {
+        when(servers.getIslandServers()).thenReturn(List.of());
+
+        assertInstanceOf(NoActiveServerException.class, assertThrows(CompletionException.class, () -> core.toggleIslandPvp(actor, island).join()).getCause());
+        assertInstanceOf(NoActiveServerException.class, assertThrows(CompletionException.class, () -> core.toggleIslandLock(actor, island).join()).getCause());
+
+        verify(messenger, never()).request(anyString(), anyString(), any());
     }
 
     @Test

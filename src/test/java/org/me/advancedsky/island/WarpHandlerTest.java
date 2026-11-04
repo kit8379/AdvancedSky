@@ -100,6 +100,18 @@ class WarpHandlerTest {
     }
 
     @Test
+    void playerNamesWithWarpsMatchLiteralPrefixOfIslandsHavingAWarp() throws Exception {
+        sql("INSERT INTO test_player_uuid (uuid, name, name_lower) VALUES (?, 'Ab_Owner', 'ab_owner')", owner);
+        sql("INSERT INTO test_player_uuid (uuid, name, name_lower) VALUES (?, 'AbcMember', 'abcmember')", member);
+        sql("INSERT INTO test_player_uuid (uuid, name, name_lower) VALUES (?, 'AbVisitor', 'abvisitor')", visitor);
+        assertTrue(handler.getPlayerNamesWithWarps("ab").join().isEmpty());
+
+        set(owner, "shop", 1);
+        assertEquals(Set.of("Ab_Owner", "AbcMember"), handler.getPlayerNamesWithWarps("AB").join());
+        assertEquals(Set.of("Ab_Owner"), handler.getPlayerNamesWithWarps("ab_").join());
+    }
+
+    @Test
     void membersShareNamesUpdateAndDeleteTheSameWarp() {
         set(owner, "Shop", 1);
         assertEquals(Set.of("shop"), handler.getWarpNames(island).join());
@@ -178,24 +190,13 @@ class WarpHandlerTest {
     }
 
     @Test
-    void adminPreservesCrossIslandHomesWhilePlayersStillUseTheirOwnBoundary() throws Exception {
+    void playersAndAdminCannotSaveCrossIslandHomes() {
         when(config.getUpgradeLimit("island-size", 1)).thenReturn(50);
         Location destination = grid.center(islandWorld, 1);
-        destination.setY(121);
-        destination.setYaw(45);
-        destination.setPitch(-10);
-        assertFailure(LocationNotInIslandException.class, homes.setHome(new Actor.Player(owner), owner, "far", destination));
-        homes.setHome(admin, owner, "default", destination).join();
-        String saved = destination.getX() + ",121.0," + destination.getZ() + ",45.0,-10.0";
-        assertEquals(saved, database.getIslandHomes(island, owner).get("default"));
-        assertEquals(saved, cache.get(island).getDefaultHomes().get(owner));
-        when(players.isOnline(owner)).thenReturn(true);
-        doReturn(CompletableFuture.completedFuture(null)).when(distributor).teleportIsland(any(), any(), anyString());
-        homes.home(owner, "default", owner).join();
-        verify(distributor).teleportIsland(island, owner, saved);
-        assertFailure(LocationNotInIslandException.class, homes.setHome(admin, owner, "wrong world", new Location(otherWorld, 1, 70, 3)));
-        sql("UPDATE test_islands SET server = 'other' WHERE island_uuid = ?", island);
-        assertFailure(LocationNotInIslandException.class, homes.setHome(admin, owner, "wrong host", destination));
+        for (Actor actor : List.of(new Actor.Player(owner), admin)) {
+            assertFailure(LocationNotInIslandException.class, homes.setHome(actor, owner, "far", destination));
+        }
+        assertTrue(database.getIslandHomes(island, owner).isEmpty());
     }
 
     @Test

@@ -248,9 +248,9 @@ public final class PlayerActions {
 
     /**
      * MEMBER, enforced in the level write. Paid from this player's own balance; completes with
-     * the level bought. The player must be on their own island when the purchase starts.
+     * the level bought.
      */
     public CompletableFuture<Integer> buyUpgrade(String upgradeId) {
-        return inOrder(() -> coreHandler.getOwnIslandHere(playerUuid).thenCompose(islandUuid -> upgradeHandler.buyUpgrade(actor, islandUuid, playerUuid, upgradeId)));
+        return inOrder(() -> ownIsland().thenCompose(islandUuid -> upgradeHandler.buyUpgrade(actor, islandUuid, playerUuid, upgradeId)));
     }
 }

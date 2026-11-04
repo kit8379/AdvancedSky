@@ -11,4 +11,11 @@ import java.util.concurrent.CompletableFuture;
  */
 public interface AsyncCommandTabRouter {
     CompletableFuture<List<String>> completeAsync(CommandSender sender, String label, String[] args);
+
+    /**
+     * How many typed letters of the last argument the candidates are loaded by.
+     */
+    default int candidatePrefixLength(String[] args) {
+        return 0;
+    }
 }

@@ -10,6 +10,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.me.advancedsky.AdvancedSky;
+import org.me.advancedsky.network.IslandDistributor;
 import org.me.advancedsky.network.IslandOperator;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
@@ -75,7 +76,7 @@ class UpgradeHandlerTest {
         when(economy.withdrawPlayer(payer, 25000.0)).thenReturn(new EconomyResponse(25000, 0, EconomyResponse.ResponseType.SUCCESS, null));
         EconomyHandler economyHandler = new EconomyHandler(plugin);
         IslandOperator operator = new IslandOperator(plugin, database, null, cache, null, economyHandler, null, "local");
-        handler = new UpgradeHandler(plugin, config, database, operator, economyHandler);
+        handler = new UpgradeHandler(plugin, config, database, new IslandDistributor(plugin, database, null, null, null, null, "local"), operator, economyHandler);
     }
 
     @AfterEach

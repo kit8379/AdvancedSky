@@ -1443,6 +1443,10 @@ public class ConfigHandler {
         return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.unknown-player")).replace("{player}", player));
     }
 
+    public Component getNoActiveServerMessage() {
+        return ColorUtils.colorize(messages.getString("messages.no-active-server"));
+    }
+
     public Component getUnknownExceptionMessage() {
         return ColorUtils.colorize(messages.getString("messages.unknown-exception"));
     }
@@ -1567,10 +1571,6 @@ public class ConfigHandler {
 
     public Component getPlayerNoIslandMessage() {
         return ColorUtils.colorize(messages.getString("messages.player-no-island"));
-    }
-
-    public Component getPlayerMustOnOwnIslandMessage() {
-        return ColorUtils.colorize(messages.getString("messages.player-must-on-own-island"));
     }
 
     public Component getIslandNotHostedHereMessage(String server) {

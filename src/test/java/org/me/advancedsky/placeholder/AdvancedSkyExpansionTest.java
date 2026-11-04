@@ -145,12 +145,14 @@ class AdvancedSkyExpansionTest {
     void leaderboardWorksWithoutPlayerAndSharesRowsAndFields() {
         IslandTop first = new IslandTop(islandId, ownerId, 42, Set.of(playerId));
         IslandTop second = new IslandTop(UUID.randomUUID(), bannedId, 0, Set.of());
-        when(api.getPlayerNames(Set.of(ownerId, bannedId))).thenReturn(CompletableFuture.completedFuture(Map.of(ownerId, "Owner", bannedId, "OtherOwner")));
+        when(api.getPlayerNames(Set.of(ownerId, bannedId, playerId))).thenReturn(CompletableFuture.completedFuture(Map.of(ownerId, "Owner", bannedId, "OtherOwner", playerId, "Member")));
         when(api.getTopIslandLevels(2)).thenReturn(CompletableFuture.completedFuture(List.of(first, second)));
         assertEquals("0", expansion.onRequest(null, "top_2_level"));
         assertEquals("OtherOwner", expansion.onRequest(null, "top_2_owner"));
         assertEquals("Owner", expansion.onRequest(player, "top_1_owner"));
         assertEquals("1", expansion.onRequest(null, "top_1_members"));
+        assertEquals("Member", expansion.onRequest(null, "top_1_member_names"));
+        assertEquals("", expansion.onRequest(null, "top_2_member_names"));
         assertEquals(islandId.toString(), expansion.onRequest(null, "top_1_uuid"));
         verify(api, times(1)).getTopIslandLevels(2);
         verify(api, never()).getIslandUuid(any());
@@ -159,6 +161,25 @@ class AdvancedSkyExpansionTest {
         assertEquals("", expansion.onRequest(null, "top_10_level"));
         assertEquals("", expansion.onRequest(null, "top_10_owner"));
         verify(api, times(1)).getTopIslandLevels(10);
+    }
+
+    @Test
+    void leaderboardResolvesMemberNamesInOneBatchAndKeepsThemWithTheirIsland() {
+        UUID otherMember = UUID.randomUUID();
+        IslandTop first = new IslandTop(islandId, ownerId, 42, Set.of(playerId, otherMember));
+        IslandTop second = new IslandTop(UUID.randomUUID(), bannedId, 7, Set.of(coopId));
+        Set<UUID> players = Set.of(ownerId, bannedId, playerId, otherMember, coopId);
+        when(api.getTopIslandLevels(2)).thenReturn(CompletableFuture.completedFuture(List.of(first, second)));
+        when(api.getPlayerNames(players)).thenReturn(CompletableFuture.completedFuture(Map.of(
+                ownerId, "Owner", bannedId, "OtherOwner", playerId, "Zeta", otherMember, "alpha", coopId, "SecondMember")));
+
+        assertEquals("SecondMember", expansion.onRequest(null, "top_2_member_names"));
+        assertEquals("alpha\nZeta", expansion.onRequest(null, "top_1_member_names"));
+        assertEquals("Owner", expansion.onRequest(null, "top_1_owner"));
+        assertEquals("2", expansion.onRequest(null, "top_1_members"));
+        verify(api, times(1)).getPlayerNames(players);
+        verify(api, times(1)).getTopIslandLevels(2);
+        verify(api, never()).getIslandMembers(any());
     }
 
     @Test

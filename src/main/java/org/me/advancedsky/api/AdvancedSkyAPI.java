@@ -149,6 +149,12 @@ public class AdvancedSkyAPI {
         return warpHandler.getWarpNames(islandUuid);
     }
 
+    /** Names starting with the prefix of players, online or not, whose island has a warp. */
+    @SuppressWarnings("unused")
+    public CompletableFuture<Set<String>> getPlayerNamesWithWarps(String namePrefix) {
+        return warpHandler.getPlayerNamesWithWarps(namePrefix);
+    }
+
     @SuppressWarnings("unused")
     public CompletableFuture<Boolean> isPlayerBanned(UUID islandUuid, UUID playerUuid) {
         return banHandler.isPlayerBanned(islandUuid, playerUuid);

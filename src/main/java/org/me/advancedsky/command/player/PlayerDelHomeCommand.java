@@ -9,6 +9,7 @@ import org.me.advancedsky.command.SubCommand;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.HomeDoesNotExistException;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.NoActiveServerException;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -82,6 +83,8 @@ public class PlayerDelHomeCommand implements SubCommand, AsyncTabComplete {
             Throwable cause = ex.getCause();
             if (cause instanceof IslandDoesNotExistException) {
                 player.sendMessage(config.getPlayerNoIslandMessage());
+            } else if (cause instanceof NoActiveServerException) {
+                player.sendMessage(config.getNoActiveServerMessage());
             } else if (cause instanceof HomeDoesNotExistException) {
                 player.sendMessage(config.getPlayerNoHomeMessage(homeName));
             } else {

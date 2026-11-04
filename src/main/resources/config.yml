@@ -70,9 +70,10 @@ cluster-id: default
 # Lobby Destination
 # ===================================================================
 # Where players are sent when they must leave an island forcibly
-# (e.g., island delete) or run /island lobby. A ready lobby server is picked at random.
+# (e.g., island delete) or run /island lobby. The configured lobby server must be online.
 lobby:
-  # Lobby world name (must exist on all lobby servers).
+  server: "skymain"
+  # Lobby world name (must exist on lobby.server).
   world-name: "world"
 
   # Spawn location inside the lobby world.

@@ -49,7 +49,6 @@ class WarpActionsTest {
 
         verify(warps).setWarp(new Actor.Player(player), island, "shop", location);
         verify(warps).delWarp(new Actor.Player(player), island, "shop");
-        verify(core, never()).getOwnIslandHere(any());
     }
 
     @Test

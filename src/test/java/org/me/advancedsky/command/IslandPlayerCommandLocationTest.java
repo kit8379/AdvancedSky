@@ -24,7 +24,6 @@ class IslandPlayerCommandLocationTest {
     private final AdvancedSkyAPI api = mock(AdvancedSkyAPI.class);
     private final PlayerActions actions = mock(PlayerActions.class);
     private final ConfigHandler config = mock(ConfigHandler.class, call -> call.getMethod().getReturnType() == String[].class ? new String[0] : RETURNS_DEFAULTS.answer(call));
-    private final Component mustReturn = Component.text("Return to your island");
     private final Location location = mock(Location.class);
     private IslandPlayerCommand command;
 
@@ -33,7 +32,6 @@ class IslandPlayerCommandLocationTest {
         when(player.getUniqueId()).thenReturn(playerId);
         when(player.getLocation()).thenReturn(location);
         when(player.hasPermission(anyString())).thenReturn(true);
-        when(config.getPlayerMustOnOwnIslandMessage()).thenReturn(mustReturn);
         when(config.getPlayerBanAliases()).thenReturn(new String[]{"deny"});
         when(config.getPlayerUpgradeAliases()).thenReturn(new String[]{"up"});
         when(api.player(playerId)).thenReturn(actions);
@@ -47,7 +45,6 @@ class IslandPlayerCommandLocationTest {
         command.onCommand(player, mock(Command.class), "is", new String[]{"ban", "Target"});
         command.onCommand(player, mock(Command.class), "is", new String[]{"deny", "Target"});
         verify(actions, times(2)).banPlayer(targetId);
-        verify(player, never()).sendMessage(mustReturn);
         verify(api, never()).isOnOwnIsland(any(), any());
     }
 
@@ -56,7 +53,6 @@ class IslandPlayerCommandLocationTest {
         when(api.isOnOwnIsland(playerId, location)).thenReturn(true);
         command.onCommand(player, mock(Command.class), "is", new String[]{"deny", "Target"});
         verify(actions).banPlayer(targetId);
-        verify(player, never()).sendMessage(mustReturn);
     }
 
     @Test
@@ -68,26 +64,15 @@ class IslandPlayerCommandLocationTest {
         verify(actions).deleteWarp("shop");
         verify(actions).expelPlayer(targetId);
         verify(api, never()).isOnOwnIsland(any(), any());
-        verify(player, never()).sendMessage(mustReturn);
     }
 
     @Test
-    void upgradeDetailsPurchasesAndAliasesRequireThePlayersOwnIsland() {
-        command.onCommand(player, mock(Command.class), "is", new String[]{"upgrade", "team-limit"});
+    void upgradePurchasesAndTheirAliasesWorkOutsideTheIsland() {
+        when(actions.buyUpgrade("team-limit")).thenReturn(CompletableFuture.completedFuture(2));
         command.onCommand(player, mock(Command.class), "is", new String[]{"upgrade", "team-limit", "buy"});
         command.onCommand(player, mock(Command.class), "is", new String[]{"up", "team-limit", "buy"});
-        verify(player, times(3)).sendMessage(mustReturn);
-        verify(api, never()).getIslandUuid(any());
-        verifyNoInteractions(actions);
-    }
-
-    @Test
-    void upgradeAliasAllowsPurchasesOnThePlayersOwnIsland() {
-        when(api.isOnOwnIsland(playerId, location)).thenReturn(true);
-        when(actions.buyUpgrade("team-limit")).thenReturn(CompletableFuture.completedFuture(2));
-        command.onCommand(player, mock(Command.class), "is", new String[]{"up", "team-limit", "buy"});
-        verify(actions).buyUpgrade("team-limit");
-        verify(player, never()).sendMessage(mustReturn);
+        verify(actions, times(2)).buyUpgrade("team-limit");
+        verify(api, never()).isOnOwnIsland(any(), any());
     }
 
     @Test

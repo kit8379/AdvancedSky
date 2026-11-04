@@ -567,6 +567,7 @@ Replace `<id>` with an upgrade ID from `upgrades.yml` and `<n>` with a rank from
 | `%advancedsky_top_<n>_level%` | Island level at rank n |
 | `%advancedsky_top_<n>_uuid%` | Island UUID at rank n |
 | `%advancedsky_top_<n>_members%` | Member count at rank n |
+| `%advancedsky_top_<n>_member_names%` | Newline-separated member names at rank n, excluding the owner |
 
 </details>
 

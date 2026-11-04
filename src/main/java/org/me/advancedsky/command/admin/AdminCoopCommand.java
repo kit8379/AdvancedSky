@@ -10,6 +10,7 @@ import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.CannotCoopIslandPlayerException;
 import org.me.advancedsky.exceptions.CoopLimitReachedException;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.NoActiveServerException;
 import org.me.advancedsky.exceptions.PlayerAlreadyCoopedException;
 import org.me.advancedsky.exceptions.PlayerNotOnlineException;
 
@@ -100,6 +101,8 @@ public class AdminCoopCommand implements SubCommand, AsyncTabComplete {
                 sender.sendMessage(config.getPlayerCoopLimitReachedMessage(cause.getMessage()));
             } else if (cause instanceof PlayerNotOnlineException) {
                 sender.sendMessage(config.getPlayerNotOnlineMessage(targetName));
+            } else if (cause instanceof NoActiveServerException) {
+                sender.sendMessage(config.getNoActiveServerMessage());
             } else {
                 sender.sendMessage(config.getUnknownExceptionMessage());
                 plugin.severe("Error cooping player " + targetName + " to island of " + ownerName, ex);

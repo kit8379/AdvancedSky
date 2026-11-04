@@ -123,6 +123,11 @@ public class IslandPlayerCommand implements CommandExecutor, AsyncCommandTabRout
     }
 
     @Override
+    public int candidatePrefixLength(String[] args) {
+        return subCommandMap.get(args[0].toLowerCase(Locale.ROOT)) instanceof AsyncTabComplete asyncTabComplete ? asyncTabComplete.candidatePrefixLength(args) : 0;
+    }
+
+    @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, String @NotNull [] args) {
         if (!sender.hasPermission("advancedsky.island.player")) {
             sender.sendMessage(config.getNoPermissionCommandMessage());
@@ -167,18 +172,6 @@ public class IslandPlayerCommand implements CommandExecutor, AsyncCommandTabRout
             return true;
         }
 
-        // Check the canonical command name, so aliases obey the same rule. This callback runs
-        // on the player's thread and the lookup reads only the host's active island cache.
-        if ("upgrade".equals(target.getName())) {
-            if (!(sender instanceof Player player)) {
-                sender.sendMessage(config.getOnlyPlayerCanRunCommandMessage());
-                return true;
-            }
-            if (!api.isOnOwnIsland(player.getUniqueId(), player.getLocation())) {
-                player.sendMessage(config.getPlayerMustOnOwnIslandMessage());
-                return true;
-            }
-        }
         boolean success = target.execute(sender, args);
         if (!success) {
             sender.sendMessage(config.getPlayerCommandUsageMessage(target.getName(), target.getSyntax()));

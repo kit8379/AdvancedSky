@@ -7,6 +7,7 @@ import org.me.advancedsky.api.AdvancedSkyAPI;
 import org.me.advancedsky.command.SubCommand;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.NoActiveServerException;
 import org.me.advancedsky.exceptions.NotIslandOwnerException;
 
 import java.util.Map;
@@ -115,6 +116,8 @@ public class PlayerDeleteIslandCommand implements SubCommand {
             } else if (cause instanceof NotIslandOwnerException) {
                 player.sendMessage(config.getPlayerDeleteNotOwnerMessage());
                 reset(playerUuid);
+            } else if (cause instanceof NoActiveServerException) {
+                player.sendMessage(config.getNoActiveServerMessage());
             } else {
                 player.sendMessage(config.getUnknownExceptionMessage());
                 plugin.severe("Error deleting island for player " + player.getName(), ex);

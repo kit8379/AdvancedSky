@@ -31,7 +31,7 @@ public final class AdvancedSkyExpansion extends PlaceholderExpansion {
     // Every top placeholder loads the leaderboard down to the deepest position ever asked for,
     // and anyone who can have text parsed can ask.
     private static final int MAX_TOP_POSITION = 100;
-    private static final Pattern TOP = Pattern.compile("top_([1-9][0-9]*)_(owner|level|uuid|members)");
+    private static final Pattern TOP = Pattern.compile("top_([1-9][0-9]*)_(owner|level|uuid|members|member_names)");
     private static final Pattern UPGRADE = Pattern.compile("upgrade_([a-z0-9-]+)_(level|value|max|maxed|next_price|next_require_level|next_value)");
     private static final Map<String, String> NO_ISLAND = Map.ofEntries(Map.entry("island_level", "0"), Map.entry("island_members", "0"), Map.entry("island_owner", ""), Map.entry("island_uuid", ""), Map.entry("island_role", "none"), Map.entry("island_owner_uuid", ""), Map.entry("island_lock", "false"), Map.entry("island_pvp", "false"), Map.entry("island_players", "0"), Map.entry("island_coops", "0"), Map.entry("island_bans", "0"), Map.entry("island_rank", "0"));
 
@@ -222,8 +222,12 @@ public final class AdvancedSkyExpansion extends PlaceholderExpansion {
             if (islands.isEmpty()) {
                 return CompletableFuture.completedFuture(Map.<String, String>of());
             }
-            Set<UUID> owners = islands.stream().map(IslandTop::getOwnerUuid).collect(Collectors.toSet());
-            return api.getPlayerNames(owners).thenApply(names -> {
+            Set<UUID> players = new HashSet<>();
+            for (IslandTop island : islands) {
+                players.add(island.getOwnerUuid());
+                players.addAll(island.getMembers());
+            }
+            return api.getPlayerNames(players).thenApply(names -> {
                 Map<String, String> values = new HashMap<>();
                 for (int i = 0; i < islands.size(); i++) {
                     IslandTop island = islands.get(i);
@@ -232,6 +236,10 @@ public final class AdvancedSkyExpansion extends PlaceholderExpansion {
                     values.put(prefix + "level", Integer.toString(island.getLevel()));
                     values.put(prefix + "uuid", island.getIslandUuid().toString());
                     values.put(prefix + "members", Integer.toString(island.getMembers().size()));
+                    values.put(prefix + "member_names", island.getMembers().stream()
+                            .map(member -> Objects.requireNonNull(names.get(member), "Missing player name for " + member))
+                            .sorted(String.CASE_INSENSITIVE_ORDER)
+                            .collect(Collectors.joining("\n")));
                 }
                 return Map.copyOf(values);
             });

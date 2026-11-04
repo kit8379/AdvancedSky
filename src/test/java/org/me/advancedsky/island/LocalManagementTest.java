@@ -7,6 +7,7 @@ import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.network.IslandOperator;
 import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.cluster.OnlinePlayerRegistry;
+import org.me.advancedsky.cluster.ServerRegistry;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.database.DatabaseHandler;
 import org.me.advancedsky.economy.EconomyHandler;
@@ -36,7 +37,8 @@ class LocalManagementTest {
     private final DatabaseHandler database = mock(DatabaseHandler.class);
     private final IslandCache cache = mock(IslandCache.class);
     private final CrossServerMessenger messenger = mock(CrossServerMessenger.class);
-    private final IslandDistributor distributor = new IslandDistributor(plugin, database, null, null, messenger, null, "local");
+    private final ServerRegistry servers = mock(ServerRegistry.class);
+    private final IslandDistributor distributor = new IslandDistributor(plugin, database, null, null, messenger, servers, "local");
     private final WorldHandler world = mock(WorldHandler.class);
     private final OnlinePlayerRegistry online = mock(OnlinePlayerRegistry.class);
     private final EconomyHandler economy = mock(EconomyHandler.class);
@@ -47,13 +49,14 @@ class LocalManagementTest {
     private final CoopHandler coops = new CoopHandler(plugin, database, distributor, islandOperator);
     private final HomeHandler homes = new HomeHandler(plugin, config, database, distributor, online, null, islandOperator);
     private final WarpHandler warps = new WarpHandler(plugin, config, database, distributor, online, null, islandOperator);
-    private final UpgradeHandler upgrades = new UpgradeHandler(plugin, config, database, islandOperator, economy);
+    private final UpgradeHandler upgrades = new UpgradeHandler(plugin, config, database, distributor, islandOperator, economy);
 
     @BeforeEach
     void setUp() {
         BukkitAsyncExecutor async = mock(BukkitAsyncExecutor.class);
         doAnswer(call -> { call.<Runnable>getArgument(0).run(); return null; }).when(async).execute(any());
         when(plugin.getBukkitAsyncExecutor()).thenReturn(async);
+        when(servers.getIslandServers()).thenReturn(List.of("local", "remote"));
         when(config.isUpgrade("team-limit")).thenReturn(true);
         when(config.getUpgradeLevels("team-limit")).thenReturn(List.of(1, 2));
         when(database.getIslandUpgradeLevel(island, "team-limit")).thenReturn(1);
@@ -63,14 +66,9 @@ class LocalManagementTest {
     void upgradeWritesRejectOtherHostsBeforeWritingOrCharging() {
         when(database.getIslandServer(island)).thenReturn(Optional.of("remote"));
         for (Actor actor : List.of(new Actor.Player(player), new Actor.Bypass("console"))) {
-            List<Supplier<CompletableFuture<?>>> operations = List.of(
-                    () -> upgrades.setUpgradeLevel(actor, island, "team-limit", 2),
-                    () -> upgrades.buyUpgrade(actor, island, player, "team-limit"));
-            for (Supplier<CompletableFuture<?>> operation : operations) {
-                Throwable cause = assertThrows(CompletionException.class, () -> operation.get().join()).getCause();
-                assertInstanceOf(IslandNotHostedHereException.class, cause);
-                assertEquals("remote", ((IslandNotHostedHereException) cause).getServer());
-            }
+            Throwable cause = assertThrows(CompletionException.class, () -> upgrades.setUpgradeLevel(actor, island, "team-limit", 2).join()).getCause();
+            assertInstanceOf(IslandNotHostedHereException.class, cause);
+            assertEquals("remote", ((IslandNotHostedHereException) cause).getServer());
         }
         verifyNoInteractions(messenger, world, economy, cache, online);
         verify(database, never()).addIslandPlayer(any(), any(), any(), anyString());
@@ -110,11 +108,24 @@ class LocalManagementTest {
     }
 
     @Test
-    void upgradePurchasesStillRejectOtherHostsBeforeCharging() {
+    void upgradePurchasesReachTheHostWithoutChargingLocally() {
         when(database.getIslandServer(island)).thenReturn(Optional.of("remote"));
-        Throwable cause = assertThrows(CompletionException.class, () -> upgrades.buyUpgrade(new Actor.Player(player), island, player, "team-limit").join()).getCause();
-        assertInstanceOf(IslandNotHostedHereException.class, cause);
-        verifyNoInteractions(messenger, economy, cache);
+        when(config.getUpgradePrice("team-limit", 2)).thenReturn(500.0);
+        when(messenger.request(eq("remote"), eq(IslandDistributor.ACTION_UPGRADE_BUY), any())).thenAnswer(call -> {
+            JSONObject payload = call.getArgument(2);
+            assertEquals(new Actor.Player(player), Actor.fromJson(payload));
+            assertEquals(island.toString(), payload.getString("islandUuid"));
+            assertEquals(player.toString(), payload.getString("payerUuid"));
+            assertEquals("team-limit", payload.getString("upgradeId"));
+            assertEquals(1, payload.getInt("expectedLevel"));
+            assertEquals(2, payload.getInt("newLevel"));
+            assertEquals(500.0, payload.getDouble("price"));
+            return CompletableFuture.completedFuture(new JSONObject());
+        });
+        assertEquals(2, upgrades.buyUpgrade(new Actor.Player(player), island, player, "team-limit").join());
+        verify(messenger).request(eq("remote"), eq(IslandDistributor.ACTION_UPGRADE_BUY), any());
+        verifyNoInteractions(economy, cache);
+        verify(database, never()).updateIslandUpgradeLevel(any(), any(), anyString(), anyInt(), anyInt());
     }
 
     @Test

@@ -3,13 +3,13 @@ package org.me.advancedsky.command.player;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.me.advancedsky.AdvancedSky;
-import org.me.advancedsky.exceptions.PlayerNotOnOwnIslandException;
 import org.me.advancedsky.api.AdvancedSkyAPI;
 import org.me.advancedsky.command.AsyncTabComplete;
 import org.me.advancedsky.command.SubCommand;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.InsufficientFundsException;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.NoActiveServerException;
 import org.me.advancedsky.exceptions.UpgradeDoesNotExistException;
 import org.me.advancedsky.exceptions.UpgradeIslandLevelTooLowException;
 import org.me.advancedsky.exceptions.UpgradeLevelChangedException;
@@ -130,9 +130,7 @@ public class PlayerUpgradeCommand implements SubCommand, AsyncTabComplete {
 
     private void handleFailure(Player player, String upgradeId, Throwable ex) {
         Throwable cause = ex.getCause();
-        if (cause instanceof PlayerNotOnOwnIslandException) {
-            player.sendMessage(config.getPlayerMustOnOwnIslandMessage());
-        } else if (cause instanceof IslandDoesNotExistException) {
+        if (cause instanceof IslandDoesNotExistException) {
             player.sendMessage(config.getPlayerNoIslandMessage());
         } else if (cause instanceof UpgradeDoesNotExistException) {
             player.sendMessage(config.getPlayerUpgradeInvalidIdMessage(upgradeId));
@@ -144,6 +142,8 @@ public class PlayerUpgradeCommand implements SubCommand, AsyncTabComplete {
             player.sendMessage(config.getPlayerUpgradeNotEnoughMoneyMessage());
         } else if (cause instanceof UpgradeLevelChangedException) {
             player.sendMessage(config.getPlayerUpgradeLevelChangedMessage(upgradeId));
+        } else if (cause instanceof NoActiveServerException) {
+            player.sendMessage(config.getNoActiveServerMessage());
         } else {
             player.sendMessage(config.getUnknownExceptionMessage());
             plugin.severe("Error handling upgrade " + upgradeId + " for player " + player.getName(), ex);

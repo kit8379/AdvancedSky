@@ -9,6 +9,7 @@ import org.me.advancedsky.command.SubCommand;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.CannotExpelIslandPlayerException;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
+import org.me.advancedsky.exceptions.NoActiveServerException;
 import org.me.advancedsky.exceptions.PlayerNotInIslandException;
 import org.me.advancedsky.exceptions.PlayerNotOnlineException;
 
@@ -91,6 +92,8 @@ public class PlayerExpelCommand implements SubCommand, AsyncTabComplete {
                 player.sendMessage(config.getPlayerExpelNotInIslandMessage(targetPlayerName));
             } else if (cause instanceof CannotExpelIslandPlayerException) {
                 player.sendMessage(config.getPlayerCannotExpelIslandPlayerMessage());
+            } else if (cause instanceof NoActiveServerException) {
+                player.sendMessage(config.getNoActiveServerMessage());
             } else {
                 player.sendMessage(config.getUnknownExceptionMessage());
                 plugin.severe("Failed to expel player " + targetPlayerName + " from island of player " + player.getName(), ex);

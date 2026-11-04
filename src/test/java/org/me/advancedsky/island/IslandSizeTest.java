@@ -170,7 +170,7 @@ class IslandSizeTest {
 
     @Test
     void hostRefreshesTheCacheAfterPurchaseAndAdminDowngrade() {
-        UpgradeHandler handler = new UpgradeHandler(plugin, config, database, new IslandOperator(plugin, database, null, cache, null, null, null, "local"), null);
+        UpgradeHandler handler = new UpgradeHandler(plugin, config, database, null, new IslandOperator(plugin, database, null, cache, null, null, null, "local"), null);
         when(cache.reload(islandId)).thenReturn(CompletableFuture.completedFuture(null));
         Actor buyer = new Actor.Player(owner);
         Actor admin = new Actor.Bypass("test");
@@ -188,7 +188,7 @@ class IslandSizeTest {
 
     @Test
     void rejectedWriteKeepsTheCauseAndLeavesTheCacheAlone() {
-        UpgradeHandler handler = new UpgradeHandler(plugin, config, database, new IslandOperator(plugin, database, null, cache, null, null, null, "local"), null);
+        UpgradeHandler handler = new UpgradeHandler(plugin, config, database, null, new IslandOperator(plugin, database, null, cache, null, null, null, "local"), null);
         Actor actor = new Actor.Player(owner);
         doThrow(new UpgradeLevelChangedException()).when(database).updateIslandUpgradeLevel(actor, islandId, "island-size", 1, 2);
         CompletionException error = assertThrows(CompletionException.class, () -> handler.setUpgradeLevel(actor, islandId, "island-size", 2).join());
@@ -198,7 +198,7 @@ class IslandSizeTest {
 
     @Test
     void committedUpgradeIsNotRefundedIfCacheRefreshFails() {
-        UpgradeHandler handler = new UpgradeHandler(plugin, config, database, new IslandOperator(plugin, database, null, cache, null, null, null, "local"), null);
+        UpgradeHandler handler = new UpgradeHandler(plugin, config, database, null, new IslandOperator(plugin, database, null, cache, null, null, null, "local"), null);
         when(cache.reload(islandId)).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("database unavailable")));
         assertDoesNotThrow(() -> handler.setUpgradeLevel(new Actor.Player(owner), islandId, "island-size", 2).join());
         verify(plugin).severe(eq("Island data saved but could not refresh the island cache: " + islandId), any(Throwable.class));
