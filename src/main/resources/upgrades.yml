@@ -111,6 +111,27 @@ upgrades:
       price: 350000
       limit: 5
 
+  # Maximum SkyWorkers sprites placed on an island. SkyWorkers reads this limit.
+  worker-limit:
+    '1':
+      limit: 3
+    '2':
+      require-level: 100
+      price: 20000
+      limit: 5
+    '3':
+      require-level: 250
+      price: 60000
+      limit: 8
+    '4':
+      require-level: 500
+      price: 150000
+      limit: 12
+    '5':
+      require-level: 900
+      price: 350000
+      limit: 16
+
   # Biomes members may set with /is biome. Biome keys, spelled as the command does.
   biomes:
     '1':

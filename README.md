@@ -509,6 +509,7 @@ These features use the island's area rather than a separate island world.
 | `island-size` | Island width; controls protection, movement limits, level scan area and entity limit area |
 | `team-limit` / `coop-limit` | Maximum owner-plus-member count / co-op count |
 | `home-limit` / `warp-limit` | Named home and island warp limits |
+| `worker-limit` | SkyWorkers sprites placed on the island; read by SkyWorkers |
 | `biomes` | Biomes unlocked for the per-chunk biome changer |
 | `generator-rates` | Cobblestone generator output rates by upgrade level |
 | Upgrade purchases | Paid through Vault on the island's host, from the buying player's shared balance |
