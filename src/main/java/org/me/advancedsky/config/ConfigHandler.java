@@ -1943,13 +1943,6 @@ public class ConfigHandler {
 
     // Upgrades
 
-    /**
-     * Raw (uncolorized) so it can stand in for a value inside another message.
-     */
-    public String getUpgradeUnknownValue() {
-        return Objects.requireNonNull(messages.getString("messages.upgrade-unknown-value"));
-    }
-
     public Component getPlayerUpgradeInvalidIdMessage(String upgrade) {
         return ColorUtils.colorize(Objects.requireNonNull(messages.getString("messages.player-upgrade-invalid-id")).replace("{upgrade}", upgrade));
     }
