@@ -21,6 +21,7 @@ import org.me.advancedsky.cache.IslandCache;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.island.LimitHandler;
 import org.me.advancedsky.model.Island;
+import org.me.advancedsky.util.TranslatedNames;
 
 import java.util.UUID;
 
@@ -67,7 +68,7 @@ public final class IslandLimitListener implements Listener {
 
         if (!limitHandler.hasRoom(islandUuid, type)) {
             event.setCancelled(true);
-            event.getPlayer().sendMessage(config.getBlockLimitReachedMessage(type.name(), limit));
+            event.getPlayer().sendMessage(config.getBlockLimitReachedMessage(TranslatedNames.block(type), limit));
             plugin.debug("IslandLimitListener", "Denied block place due to limit: island=" + islandUuid + ", type=" + type + ", player=" + event.getPlayer().getUniqueId());
         }
     }

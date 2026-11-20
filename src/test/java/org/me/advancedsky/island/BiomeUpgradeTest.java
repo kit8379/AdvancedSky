@@ -77,7 +77,7 @@ class BiomeUpgradeTest {
         assertEquals(16, realConfig.getUpgradeAllowedBiomes(5).size());
         assertEquals(125, realConfig.getUpgradeRequireLevel("biomes", 2));
         assertEquals(30000.0, realConfig.getUpgradePrice("biomes", 2));
-        assertEquals("plains, forest, birch_forest, cherry_grove", realConfig.getUpgradeValue("biomes", 2));
+        assertEquals("<lang:biome.minecraft.plains>, <lang:biome.minecraft.forest>, <lang:biome.minecraft.birch_forest>, <lang:biome.minecraft.cherry_grove>", realConfig.getUpgradeValue("biomes", 2));
         assertEquals("1", realConfig.getUpgradeValue("coop-limit", 1));
     }
 
@@ -85,7 +85,7 @@ class BiomeUpgradeTest {
     void lockedBiomeIsRefusedWithTheAllowedList() {
         CompletionException error = assertThrows(CompletionException.class, () -> handler.applyPlayerChunkBiome(player, location, "forest").join());
         assertInstanceOf(BiomeNotUnlockedException.class, error.getCause());
-        assertEquals("plains", error.getCause().getMessage());
+        assertEquals("<lang:biome.minecraft.plains>", error.getCause().getMessage());
     }
 
     @Test

@@ -15,6 +15,7 @@ import org.me.advancedsky.exceptions.BiomeNotUnlockedException;
 import org.me.advancedsky.exceptions.InvalidBiomeException;
 import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.exceptions.LocationNotInIslandException;
+import org.me.advancedsky.util.TranslatedNames;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -76,14 +77,14 @@ public class PlayerBiomeCommand implements SubCommand, AsyncTabComplete {
         UUID playerUuid = player.getUniqueId();
         Location loc = player.getLocation();
 
-        api.player(playerUuid).applyBiome(loc, biomeName).thenRun(() -> player.sendMessage(config.getPlayerBiomeChangeSuccessMessage(biomeName))).exceptionally(ex -> {
+        api.player(playerUuid).applyBiome(loc, biomeName).thenRun(() -> player.sendMessage(config.getPlayerBiomeChangeSuccessMessage(TranslatedNames.biome(biomeName)))).exceptionally(ex -> {
             Throwable cause = ex.getCause();
             if (cause instanceof IslandDoesNotExistException) {
                 player.sendMessage(config.getPlayerNoIslandMessage());
             } else if (cause instanceof LocationNotInIslandException) {
                 player.sendMessage(config.getPlayerBiomeMustInOwnIslandMessage());
             } else if (cause instanceof BiomeNotUnlockedException) {
-                player.sendMessage(config.getPlayerBiomeNotUnlockedMessage(biomeName));
+                player.sendMessage(config.getPlayerBiomeNotUnlockedMessage(TranslatedNames.biome(biomeName)));
                 player.sendMessage(config.getPlayerBiomeAllowedListMessage(cause.getMessage()));
             } else if (cause instanceof InvalidBiomeException) {
                 player.sendMessage(config.getPlayerBiomeInvalidMessage(biomeName));

@@ -62,8 +62,17 @@ class CobblestoneGeneratorTest {
         assertEquals(0.5, level3.get("DIAMOND_ORE"));
         assertEquals(250, config.getUpgradeRequireLevel("generator-rates", 2));
         assertEquals(80000.0, config.getUpgradePrice("generator-rates", 2));
-        assertEquals("COBBLESTONE 91%, IRON_ORE 8.5%, DIAMOND_ORE 0.5%", config.getUpgradeValue("generator-rates", 3));
-        assertEquals("COBBLESTONE 100%", config.getUpgradeValue("generator-rates", 1));
+        assertEquals("<lang:block.minecraft.cobblestone> 91%, <lang:block.minecraft.iron_ore> 8.5%, <lang:block.minecraft.diamond_ore> 0.5%", config.getUpgradeValue("generator-rates", 3));
+        assertEquals("<lang:block.minecraft.cobblestone> 100%", config.getUpgradeValue("generator-rates", 1));
+    }
+
+    @Test
+    void valueChangeListsEachBlockOnItsOwnLine() throws Exception {
+        ConfigHandler config = defaultUpgrades();
+        assertEquals("<lang:block.minecraft.cobblestone> 100% » 95%\n<lang:block.minecraft.iron_ore> 0% » 5%", config.getUpgradeValueChange("generator-rates", 1));
+        assertEquals("<lang:block.minecraft.cobblestone> 78%\n<lang:block.minecraft.iron_ore> 18%\n<lang:block.minecraft.diamond_ore> 4%", config.getUpgradeValueChange("generator-rates", 5));
+        assertEquals("144 » 160", config.getUpgradeValueChange("island-size", 4));
+        assertEquals("160", config.getUpgradeValueChange("island-size", 5));
     }
 
     @Test

@@ -11,6 +11,7 @@ import org.me.advancedsky.command.AsyncTabComplete;
 import org.me.advancedsky.command.SubCommand;
 import org.me.advancedsky.config.ConfigHandler;
 import org.me.advancedsky.exceptions.InvalidBiomeException;
+import org.me.advancedsky.util.TranslatedNames;
 
 import java.util.Collections;
 import java.util.List;
@@ -80,7 +81,7 @@ public class AdminBiomeCommand implements SubCommand, AsyncTabComplete {
         String biomeName = args[1].toLowerCase(Locale.ROOT);
 
         api.admin(sender).applyBiome(loc, biomeName).thenRun(() -> {
-            player.sendMessage(config.getAdminBiomeChangeSuccessMessage(biomeName));
+            player.sendMessage(config.getAdminBiomeChangeSuccessMessage(TranslatedNames.biome(biomeName)));
         }).exceptionally(ex -> {
             Throwable cause = ex.getCause();
             if (cause instanceof InvalidBiomeException) {

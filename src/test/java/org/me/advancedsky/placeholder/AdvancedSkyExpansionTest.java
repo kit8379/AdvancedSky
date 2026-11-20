@@ -347,7 +347,8 @@ class AdvancedSkyExpansionTest {
         when(api.getUpgradeLevel(islandId, "island-size")).thenReturn(CompletableFuture.completedFuture(2));
         Map<String, String> expected = Map.of("upgrade_island-size_level", "2", "upgrade_island-size_value", "100",
                 "upgrade_island-size_max", "5", "upgrade_island-size_maxed", "false", "upgrade_island-size_next_price", "180000",
-                "upgrade_island-size_next_require_level", "450", "upgrade_island-size_next_value", "125");
+                "upgrade_island-size_next_require_level", "450", "upgrade_island-size_next_value", "125",
+                "upgrade_island-size_value_change", "100 » 125");
         expected.forEach((key, value) -> assertEquals(value, expansion.onRequest(player, key), key));
         verify(api, times(1)).getUpgradeLevel(islandId, "island-size");
     }
@@ -379,6 +380,7 @@ class AdvancedSkyExpansionTest {
         when(config.getUpgradeLevels("island-size")).thenReturn(List.of(1, 2, 3, 4, 5));
         when(config.getUpgradeValue("island-size", 2)).thenReturn("100");
         when(config.getUpgradeValue("island-size", 3)).thenReturn("125");
+        when(config.getUpgradeValueChange("island-size", 2)).thenReturn("100 » 125");
         when(config.getUpgradePrice("island-size", 3)).thenReturn(180000.0);
         when(config.getUpgradeRequireLevel("island-size", 3)).thenReturn(450);
     }

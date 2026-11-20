@@ -284,7 +284,7 @@ class LimitHandlerTest {
         ConfigHandler config = islandWorldConfig();
         Component full = Component.text("full");
         Component calculating = Component.text("calculating");
-        when(config.getBlockLimitReachedMessage("HOPPER", 50)).thenReturn(full);
+        when(config.getBlockLimitReachedMessage("<lang:block.minecraft.hopper>", 50)).thenReturn(full);
         when(config.getBlockLimitCalculatingMessage()).thenReturn(calculating);
         IslandLimitListener listener = new IslandLimitListener(plugin, config, limits, cache());
         Player player = mock(Player.class);

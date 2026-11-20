@@ -17,6 +17,7 @@ import org.me.advancedsky.exceptions.IslandDoesNotExistException;
 import org.me.advancedsky.exceptions.LocationNotInIslandException;
 import org.me.advancedsky.exceptions.WorldNotFoundException;
 import org.me.advancedsky.grid.IslandGrid;
+import org.me.advancedsky.util.TranslatedNames;
 
 import java.util.List;
 import java.util.Locale;
@@ -60,7 +61,7 @@ public final class BiomeHandler {
             }
 
             if (!allowed.contains(key)) {
-                throw new BiomeNotUnlockedException(String.join(", ", allowed));
+                throw new BiomeNotUnlockedException(String.join(", ", allowed.stream().map(TranslatedNames::biome).toList()));
             }
         }, plugin.getBukkitAsyncExecutor()).thenCompose(v -> applyChunkBiome(location, biomeName));
     }

@@ -1,12 +1,14 @@
 package org.me.advancedsky.config;
 
 import net.kyori.adventure.text.Component;
+import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.me.advancedsky.AdvancedSky;
 import org.me.advancedsky.util.ColorUtils;
+import org.me.advancedsky.util.TranslatedNames;
 
 import java.io.File;
 import java.io.IOException;
@@ -402,10 +404,36 @@ public class ConfigHandler {
 
     /**
      * The level's value as players see it: the numeric limit or size, the allowed biome list,
-     * or the generator rates as percentages.
+     * or the generator rates as percentages. Biome and block names are MiniMessage
+     * {@code <lang:...>} tags, so each client shows them in its own language.
      */
     public String getUpgradeValue(String upgradeId, int level) {
         return requiredUpgradeEntry(upgradeValues, upgradeId, level);
+    }
+
+    /**
+     * What buying the next level changes, for menus that cannot wrap a long value: one line per
+     * generator block ({@code <lang:block.minecraft.coal_ore> 0.75% » 1.5%}, 0% where a level lacks the block), one
+     * {@code current » next} line for any other upgrade, and only the current value at the
+     * highest level.
+     */
+    public String getUpgradeValueChange(String upgradeId, int level) {
+        boolean maxed = level >= getUpgradeLevels(upgradeId).getLast();
+        if (!upgradeId.equals("generator-rates")) {
+            String value = getUpgradeValue(upgradeId, level);
+            return maxed ? value : value + " » " + getUpgradeValue(upgradeId, level + 1);
+        }
+
+        Map<String, String> current = generatorPercents(level);
+        Map<String, String> next = maxed ? current : generatorPercents(level + 1);
+        Set<String> blocks = new LinkedHashSet<>(current.keySet());
+        blocks.addAll(next.keySet());
+        StringJoiner lines = new StringJoiner("\n");
+        for (String block : blocks) {
+            String now = blockName(block) + " " + current.getOrDefault(block, "0%");
+            lines.add(maxed ? now : now + " » " + next.getOrDefault(block, "0%"));
+        }
+        return lines.toString();
     }
 
     private static <T> T requiredUpgradeEntry(Map<String, Map<Integer, T>> entries, String upgradeId, int level) {
@@ -418,21 +446,35 @@ public class ConfigHandler {
 
     private String upgradeValue(String upgradeId, int level) {
         if (upgradeId.equals("biomes")) {
-            return String.join(", ", getUpgradeAllowedBiomes(level));
+            return String.join(", ", getUpgradeAllowedBiomes(level).stream().map(TranslatedNames::biome).toList());
         }
 
         if (upgradeId.equals("generator-rates")) {
-            Map<String, Double> rates = getUpgradeGeneratorRates(level);
-            double total = rates.values().stream().mapToDouble(Double::doubleValue).sum();
             StringJoiner value = new StringJoiner(", ");
-            for (Map.Entry<String, Double> rate : rates.entrySet()) {
-                String percent = BigDecimal.valueOf(rate.getValue() / total * 100).setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
-                value.add(rate.getKey() + " " + percent + "%");
-            }
+            generatorPercents(level).forEach((block, percent) -> value.add(blockName(block) + " " + percent));
             return value.toString();
         }
 
         return String.valueOf(getUpgradeLimit(upgradeId, level));
+    }
+
+    private static String blockName(String block) {
+        Material material = Material.matchMaterial(block);
+        if (material == null) {
+            throw new IllegalStateException("Generator rates: '" + block + "' is not a material");
+        }
+        return TranslatedNames.block(material);
+    }
+
+    // Each block's share of the level's total weight, as players see it ("0.75%"), in config order.
+    private Map<String, String> generatorPercents(int level) {
+        Map<String, Double> rates = getUpgradeGeneratorRates(level);
+        double total = rates.values().stream().mapToDouble(Double::doubleValue).sum();
+        Map<String, String> percents = new LinkedHashMap<>();
+        for (Map.Entry<String, Double> rate : rates.entrySet()) {
+            percents.put(rate.getKey(), BigDecimal.valueOf(rate.getValue() / total * 100).setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString() + "%");
+        }
+        return percents;
     }
 
     public int getUpgradeRequireLevel(String upgradeId, int level) {

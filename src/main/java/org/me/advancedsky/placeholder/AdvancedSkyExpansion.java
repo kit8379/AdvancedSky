@@ -32,7 +32,7 @@ public final class AdvancedSkyExpansion extends PlaceholderExpansion {
     // and anyone who can have text parsed can ask.
     private static final int MAX_TOP_POSITION = 100;
     private static final Pattern TOP = Pattern.compile("top_([1-9][0-9]*)_(owner|level|uuid|members|member_names)");
-    private static final Pattern UPGRADE = Pattern.compile("upgrade_([a-z0-9-]+)_(level|value|max|maxed|next_price|next_require_level|next_value)");
+    private static final Pattern UPGRADE = Pattern.compile("upgrade_([a-z0-9-]+)_(level|value|value_change|max|maxed|next_price|next_require_level|next_value)");
     private static final Map<String, String> NO_ISLAND = Map.ofEntries(Map.entry("island_level", "0"), Map.entry("island_members", "0"), Map.entry("island_owner", ""), Map.entry("island_uuid", ""), Map.entry("island_role", "none"), Map.entry("island_owner_uuid", ""), Map.entry("island_lock", "false"), Map.entry("island_pvp", "false"), Map.entry("island_players", "0"), Map.entry("island_coops", "0"), Map.entry("island_bans", "0"), Map.entry("island_rank", "0"));
 
     private final AdvancedSky plugin;
@@ -182,6 +182,7 @@ public final class AdvancedSkyExpansion extends PlaceholderExpansion {
         return switch (field) {
             case "level" -> Integer.toString(level);
             case "value" -> config.getUpgradeValue(upgradeId, level);
+            case "value_change" -> config.getUpgradeValueChange(upgradeId, level);
             case "maxed" -> Boolean.toString(maxed);
             case "next_price" -> maxed ? "" : BigDecimal.valueOf(config.getUpgradePrice(upgradeId, level + 1)).stripTrailingZeros().toPlainString();
             case "next_require_level" -> maxed ? "" : Integer.toString(config.getUpgradeRequireLevel(upgradeId, level + 1));

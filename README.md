@@ -559,6 +559,9 @@ Replace `<id>` with an upgrade ID from `upgrades.yml` and `<n>` with a rank from
 | --- | --- |
 | `%advancedsky_upgrade_<id>_level%` | Current upgrade level |
 | `%advancedsky_upgrade_<id>_value%` | What the current level grants |
+| `%advancedsky_upgrade_<id>_value_change%` | `current » next` (only the current value at the highest level); `generator-rates` gives one line per block, for menus |
+
+`generator-rates` and `biomes` values name each block or biome with a MiniMessage `<lang:…>` tag, as do the biome and block-limit messages, so text parsed as MiniMessage (AdvancedSky's messages, MythicMobs menus) shows the name in each player's client language.
 | `%advancedsky_upgrade_<id>_max%` | Highest configured level |
 | `%advancedsky_upgrade_<id>_maxed%` | `true` at the highest level |
 | `%advancedsky_upgrade_<id>_next_price%` | Next level's price |
